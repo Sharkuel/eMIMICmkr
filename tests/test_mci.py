@@ -112,3 +112,23 @@ def test_make_choke_follows_the_template():
     assert choke[-1] == pytest.approx(0.2520, rel=1e-4)
     mid = int((0.0446 + 0.4685) / 2 * 48000)
     assert choke[mid] == pytest.approx((1.3862 * 0.2520) ** 0.5, rel=1e-2)   # fades in dB
+
+
+SPLIT = sorted(p for p in Path(os.environ.get("MCI_SAMPLES", ".")).glob("*.bin")
+               if p.with_suffix(".drd").exists()) if os.environ.get("MCI_SAMPLES") else []
+
+
+@pytest.mark.skipif(not SPLIT, reason="needs a factory .bin/.drd pair in MCI_SAMPLES")
+def test_factory_split_instrument_decodes_24_bit_audio():
+    f = mci.read_split(str(SPLIT[0]), str(SPLIT[0].with_suffix(".drd")))
+    desc, dedo = f.get("INST0pool0desc"), f.get("INST0pool0dedo")
+    for i in range(0, f.get("INST0pool0psz"), 50):
+        x = mci.sample(f, i)
+        assert len(x) == f.get("INST0pool0fcnt")[i]
+        head = struct.unpack_from(f"<{desc[i]}f", f.heads, dedo[i])
+        assert [round(h * 2 ** 23) for h in head[mci.HEAD_PAD:]] == x[:desc[i] - mci.HEAD_PAD]
+        assert len(mci.channels(f, i)) == f.get("INST0pool0nchn")[i]
+    x = mci.sample(f, 0)
+    assert any(s & 0xFF for s in x), "expected true 24-bit audio"
+    blob, _ = mci.encode_blocks(x[:20000])
+    assert mci.decode_blocks(blob) == x[:20000]

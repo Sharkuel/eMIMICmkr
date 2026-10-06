@@ -120,8 +120,8 @@ Choke Ring (41), with the same release times as a ride. This comes from four Mei
 came in a folder named `MeinlXhat.lib`). Those files also set `INST0micinf0isst` to 1,
 where Editor files have 0; what it does is **unknown**.
 
-The Editor cannot make real hi-hats (open/closed with a pedal), and no such file has been
-seen yet.
+The Editor cannot make real hi-hats (open/closed with a pedal). Factory hi-hats are
+described below.
 
 ### Choke samples
 
@@ -129,6 +129,51 @@ A Choke Ring sample can be made from the hardest edge hit, following a template 
 Alexandre: keep the first 0.519 s, boost by ×1.386 (+2.8 dB) for the first 44.6 ms,
 then fade in dB down to ×0.252 (−12 dB) at 0.468 s. `make_choke()` in `mci.py` does
 this. It matches the exported template WAV to within 8% of its peak.
+
+### Hi-hats (factory instruments)
+
+The Editor cannot make hi-hats, but Pearl's factory library has them. All six factory
+hi-hats share one layout:
+
+- `instyp` is `Hat`, with three mics: `Hi-Hat` (micpos 0, mict 0), `OH` (5, 1) and
+  `Room` (6, 1). `insv` and `tmr` are 0, unlike Editor files.
+- 18 articulations. Here `artid` is **not** the articulation's index, and `noteon` holds
+  a MIDI note (the SSD drum map the samples came from):
+
+| artid | Name | noteon | Notes |
+| --- | --- | --- | --- |
+| 0–4 | Shank Closed, 1/4, 2/4, 3/4 Open, Shank Open | 22, 66–69 | |
+| 5–9 | Tip Closed, 1/4, 2/4, 3/4 Open, Tip Open | 42, 61–64 | |
+| 10 | Pedal | 44 | zone 83 |
+| 11 | Footsplash | 70 | zone 84 |
+| 12–16 | Closed, 1/4, 2/4, 3/4 Open, Open | 108–112 | the edge |
+| 17 | Transition | 23 | |
+
+- Only two plain zones: Pedal (type 83) and Footsplash (type 84). `zoneArtId` holds the
+  `artid`, not the index.
+- The struck zones are controller zones, one per playing area, `nznctrl` = 3:
+
+| Key | Meaning |
+| --- | --- |
+| `INST0hctrlzn<i>ctrzone` | Zone type: 81 tip (bow), 82 shank, 80 edge |
+| `INST0hctrlzn<i>trzone` | int[]: the `artid`s from closed to open |
+| `INST0hctrlzn<i>stznsz` | Number of openness steps, 5 |
+
+  The pedal position picks one of the five articulations.
+- Closed and partly open articulations have `mut` = 1. Release ranges are 0.5/0.3
+  (bottom) and 1.0–2.0/1.5–4.0 (top), getting longer as the hat opens, and the first
+  three elements of each release array are set rather than one.
+- Pool samples are shared between articulations: 486 layer slots point to 338 samples.
+
+### Factory library files
+
+The factory library (`Mimic_Factory.lib`) stores each instrument as a pair in
+`instruments/`: a `.bin` with the header and metadata (no audio, no MMKCSM trailer) and
+a `.drd` with the RAM heads then the compressed data, offsets counted from its first
+byte. `read_split()` in `mci.py` reads a pair. Kits (`.kit`) are `mimic_storage` files
+with the kit's mixer and pad settings. `checksum.dat` starts with
+`mimic_checksum_list`, a header, then a zlib stream of (null-terminated name, 16-byte
+MD5 of the whole file) for every `.bin`, `.drd`, `.kit` and `libver.mimicinfo`.
 
 ### Pool keys (one entry per sample)
 
@@ -159,9 +204,15 @@ rather than playback.
 
 ## Audio
 
-Each sample is mono, on a 24-bit scale (full scale = 2²³). In every Editor file the
-low 8 bits are zero, so the audio is effectively 16-bit. The sample rate is not stored
-and is assumed to be 48 kHz (**unknown**).
+Samples are on a 24-bit scale (full scale = 2²³). In every Editor file the audio is
+mono and the low 8 bits are zero, so it is effectively 16-bit. Pearl's factory
+instruments hold true 24-bit audio, and theirs is interleaved over `pool0nchn`
+channels (5 in the factory hi-hats: frame 0 of channels 0–4, then frame 1, and so on).
+`fcnt` counts every value, so a sample lasts fcnt / nchn frames, and the envelope
+length is floor(fcnt / (1024 × nchn)).
+
+The sample rate is not stored. It is almost certainly 44.1 kHz: factory sample lengths
+per channel land on whole seconds at 44.1 kHz (220500, 352800, 441000 frames).
 
 ### Compressed data
 
@@ -169,15 +220,16 @@ Each sample is a run of 1024-byte blocks:
 
 | Offset | Size | Content |
 | --- | --- | --- |
-| 0 | 2 | u16 `bits`, the delta width (10–25 seen) |
-| 2 | 2 | i16 first frame >> 8 |
+| 0 | 1 | u8 `bits`, the delta width (10–25 seen) |
+| 1 | 1 | u8 low byte of the first value |
+| 2 | 2 | i16 first value >> 8 |
 | 4 | 4 | u32 `n`, frames in the block |
 | 8 | 1016 | n deltas of `bits` bits each, signed |
 
 Decoding:
 
 ```
-x = first << 8
+x = (high << 8) | low
 deltas are read most-significant bit first from the payload, seen as little-endian u32 words
 frame 0 = x; frame k+1 = frame k + delta k
 ```
@@ -209,9 +261,9 @@ head landed.
 
 - Does the Mimic itself load files written by `tools/mci/mci.py`? The Editor already
   does: it opened `eMIMICmkr TEST Kick.mci`, recomputed the velocities, and resaved it.
-- Is audio with non-zero low bytes (true 24-bit) allowed?
+- Will the Mimic accept a `Hat` instrument we write, and a user library laid out like the
+  factory one?
 - What exactly do `rmse` and `mrms` drive, and how far off may they be?
-- The sample rate.
 - How does the Editor compute `minvel` and `minvol` from loudness ("Calc Velo")? Ours
   is a square-root curve on peak loudness, close but not identical.
-- What are the type and zone ids of a real hi-hat (with pedal), and what does `isst` do?
+- What does `isst` do?

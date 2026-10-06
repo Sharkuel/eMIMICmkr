@@ -3,10 +3,14 @@
 The format was reverse-engineered from files saved by the Mimic Instrument
 Editor (container version 3). See docs/mci-format.md for the full description.
 
-Audio inside a .mci is mono. Samples are handled here as Python ints on a
-24-bit scale (full scale = 2**23). Files written by the Editor only ever hold
-16-bit audio, so the low 8 bits are always zero; build_instrument() quantizes
-to that grid.
+Samples are handled here as Python ints on a 24-bit scale (full scale =
+2**23). Files written by the Editor only ever hold 16-bit mono audio, so the
+low 8 bits are always zero there; build_instrument() quantizes to that grid.
+Pearl's factory instruments hold true 24-bit audio, and some interleave
+several channels (see pool0nchn).
+
+The factory library splits an instrument in two: a .bin holding the metadata
+and a .drd holding the RAM heads and compressed data. read_split() reads that.
 """
 from __future__ import annotations
 
@@ -21,7 +25,7 @@ TRAILER_TAG = b"MMKCSM\x00"
 VERSION = 3
 
 BLOCK_SIZE = 1024          # every compressed block is exactly this many bytes
-BLOCK_HEADER = 8           # u16 bits, i16 first sample >> 8, u32 frame count
+BLOCK_HEADER = 8           # u8 bits, 24-bit first sample (u8 low, i16 high), u32 frame count
 PAYLOAD_BITS = (BLOCK_SIZE - BLOCK_HEADER) * 8
 
 HEAD_PAD = 63              # zero frames in front of every RAM head
@@ -167,6 +171,36 @@ def read_mci(path_or_bytes) -> MciFile:
                    data=d[base + head_len:-23], version=version)
 
 
+def read_split(bin_path_or_bytes, drd_path_or_bytes) -> MciFile:
+    """Read a factory instrument stored as a .bin (metadata) + .drd (audio) pair.
+
+    The .bin is the same header and zlib metadata as a .mci, with no audio and
+    no MMKCSM trailer. The .drd is the RAM heads followed by the compressed
+    data, with offsets counted from its first byte. Factory libraries carry a
+    checksum.dat with the MD5 of every whole file instead of a trailer.
+    """
+    def load(x):
+        return x if isinstance(x, (bytes, bytearray)) else open(x, "rb").read()
+    d, drd = load(bin_path_or_bytes), load(drd_path_or_bytes)
+    if d[:14] != MAGIC:
+        raise MciError("not a Mimic file (bad magic)")
+    version, meta_len = struct.unpack_from("<II", d, 14)
+    raw = zlib.decompressobj().decompress(d[22:])
+    if len(raw) != meta_len:
+        raise MciError("metadata length mismatch")
+    meta, image = _read_meta(raw)
+    head_len = sum(meta["INST0pool0desc"][1]) * 4
+    return MciFile(meta=meta, image=image, heads=drd[:head_len], data=drd[head_len:],
+                   version=version)
+
+
+def channels(f: MciFile, index: int) -> list[list[int]]:
+    """Decode one pool sample and split its interleaved channels."""
+    x = sample(f, index)
+    n = f.get("INST0pool0nchn")[index]
+    return [x[c::n] for c in range(n)]
+
+
 def write_mci(f: MciFile) -> bytes:
     raw = _write_meta(f.meta, f.image)
     body = (MAGIC + struct.pack("<II", f.version, len(raw)) + zlib.compress(raw, 1)
@@ -186,13 +220,13 @@ def _bits_for(delta: int) -> int:
 def decode_blocks(blob: bytes) -> list[int]:
     out = []
     for off in range(0, len(blob), BLOCK_SIZE):
-        bits, first, n = struct.unpack_from("<HhI", blob, off)
+        bits, low, high, n = struct.unpack_from("<BBhI", blob, off)
         payload = blob[off + BLOCK_HEADER:off + BLOCK_SIZE]
         # Deltas are packed most-significant bit first into little-endian u32 words.
         swapped = b"".join(payload[i:i + 4][::-1] for i in range(0, len(payload), 4))
         v = int.from_bytes(swapped, "big")
         mask, half = (1 << bits) - 1, 1 << (bits - 1)
-        x = first << 8
+        x = (high << 8) | low
         out.append(x)
         for k in range(n - 1):
             dlt = (v >> (PAYLOAD_BITS - (k + 1) * bits)) & mask
@@ -204,7 +238,7 @@ def decode_blocks(blob: bytes) -> list[int]:
 
 
 def encode_blocks(x: list[int]) -> tuple[bytes, list[int]]:
-    """Compress samples (24-bit scale, low byte zero at block starts).
+    """Compress samples on the 24-bit scale.
 
     Returns the blob and the frame count of every block. A block of n frames
     stores n deltas; the last one bridges to the next block's first frame.
@@ -227,9 +261,7 @@ def encode_blocks(x: list[int]) -> tuple[bytes, list[int]]:
         v <<= PAYLOAD_BITS - len(deltas) * bits
         be = v.to_bytes(PAYLOAD_BITS // 8, "big")
         payload = b"".join(be[i:i + 4][::-1] for i in range(0, len(be), 4))
-        if x[p] & 0xFF:
-            raise MciError("block start sample has a non-zero low byte")
-        out += struct.pack("<HhI", bits, x[p] >> 8, n) + payload
+        out += struct.pack("<BBhI", bits, x[p] & 0xFF, x[p] >> 8, n) + payload
         frames.append(n)
         p += n
     return bytes(out), frames
