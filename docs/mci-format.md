@@ -165,6 +165,10 @@ hi-hats share one layout:
   three elements of each release array are set rather than one.
 - Pool samples are shared between articulations: 486 layer slots point to 338 samples.
 
+`hat_articulations()` in `mci.py` builds this layout with one mic and mono audio, and
+`build_instrument(..., controller_zones=...)` writes it. Whether the Mimic accepts a
+`Hat` outside its factory library is **unknown** until a device test.
+
 ### Factory library files
 
 The factory library (`Mimic_Factory.lib`) stores each instrument as a pair in

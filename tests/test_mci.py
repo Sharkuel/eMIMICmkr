@@ -132,3 +132,28 @@ def test_factory_split_instrument_decodes_24_bit_audio():
     assert any(s & 0xFF for s in x), "expected true 24-bit audio"
     blob, _ = mci.encode_blocks(x[:20000])
     assert mci.decode_blocks(blob) == x[:20000]
+
+
+@pytest.mark.skipif(not SPLIT, reason="needs a factory .bin/.drd pair in MCI_SAMPLES")
+def test_hat_layout_matches_factory_hi_hat():
+    f = mci.read_split(str(SPLIT[0]), str(SPLIT[0].with_suffix(".drd")))
+    hit = [[[0, 256, -512, 0] * 600]]           # one layer, one tiny sample per zone
+    arts, ctrl = mci.hat_articulations([hit] * 5, [hit] * 5, [hit] * 5, hit, hit, transition=hit)
+    built = mci.read_mci(mci.write_mci(
+        mci.build_instrument("t", "Hat", arts, f.image, mic="Hi-Hat", controller_zones=ctrl)))
+
+    def by_artid(m):
+        return {m.get(f"INST0artic{a}artid"): a for a in range(m.get("INST0numart"))}
+    ours, theirs = by_artid(built), by_artid(f)
+    assert set(ours) == set(theirs)
+    for artid in ours:
+        for k in ["artn", "noteon", "chk", "fak", "mut"]:
+            assert built.get(f"INST0artic{ours[artid]}{k}") == f.get(f"INST0artic{theirs[artid]}{k}"), (artid, k)
+        for k in ["minrtb", "minrtt", "maxrtb", "maxrtt"]:
+            assert built.get(f"INST0artic{ours[artid]}{k}")[0] == f.get(f"INST0artic{theirs[artid]}{k}")[0], (artid, k)
+    for k in ["INST0zonecnt", "INST0zoneType0", "INST0zoneType1", "INST0zoneArtId0",
+              "INST0zoneArtId1", "INST0nznctrl", "INST0instyp", "INST0micinf0micpos", "INST0micinf0mict"]:
+        assert built.get(k) == f.get(k), k
+    for c in range(3):
+        for k in ["ctrzone", "stznsz", "trzone"]:
+            assert built.get(f"INST0hctrlzn{c}{k}") == f.get(f"INST0hctrlzn{c}{k}"), (c, k)

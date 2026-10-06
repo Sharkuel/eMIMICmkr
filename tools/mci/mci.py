@@ -314,12 +314,15 @@ def sample(f: MciFile, index: int) -> list[int]:
 @dataclass
 class Articulation:
     name: str                       # e.g. "Bow", "Snare Rimshot"
-    zone_type: int                  # see ZONE_TYPES
+    zone_type: int | None           # see ZONE_TYPES; None = only reached through a controller zone
     layers: list[list[list[int]]]   # layers soft->hard, each a list of round robins
     min_velocities: list[int] | None = None   # None = computed from loudness
     release_bottom: tuple[float, float] = (0.3, 0.5)   # (minrtb, minrtt)
     release_top: tuple[float, float] = (1.5, 3.0)      # (maxrtb, maxrtt)
     choke: bool = False
+    artid: int | None = None        # None = the articulation's index
+    noteon: int = 0                 # MIDI note; factory hi-hats set it, the Editor writes 0
+    mute: bool | None = None        # None = same as choke
 
 
 # Zone type ids seen in Editor files.
@@ -333,7 +336,7 @@ ZONE_TYPES = {
 
 
 # (micpos, mict) the Editor writes per instrument type; anything else gets (0, 0).
-MIC_DEFAULTS = {"Kick": (2, 0), "Ride": (5, 1), "Cymbal": (5, 1)}
+MIC_DEFAULTS = {"Kick": (2, 0), "Ride": (5, 1), "Cymbal": (5, 1), "Hat": (0, 0)}
 
 
 def _cymbal_zones(zones, choke, release_bottom, release_top) -> list[Articulation]:
@@ -370,6 +373,51 @@ def cymbal_articulations(edge, bow, choke=None, release_bottom=(0.5, 0.5),
     """
     return _cymbal_zones([("Edge", "ride edge", edge), ("Bow", "ride bow", bow)],
                          choke, release_bottom, release_top)
+
+
+# Hi-hat zone ids, from Pearl's factory hi-hats. The struck zones are
+# controller zones: the pedal position picks one of five articulations.
+HAT_ZONES = {"edge": 80, "tip": 81, "shank": 82, "pedal": 83, "footsplash": 84}
+HAT_OPENNESS = ["Closed", "1/4 Open", "2/4 Open", "3/4 Open", "Open"]
+# Release ranges per openness step: ((minrtb, minrtt), (maxrtb, maxrtt)).
+_HAT_SHORT = ((0.5, 0.3), (1.0, 1.5))
+_HAT_RELEASE = [_HAT_SHORT, _HAT_SHORT, _HAT_SHORT, ((0.5, 0.3), (2.0, 3.0)), ((0.5, 0.3), (2.0, 4.0))]
+
+
+def hat_articulations(tip, shank, edge, pedal, footsplash, transition=None
+                      ) -> tuple[list[Articulation], list[tuple[int, list[int]]]]:
+    """A hi-hat in the factory layout (type "Hat").
+
+    tip, shank and edge are lists of five zones, closed -> open, and every zone
+    is a list of layers (soft->hard) of round-robin samples. Returns the
+    articulations and the controller zones to pass to build_instrument().
+    Artids and MIDI notes follow the factory files.
+    """
+    arts: list[Articulation] = []
+    ctrl = []
+    groups = [("Tip", "tip", tip, 5, [42, 61, 62, 63, 64]),
+              ("Shank", "shank", shank, 0, [22, 66, 67, 68, 69]),
+              ("", "edge", edge, 12, [108, 109, 110, 111, 112])]
+    for label, key, steps, first_id, notes in groups:
+        if len(steps) != len(HAT_OPENNESS):
+            raise MciError(f"hi-hat {key}: expected {len(HAT_OPENNESS)} openness steps")
+        ids = []
+        for k, layers in enumerate(steps):
+            name = " ".join(w for w in ["Hi-Hat", label, HAT_OPENNESS[k]] if w)
+            bottom, top = _HAT_RELEASE[k]
+            arts.append(Articulation(name, None, layers, None, bottom, top,
+                                     artid=first_id + k, noteon=notes[k], mute=k < 2))
+            ids.append(first_id + k)
+        ctrl.append((HAT_ZONES[key], ids))
+    arts.append(Articulation("Hi-Hat Pedal", HAT_ZONES["pedal"], pedal, None, *_HAT_SHORT,
+                             artid=10, noteon=44, mute=True))
+    arts.append(Articulation("Hi-Hat Footsplash", HAT_ZONES["footsplash"], footsplash, None,
+                             (0.5, 0.3), (2.0, 4.0), artid=11, noteon=70, mute=True))
+    if transition:
+        arts.append(Articulation("Hi-Hat Transition", None, transition, None,
+                                 (0.5, 0.3), (2.0, 3.0), artid=17, noteon=23))
+    arts.sort(key=lambda a: a.artid)
+    return arts, ctrl
 
 
 def make_choke(samples: list[float], rate: int = 48000, length: float = 0.5187,
@@ -417,7 +465,13 @@ def velocity_thresholds(loudness: list[float]) -> list[int]:
 
 def build_instrument(name: str, instrument_type: str, articulations: list[Articulation],
                      image: bytes, library: str = "", mic: str = "",
-                     sample_volume: float = 0.52) -> MciFile:
+                     sample_volume: float = 0.52,
+                     controller_zones: list[tuple[int, list[int]]] = ()) -> MciFile:
+    """Build a complete instrument.
+
+    controller_zones: (zone type, artids closed->open) for hi-hat zones whose
+    articulation is picked by the pedal position; see hat_articulations().
+    """
     m: dict[str, tuple[int, object]] = {}
 
     def put(k, s, v):
@@ -425,22 +479,24 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
 
     pool: list[list[int]] = []
     pool_rr: list[int] = []   # round-robin position of every pool entry
+    zones = []
     for a, art in enumerate(articulations):
         P = f"INST0artic{a}"
-        put(P + "artid", I32, a)
-        put(P + "noteon", I32, 0)
+        artid = a if art.artid is None else art.artid
+        put(P + "artid", I32, artid)
+        put(P + "noteon", I32, art.noteon)
         put(P + "numlay", I32, len(art.layers))
         put(P + "vol", F32, 1.0)
         put(P + "artn", STRING, art.name)
         put(P + "chk", U8, int(art.choke))
         put(P + "fak", U8, 0)
-        put(P + "mut", U8, int(art.choke))
+        put(P + "mut", U8, int(art.choke if art.mute is None else art.mute))
         put(P + "minrtb", F32_ARRAY, [art.release_bottom[0]] + [1.0] * (RT_ARRAY_LEN - 1))
         put(P + "minrtt", F32_ARRAY, [art.release_bottom[1]] + [1.0] * (RT_ARRAY_LEN - 1))
         put(P + "maxrtb", F32_ARRAY, [art.release_top[0]] + [1.0] * (RT_ARRAY_LEN - 1))
         put(P + "maxrtt", F32_ARRAY, [art.release_top[1]] + [1.0] * (RT_ARRAY_LEN - 1))
-        put(f"INST0zoneArtId{a}", I32, a)
-        put(f"INST0zoneType{a}", I32, art.zone_type)
+        if art.zone_type is not None:
+            zones.append((art.zone_type, artid))
 
         loud = []
         for layer in art.layers:
@@ -499,10 +555,18 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
         put(f"{Q}rmsenv{i}rmsl", I32, len(env))
         put(f"{Q}rmsenv{i}mrms", F32, float(max(env)))
 
+    for z, (zone_type, artid) in enumerate(zones):
+        put(f"INST0zoneArtId{z}", I32, artid)
+        put(f"INST0zoneType{z}", I32, zone_type)
+    for c, (zone_type, artids) in enumerate(controller_zones):
+        put(f"INST0hctrlzn{c}ctrzone", I32, zone_type)
+        put(f"INST0hctrlzn{c}stznsz", I32, len(artids))
+        put(f"INST0hctrlzn{c}trzone", I32_ARRAY, list(artids))
+
     # Instrument-wide values, as written by the Editor.
     for k, v in {"INST0chkn": 0, "INST0ecov": 0, "INST0insv": 1, "INST0micnt": 1,
-                 "INST0numart": len(articulations), "INST0nznctrl": 0,
-                 "INST0zonecnt": len(articulations),
+                 "INST0numart": len(articulations), "INST0nznctrl": len(controller_zones),
+                 "INST0zonecnt": len(zones),
                  "INST0micinf0micpos": MIC_DEFAULTS.get(instrument_type, (0, 0))[0],
                  "INST0micinf0mict": MIC_DEFAULTS.get(instrument_type, (0, 0))[1]}.items():
         put(k, I32, v)
