@@ -59,3 +59,25 @@ def test_rebuilt_instrument_keeps_audio_and_structure():
     for i in range(0, again.get("INST0pool0psz"), 9):
         head = struct.unpack_from(f"<{desc[i]}f", again.heads, dedo[i])
         assert [round(h * 2 ** 23) for h in head[mci.HEAD_PAD:]] == mci.sample(again, i)[:desc[i] - mci.HEAD_PAD]
+
+
+@needs_samples
+def test_ride_layout_matches_editor_3_zone_crash():
+    path = next((p for p in SAMPLES if "3 zone" in p.name), None)
+    if path is None:
+        pytest.skip("no 3-zone crash sample")
+    f = mci.read_mci(str(path))
+
+    def zone(a, n=2):   # first n layers, one round robin each, keeps the test fast
+        return [[mci.sample(f, f.get(f"INST0artic{a}veloLay{l}smpidx")[0])] for l in range(n)]
+
+    arts = mci.ride_articulations(zone(0), zone(1), zone(2), choke=zone(3, 1))
+    built = mci.build_instrument(f.get("INST0insnam"), "Ride", arts, f.image, mic="Ride")
+    for a in range(4):
+        for k in ["artn", "chk", "fak", "mut", "minrtb", "minrtt", "maxrtb", "maxrtt"]:
+            assert built.get(f"INST0artic{a}{k}") == f.get(f"INST0artic{a}{k}"), (a, k)
+        assert built.get(f"INST0zoneType{a}") == f.get(f"INST0zoneType{a}")
+    for k in ["minrtl", "maxrtl", "minvol", "maxvol", "minvel"]:
+        assert built.get(f"INST0artic3veloLay0{k}") == f.get(f"INST0artic3veloLay0{k}"), k
+    for k in ["INST0micinf0micpos", "INST0micinf0mict", "INST0instyp"]:
+        assert built.get(k) == f.get(k)

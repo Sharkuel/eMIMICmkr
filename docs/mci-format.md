@@ -1,9 +1,10 @@
 # Pearl Mimic instrument format (.mci)
 
 This describes container version 3, as saved by the Mimic Instrument Editor. It was
-reverse-engineered from five Editor files: a kick, a tom, a rototom, a snare and a ride.
+reverse-engineered from Editor files: a kick, a tom, a rototom, a snare, a ride, two
+crashes saved in the ride layout, and a kick we built that the Editor opened and resaved.
 
-The reference implementation in `tools/mci/mci.py` reads all five files and writes them
+The reference implementation in `tools/mci/mci.py` reads all of them and writes them
 back byte for byte. It also decodes every sample bit-exactly. Anything below marked
 **unknown** has not been confirmed on a Mimic yet.
 
@@ -65,7 +66,7 @@ envelope of pool sample i.
 | `INST0zoneType<a>` | int | Zone type id (table below) |
 | `INST0micnt` | int | Number of mics, always 1 |
 | `INST0micinf0micn` | string | Mic name, e.g. `Kick In`, `Snare Top` |
-| `INST0micinf0micpos`, `INST0micinf0mict` | int | Mic position / type (kick 2/0, ride 5/1, others 0/0) |
+| `INST0micinf0micpos`, `INST0micinf0mict` | int | Mic position / type (kick 2/0, ride 5/1, others 0/0). The Editor resets a kick to 2 when it saves |
 | `INST0micinf0*` floats and bytes | | Mic and envelope settings, identical in all five files |
 | `INST0chkn`, `INST0ecov`, `INST0nznctrl` | int | Always 0 |
 | `INST0insv` | int | Always 1 |
@@ -99,7 +100,21 @@ Zone types seen so far:
 | Ride | Bow (40), Choke Ring (41), Bell (42), Edge (43) |
 | Perc | Main (200), Secondary (201), Additional 1 (202), Additional 2 (203) |
 
-Hi-hats, crashes and other cymbals have not been sampled yet.
+### Cymbals
+
+A 3-zone crash is saved exactly like a ride: `instyp` is `Ride`, the zones are Bow (40),
+Bell (42), Edge (43) and Choke Ring (41), and the mic is `Ride` with micpos 5 and mict 1.
+The Mimic then lists it in its ride menu. Both PAISTE crash files we have use this
+layout, and both use the ride's release times (minrtb 0.5, minrtt 0.5, maxrtb 3.0,
+maxrtt 5.0).
+
+The Choke Ring is normally empty (`numlay` 0, release times all 1.0). It can also carry
+a sample: one layer with one round robin, the same release times as the other zones,
+and `minrtl`/`maxrtl` at the bottom values (0.5 and 3.0). A single layer always takes
+the bottom of the release range.
+
+A 2-zone crash (the Editor's crash menu) has not been seen in a file yet, so its
+`instyp` and zone ids are **unknown**. The Editor cannot make hi-hats at all.
 
 ### Pool keys (one entry per sample)
 
@@ -121,9 +136,12 @@ Hi-hats, crashes and other cymbals have not been sampled yet.
 Pool samples are numbered articulation by articulation, layer by layer, then round
 robin by round robin.
 
-The exact window behind `rmse` is **unknown**. A plain 1024-frame RMS matches its
-length and scale but differs by up to about 25%. It probably feeds the Mimic's dynamics
-or level display rather than playback, so this needs a test on the device.
+The exact formula behind `rmse` is **unknown**, but it depends only on the audio: the
+Editor rewrote identical values when it resaved one of our files. The closest model so
+far is a one-pole follower of |x| with a 1024-frame time constant, read at the end of
+each window and scaled by 1.04. It lands within about 5–10% on every Editor file (a plain
+1024-frame RMS was 12–30% off). It probably feeds the Mimic's dynamics or level display
+rather than playback.
 
 ## Audio
 
@@ -175,11 +193,11 @@ head landed.
 
 ## Open questions for a device test
 
-- Does the Mimic load files written by `tools/mci/mci.py`? `eMIMICmkr TEST Kick.mci`
-  is a rebuilt kick for this test.
+- Does the Mimic itself load files written by `tools/mci/mci.py`? The Editor already
+  does: it opened `eMIMICmkr TEST Kick.mci`, recomputed the velocities, and resaved it.
 - Is audio with non-zero low bytes (true 24-bit) allowed?
 - What exactly do `rmse` and `mrms` drive, and how far off may they be?
 - The sample rate.
-- How does the Editor compute `minvel` and `minvol` from loudness? Ours is a
-  square-root curve on peak RMS.
-- What are the zone types for hi-hat, crash, china and splash?
+- How does the Editor compute `minvel` and `minvol` from loudness ("Calc Velo")? Ours
+  is a square-root curve on peak loudness, close but not identical.
+- What are the type and zone ids of a 2-zone crash, a splash, a china and a hi-hat?

@@ -253,10 +253,20 @@ def encode_head(samples: list[int], desc: int) -> bytes:
 
 
 def rms_envelope(samples: list[int]) -> list[int]:
-    """RMS per 1024 frames. The Editor's exact window is not yet known; this
-    matches its length and scale but not its exact values."""
-    n = len(samples) // 1024
-    return [int(math.sqrt(sum(s * s for s in samples[i * 1024:(i + 1) * 1024]) / 1024)) for i in range(n)]
+    """Loudness envelope, one value per 1024 frames, on the 24-bit scale.
+
+    The Editor's exact formula is not known. A one-pole follower of |x| with a
+    1024-frame time constant, read at the end of each window and scaled by 1.04,
+    lands within about 5-10% of its values on every Editor file we have (a plain
+    1024-frame RMS was 12-30% off).
+    """
+    a = math.exp(-1 / 1024)
+    out, e = [], 0.0
+    for i in range((len(samples) // 1024) * 1024):
+        e = a * e + (1 - a) * abs(samples[i])
+        if i % 1024 == 1023:
+            out.append(int(e * 1.04))
+    return out
 
 
 def sample(f: MciFile, index: int) -> list[int]:
@@ -288,6 +298,31 @@ ZONE_TYPES = {
     "ride bow": 40, "ride choke": 41, "ride bell": 42, "ride edge": 43,
     "perc main": 200, "perc secondary": 201, "perc additional 1": 202, "perc additional 2": 203,
 }
+
+
+# (micpos, mict) the Editor writes per instrument type; anything else gets (0, 0).
+MIC_DEFAULTS = {"Kick": (2, 0), "Ride": (5, 1)}
+
+
+def ride_articulations(bow, bell, edge, choke=None, release_bottom=(0.5, 0.5),
+                       release_top=(3.0, 5.0)) -> list[Articulation]:
+    """Bow/Bell/Edge/Choke Ring in the order the Editor saves a ride.
+
+    This is also how a 3-zone crash is built: the Mimic lists it in the ride menu.
+    Each zone is a list of layers (soft->hard), each a list of round-robin samples.
+    `choke` is optional; the Editor leaves the Choke Ring empty unless given a
+    sample, and then uses the same release times as the other zones.
+    """
+    arts = [Articulation("Bow", ZONE_TYPES["ride bow"], bow, None, release_bottom, release_top),
+            Articulation("Bell", ZONE_TYPES["ride bell"], bell, None, release_bottom, release_top),
+            Articulation("Edge", ZONE_TYPES["ride edge"], edge, None, release_bottom, release_top)]
+    if choke:
+        arts.append(Articulation("Choke Ring", ZONE_TYPES["ride choke"], choke, None,
+                                 release_bottom, release_top, choke=True))
+    else:
+        arts.append(Articulation("Choke Ring", ZONE_TYPES["ride choke"], [], None,
+                                 (1.0, 1.0), (1.0, 1.0), choke=True))
+    return arts
 
 
 def quantize(samples) -> list[int]:
@@ -359,7 +394,7 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
             put(L + "minvel", I32, minvel[l])
             put(L + "minvol", F32, 0.0 if l == 0 else 0.95)
             put(L + "maxvol", F32, 1.0)
-            t = l / (nl - 1) if nl > 1 else 1.0
+            t = l / (nl - 1) if nl > 1 else 0.0   # a single layer takes the bottom values
             lo = art.release_bottom[0] + t * (art.release_bottom[1] - art.release_bottom[0])
             hi = art.release_top[0] + t * (art.release_top[1] - art.release_top[0])
             put(L + "minrtl", F32_ARRAY, [lo] + [1.0] * (RT_ARRAY_LEN - 1))
@@ -402,7 +437,8 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
     for k, v in {"INST0chkn": 0, "INST0ecov": 0, "INST0insv": 1, "INST0micnt": 1,
                  "INST0numart": len(articulations), "INST0nznctrl": 0,
                  "INST0zonecnt": len(articulations),
-                 "INST0micinf0micpos": 0, "INST0micinf0mict": 0}.items():
+                 "INST0micinf0micpos": MIC_DEFAULTS.get(instrument_type, (0, 0))[0],
+                 "INST0micinf0mict": MIC_DEFAULTS.get(instrument_type, (0, 0))[1]}.items():
         put(k, I32, v)
     for k, v in {"att": 0.0, "att2": 0.0, "dmp": 0.0, "dmp2": 0.0, "micp": 0.5, "micpz": 1.0,
                  "micrs": 0.0, "mictn": 0.5, "micv": 1.0, "rel": 1.0, "rel2": 1.0,
