@@ -16,7 +16,7 @@ sorted by how hard each hit was played.
 | Plugin hosting | Skeleton app: find plugins, load one, show its window, render a test hit to WAV |
 | Kit auto-mapping | General MIDI fallback map only |
 | Multi-velocity recording | Single hits work, batch recording not yet |
-| .mci export from the app | Done in Python (`tools/mci`), C++ port not yet |
+| .mci export | Python (`tools/mci`): every instrument type, plus a WAV-folder converter. C++ port not yet |
 
 ## Building the app
 
@@ -46,6 +46,20 @@ beyond Python 3. To run its tests against your own Editor files:
 pip install pytest
 MCI_SAMPLES=/path/to/folder/with/mci python3 -m pytest tests
 ```
+
+### Converting rendered WAVs
+
+`tools/mci/wav2mci.py` turns hits rendered by SDSE or a similar tool into Mimic
+instruments. It reads a zip or a folder laid out one folder per zone, with files named
+`<piece> - <ZONE> - <hit>v<velocity>.wav`:
+
+```
+python3 tools/mci/wav2mci.py "22 ZILDJIAN K Dark Medium Ride.zip" --out ~/Mimic
+```
+
+Cymbals with a bell become 3-zone ride-type instruments, the rest 2-zone cymbals, and a
+choke sound is made from the hardest edge hit when none was recorded. Kicks, snares and
+toms are recognised too. WAVs must be 44.1 kHz.
 
 ## Licensing
 
