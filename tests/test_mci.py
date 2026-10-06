@@ -1,0 +1,61 @@
+"""Checks the .mci reader/writer against real Mimic Instrument Editor files.
+
+Point MCI_SAMPLES at a folder of .mci files:
+    MCI_SAMPLES=/path/to/mci python3 -m pytest tests
+"""
+import os
+import struct
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "mci"))
+import mci  # noqa: E402
+
+SAMPLES = sorted(Path(os.environ.get("MCI_SAMPLES", "")).glob("*.mci")) if os.environ.get("MCI_SAMPLES") else []
+needs_samples = pytest.mark.skipif(not SAMPLES, reason="set MCI_SAMPLES to a folder of .mci files")
+
+
+@needs_samples
+@pytest.mark.parametrize("path", SAMPLES, ids=lambda p: p.name)
+def test_container_round_trips_byte_for_byte(path):
+    original = path.read_bytes()
+    assert mci.write_mci(mci.read_mci(original)) == original
+
+
+@needs_samples
+@pytest.mark.parametrize("path", SAMPLES, ids=lambda p: p.name)
+def test_heads_match_decoded_audio(path):
+    f = mci.read_mci(str(path))
+    desc, dedo = f.get("INST0pool0desc"), f.get("INST0pool0dedo")
+    for i in range(0, f.get("INST0pool0psz"), 7):
+        s = mci.sample(f, i)
+        assert len(s) == f.get("INST0pool0fcnt")[i]
+        head = struct.unpack_from(f"<{desc[i]}f", f.heads, dedo[i])
+        assert all(h == 0 for h in head[:mci.HEAD_PAD])
+        assert [round(h * 2 ** 23) for h in head[mci.HEAD_PAD:]] == s[:desc[i] - mci.HEAD_PAD]
+
+
+@needs_samples
+def test_rebuilt_instrument_keeps_audio_and_structure():
+    path = next(p for p in SAMPLES if mci.read_mci(str(p)).get("INST0numart") == 1)
+    f = mci.read_mci(str(path))
+    layers = []
+    for l in range(f.get("INST0artic0numlay")):
+        idx = [i for i in f.get(f"INST0artic0veloLay{l}smpidx") if i >= 0]
+        layers.append([mci.sample(f, i) for i in idx])
+    art = mci.Articulation(f.get("INST0artic0artn"), f.get("INST0zoneType0"), layers)
+    built = mci.build_instrument(f.get("INST0insnam"), f.get("INST0instyp"), [art], f.image,
+                                 library=f.get("INST0libnam"), mic=f.get("INST0micinf0micn"))
+    again = mci.read_mci(mci.write_mci(built))
+
+    assert set(again.meta) == set(f.meta)
+    assert all(again.meta[k][0] == f.meta[k][0] for k in f.meta), "section types differ"
+    for i in range(f.get("INST0pool0psz")):
+        assert mci.sample(again, i) == mci.sample(f, i)
+    assert again.get("INST0pool0fcnt") == f.get("INST0pool0fcnt")
+    desc, dedo = again.get("INST0pool0desc"), again.get("INST0pool0dedo")
+    for i in range(0, again.get("INST0pool0psz"), 9):
+        head = struct.unpack_from(f"<{desc[i]}f", again.heads, dedo[i])
+        assert [round(h * 2 ** 23) for h in head[mci.HEAD_PAD:]] == mci.sample(again, i)[:desc[i] - mci.HEAD_PAD]
