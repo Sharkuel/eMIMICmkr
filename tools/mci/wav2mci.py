@@ -14,6 +14,12 @@ layer becoming round robins, as in the Editor's own files. Each layer's
 minimum velocity is the lowest velocity recorded in it, so the Mimic follows
 the plugin's own velocity response. Cymbals with no choke recording get one
 made from the hardest edge hit (see mci.make_choke).
+
+Hi-hat folders ("HATS BOW OPEN3", "HATS PEDAL CLOSED", "HATS FOOT SPLASH")
+become a Mimic hi-hat: five openness steps per playing area, picked evenly from
+closed to the most open recording, with 8 layers of up to 32 hits each.
+--hat-as-ride also writes a 3-zone ride-type version (closed bow, bell, edge)
+for 3-zone hi-hat pads.
 """
 from __future__ import annotations
 
@@ -102,16 +108,54 @@ def read_wav(data: bytes) -> list[int]:
     return vals
 
 
+HAT_HEADS = ("HATS", "HAT", "HIHAT", "HIHATS", "HH")
+
+
+def classify_hat(zone_label: str) -> str | None:
+    """'HATS BOW OPEN3' -> 'bow:open3', 'HATS PEDAL CLOSED' -> 'pedal', else None."""
+    words = zone_label.upper().replace("-", " ").split()
+    if not words or re.sub(r"\d+$", "", words[0]) not in HAT_HEADS:
+        return None
+    rest = words[1:]
+    if rest[:1] == ["PEDAL"]:
+        return "pedal"
+    if rest[:2] == ["FOOT", "SPLASH"] or rest[:1] in (["FOOTSPLASH"], ["SPLASH"]):
+        return "footsplash"
+    if len(rest) >= 2 and rest[0] in ("BOW", "TIP", "EDGE", "SHANK", "BELL"):
+        return f"{rest[0].lower()}:{''.join(rest[1:]).lower()}"
+    raise ValueError(f"unknown hi-hat zone {zone_label!r}")
+
+
+def openness_rank(level: str) -> float:
+    """TIGHT < CLOSED < CLOSED2 < OPEN0 < OPEN1 < ...; unknown words sort last."""
+    m = re.fullmatch(r"(tight|closed|half|halfopen|open)(\d*)", level)
+    if not m:
+        return 1000.0
+    n = int(m[2] or 0)
+    return {"tight": -2, "closed": -1 + n / 100, "half": 2.5, "halfopen": 2.5, "open": n}[m[1]]
+
+
+def pick_openness(levels: list[str], steps: int = 5) -> list[str]:
+    """Five levels from closed to open. TIGHT stands in only when there is no CLOSED."""
+    levels = sorted(levels, key=openness_rank)
+    if len(levels) > steps and levels[0] == "tight" and any(l.startswith("closed") for l in levels):
+        levels = levels[1:]
+    if len(levels) >= steps:
+        return [levels[round(i * (len(levels) - 1) / (steps - 1))] for i in range(steps)]
+    return [levels[min(i, len(levels) - 1)] for i in range(steps)]   # repeat the most open
+
+
 def classify(zone_label: str) -> tuple[str, str]:
     """('cymbal', 'bell') from labels like 'RIDE1 BELL', 'SPLASH1 EDGE', 'KICK1'."""
+    hat = classify_hat(zone_label)
+    if hat:
+        return "hat", hat
     words = re.sub(r"\d+", " ", zone_label.upper()).split()
     if not words:
         raise ValueError(f"cannot read zone {zone_label!r}")
     head = words[0]
     if head in ("KICK", "BD", "BASSDRUM"):
         return "kick", "kick"
-    if head in ("HIHAT", "HH", "HAT"):
-        raise ValueError(f"hi-hat folders ({zone_label!r}) are not mapped yet")
     family = ("cymbal" if head in CYMBAL_WORDS else "snare" if head in ("SNARE", "SD")
               else "tom" if head in ("TOM", "FLOORTOM", "RACKTOM") else None)
     if family is None:
@@ -178,13 +222,21 @@ def piece_title(piece: Piece, src: Source) -> str:
     return short
 
 
-def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print) -> mci.MciFile:
+def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
+          hat_as_ride: bool = False) -> mci.MciFile:
     def load(hits_layers):
         return [[read_wav(src.read(h.path)) for h in layer] for layer in hits_layers]
 
-    def zone(key):
-        layers = split_layers(piece.zones[key])
+    def zone(key, max_layers=MAX_LAYERS, max_hits=None):
+        hits = piece.zones[key]
+        if max_hits and len(hits) > max_hits:     # keep an even spread of velocities
+            hits = sorted(hits, key=lambda h: h.velocity)
+            hits = [hits[round(i * (len(hits) - 1) / (max_hits - 1))] for i in range(max_hits)]
+        layers = split_layers(hits, max_layers)
         return load(layers), min_velocities(layers)
+
+    if piece.family == "hat":
+        return build_hat(piece, zone, name, hat_as_ride, log)
 
     if piece.family == "kick":
         audio, vel = zone("kick")
@@ -236,12 +288,62 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print) -
                                 sample_volume=0.599 if kind == "Snare" else 0.52)
 
 
+HAT_LAYERS, HAT_HITS = 8, 32     # per articulation; 17 of them would otherwise run to gigabytes
+
+
+def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print) -> mci.MciFile:
+    """SDSE hi-hat folders -> the factory Hat layout, or a ride-style 3-zone instrument.
+
+    Mapping (inferred, not from Pearl): the Mimic's tip zone plays BOW, its shank
+    zone plays EDGE, and its third (edge) controller zone plays BELL when there is
+    one, else EDGE again.
+    """
+    areas: dict[str, list[str]] = defaultdict(list)
+    for key in piece.zones:
+        if ":" in key:
+            area, level = key.split(":", 1)
+            areas[{"tip": "bow", "shank": "edge"}.get(area, area)].append(level)
+    if "bow" not in areas and "edge" not in areas:
+        raise ValueError(f"{piece.name}: a hi-hat needs BOW or EDGE folders")
+    tip_area = "bow" if "bow" in areas else "edge"
+    shank_area = "edge" if "edge" in areas else "bow"
+    third_area = "bell" if "bell" in areas else shank_area
+
+    def steps(area):
+        levels = pick_openness(areas[area])
+        log(f"  {name}: {area} closed->open uses {', '.join(l.upper() for l in levels)}")
+        return [zone(f"{area}:{l}", HAT_LAYERS, HAT_HITS)[0] for l in levels]
+
+    if as_ride:
+        def closed(area):
+            level = pick_openness(areas[area])[0]
+            return zone(f"{area}:{level}")
+        bow, bow_vel = closed(tip_area)
+        edge, edge_vel = closed(shank_area)
+        bell, bell_vel = closed(third_area)
+        arts = mci.ride_articulations(bow, bell, edge)
+        for art, v in zip(arts, [bow_vel, bell_vel, edge_vel]):
+            art.min_velocities = v
+        return mci.build_instrument(name, "Ride", arts, thumbnail(), mic="Ride")
+
+    tip, shank, edge = steps(tip_area), steps(shank_area), steps(third_area)
+    pedal = zone("pedal", HAT_LAYERS, HAT_HITS)[0] if "pedal" in piece.zones else []
+    splash = zone("footsplash", HAT_LAYERS, HAT_HITS)[0] if "footsplash" in piece.zones else []
+    for missing, got in (("pedal", pedal), ("foot splash", splash)):
+        if not got:
+            log(f"  {name}: no {missing} recording, that zone stays silent")
+    arts, ctrl = mci.hat_articulations(tip, shank, edge, pedal, splash)
+    return mci.build_instrument(name, "Hat", arts, thumbnail(), mic="Hi-Hat", controller_zones=ctrl)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("input", help="a .zip or a folder of rendered WAVs")
     ap.add_argument("--out", help="output folder (default: next to the input)")
     ap.add_argument("--name", help="instrument name (only when the input holds one piece)")
     ap.add_argument("--no-choke", action="store_true", help="leave the Choke Ring empty")
+    ap.add_argument("--hat-as-ride", action="store_true",
+                    help="also build each hi-hat as a 3-zone ride-type instrument (closed; bow, bell, edge)")
     args = ap.parse_args(argv)
 
     src = Source(args.input)
@@ -257,11 +359,15 @@ def main(argv=None) -> int:
         name = args.name if args.name and len(pieces) == 1 else piece_title(piece, src)
         counts = ", ".join(f"{z} {len(h)}" for z, h in piece.zones.items())
         print(f"{name}: {counts}")
-        f = build(piece, src, name, choke=not args.no_choke)
-        path = os.path.join(out_dir, f"{name}.mci")
-        with open(path, "wb") as fh:
-            fh.write(mci.write_mci(f))
-        print(f"  wrote {path} ({f.get('INST0instyp')}, {f.get('INST0pool0psz')} samples)")
+        builds = [(name, False)]
+        if piece.family == "hat" and args.hat_as_ride:
+            builds.append((f"{name} 3-zone", True))
+        for title, as_ride in builds:
+            f = build(piece, src, title, choke=not args.no_choke, hat_as_ride=as_ride)
+            path = os.path.join(out_dir, f"{title}.mci")
+            with open(path, "wb") as fh:
+                fh.write(mci.write_mci(f))
+            print(f"  wrote {path} ({f.get('INST0instyp')}, {f.get('INST0pool0psz')} samples)")
     return 0
 
 

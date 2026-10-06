@@ -59,7 +59,8 @@ python3 tools/mci/wav2mci.py "22 ZILDJIAN K Dark Medium Ride.zip" --out ~/Mimic
 
 Cymbals with a bell become 3-zone ride-type instruments, the rest 2-zone cymbals, and a
 choke sound is made from the hardest edge hit when none was recorded. Kicks, snares and
-toms are recognised too. WAVs must be 44.1 kHz.
+toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--hat-as-ride` for
+a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
 ## Licensing
 
