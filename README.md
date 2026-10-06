@@ -1,6 +1,8 @@
 # eMIMICmkr
 Tool to record samples from your VST libraries, and convert them into the Pearl Mimic.
 
+Pronunciation (e-MIMIC-maker)
+
 eMIMICmkr hosts a drum plugin (Superior Drummer 3, BFD3, Addictive Drums and others)
 and works out which MIDI note plays which kit piece and zone. It records every zone
 at several velocities and builds Pearl Mimic instruments (.mci) with the layers
