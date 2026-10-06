@@ -166,8 +166,9 @@ hi-hats share one layout:
 - Pool samples are shared between articulations: 486 layer slots point to 338 samples.
 
 `hat_articulations()` in `mci.py` builds this layout with one mic and mono audio, and
-`build_instrument(..., controller_zones=...)` writes it. Whether the Mimic accepts a
-`Hat` outside its factory library is **unknown** until a device test.
+`build_instrument(..., controller_zones=...)` writes it. A hi-hat built this way, saved
+as a single .mci, loaded on a Mimic and every articulation played as intended
+(tested 2026-10-06).
 
 ### Factory library files
 
@@ -265,8 +266,7 @@ head landed.
 
 - Does the Mimic itself load files written by `tools/mci/mci.py`? The Editor already
   does: it opened `eMIMICmkr TEST Kick.mci`, recomputed the velocities, and resaved it.
-- Will the Mimic accept a `Hat` instrument we write, and a user library laid out like the
-  factory one?
+- Will the Mimic accept a user library laid out like the factory one (.bin/.drd)?
 - What exactly do `rmse` and `mrms` drive, and how far off may they be?
 - How does the Editor compute `minvel` and `minvol` from loudness ("Calc Velo")? Ours
   is a square-root curve on peak loudness, close but not identical.
