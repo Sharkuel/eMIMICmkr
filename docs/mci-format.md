@@ -113,8 +113,22 @@ a sample: one layer with one round robin, the same release times as the other zo
 and `minrtl`/`maxrtl` at the bottom values (0.5 and 3.0). A single layer always takes
 the bottom of the release range.
 
-A 2-zone crash (the Editor's crash menu) has not been seen in a file yet, so its
-`instyp` and zone ids are **unknown**. The Editor cannot make hi-hats at all.
+A 2-zone crash or splash (the Mimic's crash menu) has `instyp` `Cymbal` and mic `Cymbal`
+(micpos 5, mict 1). It has three zones, edge first: Edge (43), Bow (40) and an empty
+Choke Ring (41), with the same release times as a ride. This comes from four Meinl
+"X-Hihat" files from mimicpro.com, which are hi-hats packaged as 2-zone cymbals (they
+came in a folder named `MeinlXhat.lib`). Those files also set `INST0micinf0isst` to 1,
+where Editor files have 0; what it does is **unknown**.
+
+The Editor cannot make real hi-hats (open/closed with a pedal), and no such file has been
+seen yet.
+
+### Choke samples
+
+A Choke Ring sample can be made from the hardest edge hit, following a template from
+Alexandre: keep the first 0.519 s, boost by ×1.386 (+2.8 dB) for the first 44.6 ms,
+then fade in dB down to ×0.252 (−12 dB) at 0.468 s. `make_choke()` in `mci.py` does
+this. It matches the exported template WAV to within 8% of its peak.
 
 ### Pool keys (one entry per sample)
 
@@ -200,4 +214,4 @@ head landed.
 - The sample rate.
 - How does the Editor compute `minvel` and `minvol` from loudness ("Calc Velo")? Ours
   is a square-root curve on peak loudness, close but not identical.
-- What are the type and zone ids of a 2-zone crash, a splash, a china and a hi-hat?
+- What are the type and zone ids of a real hi-hat (with pedal), and what does `isst` do?

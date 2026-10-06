@@ -81,3 +81,34 @@ def test_ride_layout_matches_editor_3_zone_crash():
         assert built.get(f"INST0artic3veloLay0{k}") == f.get(f"INST0artic3veloLay0{k}"), k
     for k in ["INST0micinf0micpos", "INST0micinf0mict", "INST0instyp"]:
         assert built.get(k) == f.get(k)
+
+
+@needs_samples
+def test_cymbal_layout_matches_2_zone_files():
+    path = next((p for p in SAMPLES if mci.read_mci(str(p)).get("INST0instyp") == "Cymbal"), None)
+    if path is None:
+        pytest.skip("no 2-zone cymbal sample")
+    f = mci.read_mci(str(path))
+
+    def zone(a, n=2):
+        return [[mci.sample(f, f.get(f"INST0artic{a}veloLay{l}smpidx")[0])] for l in range(n)]
+
+    built = mci.build_instrument("t", "Cymbal", mci.cymbal_articulations(zone(0), zone(1)),
+                                 f.image, mic="Cymbal")
+    assert built.get("INST0numart") == f.get("INST0numart") == 3
+    for a in range(3):
+        for k in ["artn", "chk", "fak", "mut", "minrtb", "minrtt", "maxrtb", "maxrtt"]:
+            assert built.get(f"INST0artic{a}{k}") == f.get(f"INST0artic{a}{k}"), (a, k)
+        assert built.get(f"INST0zoneType{a}") == f.get(f"INST0zoneType{a}")
+    for k in ["INST0micinf0micpos", "INST0micinf0mict", "INST0micinf0micn"]:
+        assert built.get(k) == f.get(k)
+
+
+def test_make_choke_follows_the_template():
+    hit = [1.0] * 48000
+    choke = mci.make_choke(hit, rate=48000)
+    assert len(choke) == round(0.5187 * 48000)
+    assert choke[0] == pytest.approx(1.3862, rel=1e-4)
+    assert choke[-1] == pytest.approx(0.2520, rel=1e-4)
+    mid = int((0.0446 + 0.4685) / 2 * 48000)
+    assert choke[mid] == pytest.approx((1.3862 * 0.2520) ** 0.5, rel=1e-2)   # fades in dB

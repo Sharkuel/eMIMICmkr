@@ -295,27 +295,18 @@ ZONE_TYPES = {
     "kick": 1,
     "drum center": 1, "drum rimclick": 2, "drum rimshot": 3,
     "snare sidestick": 4, "snare rimshot side": 5, "snare side": 6,
-    "ride bow": 40, "ride choke": 41, "ride bell": 42, "ride edge": 43,
+    "ride bow": 40, "ride choke": 41, "ride bell": 42, "ride edge": 43,   # also 2-zone cymbals
     "perc main": 200, "perc secondary": 201, "perc additional 1": 202, "perc additional 2": 203,
 }
 
 
 # (micpos, mict) the Editor writes per instrument type; anything else gets (0, 0).
-MIC_DEFAULTS = {"Kick": (2, 0), "Ride": (5, 1)}
+MIC_DEFAULTS = {"Kick": (2, 0), "Ride": (5, 1), "Cymbal": (5, 1)}
 
 
-def ride_articulations(bow, bell, edge, choke=None, release_bottom=(0.5, 0.5),
-                       release_top=(3.0, 5.0)) -> list[Articulation]:
-    """Bow/Bell/Edge/Choke Ring in the order the Editor saves a ride.
-
-    This is also how a 3-zone crash is built: the Mimic lists it in the ride menu.
-    Each zone is a list of layers (soft->hard), each a list of round-robin samples.
-    `choke` is optional; the Editor leaves the Choke Ring empty unless given a
-    sample, and then uses the same release times as the other zones.
-    """
-    arts = [Articulation("Bow", ZONE_TYPES["ride bow"], bow, None, release_bottom, release_top),
-            Articulation("Bell", ZONE_TYPES["ride bell"], bell, None, release_bottom, release_top),
-            Articulation("Edge", ZONE_TYPES["ride edge"], edge, None, release_bottom, release_top)]
+def _cymbal_zones(zones, choke, release_bottom, release_top) -> list[Articulation]:
+    arts = [Articulation(name, ZONE_TYPES[key], layers, None, release_bottom, release_top)
+            for name, key, layers in zones]
     if choke:
         arts.append(Articulation("Choke Ring", ZONE_TYPES["ride choke"], choke, None,
                                  release_bottom, release_top, choke=True))
@@ -323,6 +314,49 @@ def ride_articulations(bow, bell, edge, choke=None, release_bottom=(0.5, 0.5),
         arts.append(Articulation("Choke Ring", ZONE_TYPES["ride choke"], [], None,
                                  (1.0, 1.0), (1.0, 1.0), choke=True))
     return arts
+
+
+def ride_articulations(bow, bell, edge, choke=None, release_bottom=(0.5, 0.5),
+                       release_top=(3.0, 5.0)) -> list[Articulation]:
+    """Bow/Bell/Edge/Choke Ring in the order the Editor saves a ride (type "Ride").
+
+    This is also how a 3-zone crash is built: the Mimic lists it in the ride menu.
+    Each zone is a list of layers (soft->hard), each a list of round-robin samples.
+    `choke` is optional; the Editor leaves the Choke Ring empty unless given a
+    sample, and then uses the same release times as the other zones.
+    """
+    return _cymbal_zones([("Bow", "ride bow", bow), ("Bell", "ride bell", bell),
+                          ("Edge", "ride edge", edge)], choke, release_bottom, release_top)
+
+
+def cymbal_articulations(edge, bow, choke=None, release_bottom=(0.5, 0.5),
+                         release_top=(3.0, 5.0)) -> list[Articulation]:
+    """Edge/Bow/Choke Ring for a 2-zone crash or splash (type "Cymbal").
+
+    The Mimic lists these in its crash menu. Same zone ids as a ride, minus the
+    bell, with the edge first.
+    """
+    return _cymbal_zones([("Edge", "ride edge", edge), ("Bow", "ride bow", bow)],
+                         choke, release_bottom, release_top)
+
+
+def make_choke(samples: list[float], rate: int = 48000, length: float = 0.5187,
+               hold: float = 0.0446, start_gain: float = 1.3862,
+               end: float = 0.4685, end_gain: float = 0.2520) -> list[float]:
+    """Turn an open cymbal hit into a choke (grabbed cymbal) sample.
+
+    Follows Alexandre's Audacity template: keep the first ~0.52 s, boost by
+    start_gain until `hold`, then fade in dB to end_gain at `end`. Pass the
+    hardest edge hit. Times are in seconds.
+    """
+    n = min(len(samples), int(round(length * rate)))
+    g0, g1 = math.log(start_gain), math.log(end_gain)
+    out = []
+    for i in range(n):
+        t = i / rate
+        u = min(max((t - hold) / (end - hold), 0.0), 1.0)
+        out.append(samples[i] * math.exp(g0 + (g1 - g0) * u))
+    return out
 
 
 def quantize(samples) -> list[int]:
@@ -338,7 +372,7 @@ def velocity_thresholds(loudness: list[float]) -> list[int]:
     is not known. Thresholds always rise and stay within 1..127.
     """
     n = len(loudness)
-    top = max(loudness) or 1.0
+    top = max(loudness, default=0.0) or 1.0   # a zone with no layers (empty Choke Ring) is fine
     out = [0] + [int(round(127 * math.sqrt(max(level, 0.0) / top))) for level in loudness[1:]]
     for i in range(1, n):                 # strictly rising...
         out[i] = max(out[i], out[i - 1] + 1)
