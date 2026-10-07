@@ -16,7 +16,7 @@ sorted by how hard each hit was played.
 | Plugin hosting | Find plugins, load one, show its window, listen to any zone |
 | Kit auto-mapping | Editable note map with Roland e-drum and General MIDI presets; reading the plugin's own map not yet |
 | Multi-velocity recording | Batch recording of a whole kit, hi-hat openness on CC4; awaiting a Superior Drummer 3 test |
-| .mci export | Python (`tools/mci`): every instrument type, plus a WAV-folder converter. C++ port not yet |
+| .mci export | In the app (`Source/Core/Mci`, `WavToMci`): every instrument type, plus the WAV-folder converter. `tools/mci` holds the Python reference implementation |
 
 ## Building the app
 
@@ -57,7 +57,7 @@ them as VST3 plugins the app can load.
 
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 24-bit WAVs under `Documents/eMIMICmkr/<kit name>/`, one folder per zone, in
-the layout `wav2mci.py` reads (below). The hi-hat is recorded at five pedal positions
+the layout the converter reads (below). The hi-hat is recorded at five pedal positions
 (CC4 127, 96, 64, 32, 0) on both bow and edge, plus the pedal chick.
 
 `cmake --build build --target eMIMICmkr_tests` builds a check of the recorder against a
@@ -75,18 +75,38 @@ MCI_SAMPLES=/path/to/folder/with/mci python3 -m pytest tests
 
 ### Converting rendered WAVs
 
-`tools/mci/wav2mci.py` turns hits rendered by SDSE or a similar tool into Mimic
-instruments. It reads a zip or a folder laid out one folder per zone, with files named
-`<piece> - <ZONE> - <hit>v<velocity>.wav`:
-
-```
-python3 tools/mci/wav2mci.py "22 ZILDJIAN K Dark Medium Ride.zip" --out ~/Mimic
-```
+The app turns hits rendered by SDSE, a similar tool or its own batch recorder into Mimic
+instruments, with no Python needed (`emk::WavToMci` in `Source/Core`). It reads a zip or a
+folder laid out one folder per zone, with files named
+`<piece> - <ZONE> - <hit>v<velocity>.wav`, and writes one `.mci` per kit piece.
 
 Cymbals with a bell become 3-zone ride-type instruments, the rest 2-zone cymbals, and a
 choke sound is made from the hardest edge hit when none was recorded. Kicks, snares and
 toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--hat-as-ride` for
 a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
+
+The converter also runs headless, from the `eMIMICmkr_mci_tests` console tool:
+
+```
+cmake --build build --target eMIMICmkr_mci_tests
+build/eMIMICmkr_mci_tests_artefacts/Release/eMIMICmkr_mci_tests --convert "22 ZILDJIAN K Dark Medium Ride.zip" --out ~/Mimic
+```
+
+Options: `--out DIR` (default: next to the input), `--name NAME` (only when the input holds
+one piece), `--no-choke` (leave the Choke Ring empty) and `--hat-as-ride`. Run with no
+arguments, the tool checks the codec and builders instead.
+
+`tools/mci/wav2mci.py` stays as the reference implementation and takes the same options:
+
+```
+python3 tools/mci/wav2mci.py "22 ZILDJIAN K Dark Medium Ride.zip" --out ~/Mimic
+```
+
+`tests/test_cpp_converter.py` converts the same inputs with both and checks the files are
+identical: metadata, RAM heads and compressed audio (so far byte for byte). Set
+`EMIMICMKR_MCI_TESTS` to the tool's path when the build folder is not `./build`, and
+`MCI_REAL=1` to include the real SDSE zips in `MCI_SAMPLES` (slow: the Python side takes
+minutes per zip).
 
 ## Licensing
 
