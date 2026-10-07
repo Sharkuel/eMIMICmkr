@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "../Core/BatchRecorder.h"
 #include "../Core/WavToMci.h"
+#include "../Core/HitRenderer.h"
 #include "PluginScanner.h"
 
 namespace
@@ -92,7 +93,12 @@ MainComponent::MainComponent()
     convertButton.onClick = [this] { convertWavFolder(); };
     namesButton.onClick = [this] { readNoteNames(); };
     audioDevices.addAudioCallback (&live);
-    live.onPluginNote = [this] (int note) { learnNote (note); };
+    live.onPluginNote = [this] (int note)
+    {
+        lastPluginNoteMs = juce::Time::getMillisecondCounter();
+        learnNote (note);
+    };
+    live.onHeardHit = [this] (const juce::AudioBuffer<float>& hit, double rate) { learnFromSound (hit, rate); };
     enableMidiInputs();   // the e-kit plays the plugin as soon as one is loaded
     fitLimits.setToggleState (settings->getBoolValue ("fitMimicLimits", true), juce::dontSendNotification);
     fitLimits.onClick = [this]
@@ -121,12 +127,11 @@ MainComponent::MainComponent()
     learnButton.onClick = [this]
     {
         if (! learnButton.getToggleState())
+        {
+            live.setListening (false);
             return setStatus ("Stopped learning notes.");
-        enableMidiInputs();
-        if (table.getSelectedRow() < 0)
-            table.selectRow (0);
-        setStatus ("Hit the pad or key for the selected row; the next row is selected after each one. "
-                   "Click Learn notes again to stop.");
+        }
+        startLearning();
     };
 
     mapChoice.addItem ("Note map: e-drum (Roland TD, hi-hat on CC4)", 1);
@@ -714,6 +719,78 @@ void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
         });
 }
 
+void MainComponent::startLearning()
+{
+    enableMidiInputs();
+    if (table.getSelectedRow() < 0)
+        table.selectRow (0);
+    const juce::String how = "Hit the pad or key for the selected row, or click that drum in the plugin's window; "
+                             "the next row is selected after each one. Click Learn notes again to stop.";
+    if (plugin == nullptr)
+        return setStatus (how);
+
+    // To tell which drum a click in the plugin's window played, hear every note once first.
+    // Short renders: the start of each hit is all the comparison needs.
+    player.setSource (nullptr);
+    auto prints = std::make_shared<std::map<int, emk::SoundPrint>>();
+    emk::HitRenderer::Settings quick;
+    quick.sampleRate = sampleRate;
+    quick.blockSize = blockSize;
+    quick.maxSeconds = emk::SoundPrint::seconds + 0.2;
+    quick.giveUpSeconds = 0.3;
+    quick.silenceSeconds = 0.05;
+    const bool started = runJob ("Listening to every note of " + plugin->getName(),
+                                 [this, prints, quick] (juce::ThreadWithProgressWindow& w)
+    {
+        emk::HitRenderer renderer (*plugin, quick);
+        for (int note = 0; note < 128 && ! w.threadShouldExit(); ++note)
+        {
+            w.setProgress (note / 128.0);
+            w.setStatusMessage ("Note " + juce::String (note));
+            const auto hit = renderer.renderHit (note, 100);
+            if (hit.getNumSamples() > 0)
+                (*prints)[note] = emk::SoundPrint::of (hit.getReadPointer (0), hit.getNumSamples(), quick.sampleRate);
+        }
+        return juce::String();
+    },
+    [this, prints, how] (const juce::String&)
+    {
+        notePrints = *prints;
+        if (! learnButton.getToggleState())
+            return;
+        live.setListening (true);
+        setStatus (how + " (" + juce::String ((int) notePrints.size()) + " notes play a sound.)");
+    });
+    if (! started)
+        learnButton.setToggleState (false, juce::dontSendNotification);
+}
+
+void MainComponent::learnFromSound (const juce::AudioBuffer<float>& hit, double rate)
+{
+    // A plugin that sends its clicks out as MIDI has already said which note it was.
+    if (! learnButton.getToggleState() || notePrints.empty()
+        || juce::Time::getMillisecondCounter() - lastPluginNoteMs < 1000)
+        return;
+    const auto heard = emk::SoundPrint::of (hit.getReadPointer (0), hit.getNumSamples(), rate);
+    float ratio = 0.0f;
+    int note = emk::closestNote (notePrints, heard, &ratio);
+    if (note < 0)
+        return;
+
+    // Notes that play the same sound tie; keep the row's own note when it is one of them.
+    const int row = table.getSelectedRow();
+    if (juce::isPositiveAndBelow (row, kitMap.zones.size()))
+    {
+        const auto current = notePrints.find (kitMap.zones[row].note);
+        if (current != notePrints.end()
+            && heard.distanceTo (current->second) <= heard.distanceTo (notePrints[note]) * 1.1f)
+            note = current->first;
+    }
+    learnNote (note);
+    if (ratio > 0.0f && ratio < 1.15f)
+        setStatus (status.getText() + " That was a close call between two notes: check it with Listen to zone.");
+}
+
 void MainComponent::learnNote (int note)
 {
     const int row = table.getSelectedRow();
@@ -783,15 +860,18 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         delete existing;
         cell = new EditableCell();
     }
-    const int hits = ! zone.enabled ? 0 : fitLimits.getToggleState() ? kitMap.hitsFor (row, maxHits()) : maxHits();
+    const int hits = ! zone.enabled ? 0 : kitMap.hitsFor (row, maxHits(), fitLimits.getToggleState());
     cell->setText (column == colPiece ? zone.piece
                    : column == colZone ? zone.label
                    : column == colNote ? juce::String (zone.note)
-                   : column == colHits ? (hits > 0 ? juce::String (hits) : juce::String())
+                   : column == colHits ? (hits > 0 ? juce::String (hits) + (zone.hits > 0 ? " *" : "") : juce::String())
                    : column == colName ? zone.pluginName
                    : zone.cc4 >= 0 ? juce::String (zone.cc4) : juce::String(),
                    juce::dontSendNotification);
-    cell->setEditable (false, column != colHits && column != colName, false);   // hits and names are read-only
+    cell->setEditable (false, column != colName, false);   // names come from the plugin
+    if (column == colHits)
+        cell->setTooltip ("Double-click to set this zone's hits; * marks a count you set. "
+                          "Clear it to go back to an even share of the piece's wave cells.");
     cell->onEdit = [this, row, column] (const juce::String& text)
     {
         auto& z = kitMap.zones.getReference (row);
@@ -799,6 +879,14 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         if (column == colZone) z.label = text.trim().toUpperCase();
         if (column == colNote) z.note = juce::jlimit (0, 127, text.getIntValue());
         if (column == colCc4) z.cc4 = text.trim().isEmpty() ? -1 : juce::jlimit (0, 127, text.getIntValue());
+        if (column == colHits)
+        {
+            const int wanted = text.getIntValue();
+            const int set = kitMap.setHits (row, juce::jmin (wanted, maxHits()), fitLimits.getToggleState());
+            if (wanted > 0 && set < wanted)
+                setStatus (z.piece + " " + z.label + " can have " + juce::String (set) + " hits: the Mimic's limit "
+                           "for this piece is shared with its other ticked zones (or capped by Most hits per zone).");
+        }
         mapChoice.setSelectedId (0, juce::dontSendNotification);
         saveMap();
         table.updateContent();

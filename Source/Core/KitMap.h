@@ -16,6 +16,7 @@ struct KitZone
     int cc4 = -1;            // hi-hat openness sent before the note (127 closed, 0 open), -1 = none
     bool enabled = true;
     juce::String pluginName; // the plugin's own name for this note, when it gives one
+    int hits = 0;            // hits the user chose for this zone; 0 = share the piece's budget
 };
 
 /** The note-to-zone map for one loaded kit. */
@@ -37,8 +38,14 @@ public:
     /** How many hits to record for zones[index] so the piece fits the Mimic's wave-cell limit
         for its instrument type (kick 64, snare 300, tom 200, cymbal 200, ride 300, percussion 200,
         shared by the piece's ticked zones; one cymbal cell goes to the choke ring). Hi-hat
-        positions get 32, what the converter keeps. Never more than maxHits. */
-    int hitsFor (int index, int maxHits) const;
+        positions get 32, what the converter keeps. Never more than maxHits.
+        A zone the user gave a count keeps it; the piece's other ticked zones share what's left.
+        With fitLimits off, every zone gets its own count or maxHits. */
+    int hitsFor (int index, int maxHits, bool fitLimits = true) const;
+
+    /** Sets zones[index]'s count (0 = back to an even share), held within what the piece can
+        still give it so its other ticked zones keep at least one hit each. Returns the count set. */
+    int setHits (int index, int count, bool fitLimits = true);
 
     /** Guesses the piece and zone label from a plugin's note name, e.g. "Ride 1 Bell" ->
         { "Ride", "RIDE1 BELL" }. Empty when the name isn't recognised. */

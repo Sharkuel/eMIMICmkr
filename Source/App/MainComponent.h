@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Core/KitMap.h"
+#include "../Core/SoundPrint.h"
 #include "LiveHost.h"
 #include <map>
 #include <set>
@@ -36,6 +37,8 @@ private:
     void enableMidiInputs();
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
     void learnNote (int note);
+    void startLearning();
+    void learnFromSound (const juce::AudioBuffer<float>& hit, double rate);
     void readNoteNames();
     void convertWavFolder();
     juce::String buildMimicFiles (const juce::File& input, const juce::File& outDir, bool hatsAsRides,
@@ -68,6 +71,8 @@ private:
     LiveHost live;   // the plugin on the sound card, played from MIDI inputs and its own window
     std::unique_ptr<juce::ThreadWithProgressWindow> job;
     std::unique_ptr<juce::FileChooser> chooser;
+    std::map<int, emk::SoundPrint> notePrints;   // what each note sounds like, to learn clicks in the plugin window
+    juce::uint32 lastPluginNoteMs = 0;
     std::set<int> soundingNotes;   // from the last "Find notes", to flag rows that play nothing
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" },
@@ -82,6 +87,7 @@ private:
     juce::TextEditor kitName, hitsPerZone;
     juce::TableListBox table { {}, this };
     juce::Label status;
+    juce::TooltipWindow tooltips { this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

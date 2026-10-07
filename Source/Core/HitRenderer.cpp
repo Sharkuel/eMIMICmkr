@@ -63,8 +63,9 @@ void HitRenderer::addMainOutput (juce::AudioBuffer<float>& dest, int destStart,
 
 juce::AudioBuffer<float> HitRenderer::renderHit (int note, int velocity, int cc4)
 {
-    if (cc4 >= 0)
+    if (cc4 >= 0 && cc4 != lastCc4)
     {
+        lastCc4 = cc4;
         // Move the pedal first; any sound that makes (a pedal chick) rings out before the hit.
         const int channels = juce::jmax (plugin.getTotalNumInputChannels(), plugin.getTotalNumOutputChannels());
         juce::AudioBuffer<float> buffer (channels, settings.blockSize);

@@ -32,5 +32,6 @@ private:
 
     juce::AudioPluginInstance& plugin;
     Settings settings;
+    int lastCc4 = -1;   // the pedal is only moved when a hit needs a different position
 };
 } // namespace emk

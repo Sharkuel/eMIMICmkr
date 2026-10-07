@@ -30,7 +30,8 @@ target_sources(eMIMICmkr PRIVATE
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp
     Source/Core/Mci.cpp
-    Source/Core/WavToMci.cpp)
+    Source/Core/WavToMci.cpp
+    Source/Core/SoundPrint.cpp)
 
 target_compile_definitions(eMIMICmkr PRIVATE
     JUCE_PLUGINHOST_VST3=1
@@ -43,6 +44,7 @@ target_compile_definitions(eMIMICmkr PRIVATE
 
 target_link_libraries(eMIMICmkr PRIVATE
     juce::juce_audio_utils
+    juce::juce_dsp
     juce::juce_audio_processors
     juce::juce_cryptography
     juce::juce_recommended_config_flags
@@ -57,10 +59,12 @@ target_sources(eMIMICmkr_tests PRIVATE
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp
     Source/Core/Mci.cpp
-    Source/Core/WavToMci.cpp)
+    Source/Core/WavToMci.cpp
+    Source/Core/SoundPrint.cpp)
 target_compile_definitions(eMIMICmkr_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(eMIMICmkr_tests PRIVATE
     juce::juce_audio_devices
+    juce::juce_dsp
     juce::juce_audio_processors
     juce::juce_audio_formats
     juce::juce_cryptography

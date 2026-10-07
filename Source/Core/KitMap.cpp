@@ -90,27 +90,68 @@ juce::String familyOf (const juce::String& label)
 }
 } // namespace
 
-int KitMap::hitsFor (int index, int maxHits) const
+namespace
+{
+bool isHat (const juce::String& family)
+{
+    return family == "HATS" || family == "HAT" || family == "HH" || family == "HIHAT";
+}
+
+/** Wave cells the Mimic gives the instrument this zone belongs to (one cymbal cell is the choke ring). */
+int cellsFor (const KitMap& map, const KitZone& zone)
+{
+    const auto family = familyOf (zone.label);
+    bool hasBell = false;
+    for (const auto& z : map.zones)
+        if (z.enabled && z.piece == zone.piece && z.label.contains ("BELL"))
+            hasBell = true;
+    const bool cymbal = family == "CRASH" || family == "SPLASH" || family == "CHINA" || family == "STACK"
+                        || family == "CYMBAL";
+    return family == "KICK" ? 64
+         : family == "SNARE" ? 300
+         : family == "TOM" ? 200
+         : family == "RIDE" || (cymbal && hasBell) ? 299
+         : cymbal ? 199
+         : 200;
+}
+} // namespace
+
+int KitMap::hitsFor (int index, int maxHits, bool fitLimits) const
 {
     const auto& zone = zones.getReference (index);
-    const auto family = familyOf (zone.label);
-    if (family == "HATS" || family == "HAT" || family == "HH" || family == "HIHAT")
-        return juce::jmin (maxHits, 32);
+    if (! fitLimits)
+        return zone.hits > 0 ? juce::jmin (zone.hits, maxHits) : maxHits;
+    if (isHat (familyOf (zone.label)))
+        return juce::jmin (maxHits, 32, zone.hits > 0 ? zone.hits : 32);
+    if (zone.hits > 0)
+        return juce::jlimit (1, juce::jmin (maxHits, cellsFor (*this, zone)), zone.hits);
 
-    juce::StringArray siblings;   // the ticked zones of this piece
+    // The ticked zones without a count of their own share what the others leave.
+    int taken = 0, sharing = 0;
     for (const auto& z : zones)
         if (z.enabled && z.piece == zone.piece)
-            siblings.add (z.label);
-    const bool hasBell = siblings.joinIntoString (" ").contains ("BELL");
-    const int cells = family == "KICK" ? 64
-                    : family == "SNARE" ? 300
-                    : family == "TOM" ? 200
-                    : family == "RIDE" || ((family == "CRASH" || family == "SPLASH" || family == "CHINA"
-                                            || family == "STACK" || family == "CYMBAL") && hasBell) ? 299
-                    : family == "CRASH" || family == "SPLASH" || family == "CHINA" || family == "STACK"
-                          || family == "CYMBAL" ? 199
-                    : 200;
-    return juce::jlimit (1, maxHits, cells / juce::jmax (1, siblings.size()));
+        {
+            if (z.hits > 0)
+                taken += z.hits;
+            else
+                ++sharing;
+        }
+    return juce::jlimit (1, maxHits, (cellsFor (*this, zone) - taken) / juce::jmax (1, sharing));
+}
+
+int KitMap::setHits (int index, int count, bool fitLimits)
+{
+    auto& zone = zones.getReference (index);
+    if (count <= 0)
+        return zone.hits = 0;
+    if (! fitLimits || isHat (familyOf (zone.label)))
+        return zone.hits = count;
+
+    int othersTaken = 0;   // what the piece's other ticked zones need: their counts, or one hit each
+    for (int i = 0; i < zones.size(); ++i)
+        if (i != index && zones[i].enabled && zones[i].piece == zone.piece)
+            othersTaken += juce::jmax (1, zones[i].hits);
+    return zone.hits = juce::jlimit (1, juce::jmax (1, cellsFor (*this, zone) - othersTaken), count);
 }
 
 std::pair<juce::String, juce::String> KitMap::guessFromName (const juce::String& noteName)
@@ -171,10 +212,11 @@ std::pair<juce::String, juce::String> KitMap::guessFromName (const juce::String&
 
 juce::String KitMap::toCsv() const
 {
-    juce::String out = "piece,zone,note,cc4,record\n";
+    juce::String out = "piece,zone,note,cc4,record,hits\n";
     for (const auto& z : zones)
         out << z.piece.replace (",", " ") << "," << z.label.replace (",", " ") << "," << z.note << ","
-            << (z.cc4 >= 0 ? juce::String (z.cc4) : juce::String()) << "," << (z.enabled ? "yes" : "no") << "\n";
+            << (z.cc4 >= 0 ? juce::String (z.cc4) : juce::String()) << "," << (z.enabled ? "yes" : "no") << ","
+            << (z.hits > 0 ? juce::String (z.hits) : juce::String()) << "\n";
     return out;
 }
 
@@ -192,12 +234,13 @@ KitMap KitMap::fromCsv (const juce::String& text, juce::String& error)
         cells.trim();
         if (cells.size() < 3 || ! cells[2].containsOnly ("0123456789") || cells[2].getIntValue() > 127)
         {
-            error = "Line " + juce::String (lineNumber) + " should read piece,zone,note[,cc4[,record]]: " + line;
+            error = "Line " + juce::String (lineNumber) + " should read piece,zone,note[,cc4[,record[,hits]]]: " + line;
             return {};
         }
         const bool record = cells.size() < 5 || ! cells[4].equalsIgnoreCase ("no");
         m.zones.add ({ cells[0], cells[1].toUpperCase(), cells[2].getIntValue(),
                        cells[3].isNotEmpty() ? juce::jlimit (0, 127, cells[3].getIntValue()) : -1, record });
+        m.zones.getReference (m.zones.size() - 1).hits = juce::jmax (0, cells[5].getIntValue());
     }
     if (m.zones.isEmpty())
         error = "No zones found.";
@@ -211,7 +254,8 @@ juce::ValueTree KitMap::toValueTree() const
     for (const auto& z : zones)
         tree.appendChild (juce::ValueTree ("Zone", { { "piece", z.piece }, { "label", z.label },
                                                      { "note", z.note }, { "cc4", z.cc4 },
-                                                     { "enabled", z.enabled }, { "pluginName", z.pluginName } }),
+                                                     { "enabled", z.enabled }, { "pluginName", z.pluginName },
+                                                     { "hits", z.hits } }),
                           nullptr);
     return tree;
 }
@@ -224,6 +268,8 @@ KitMap KitMap::fromValueTree (const juce::ValueTree& tree)
         m.zones.add ({ z["piece"].toString(), z["label"].toString(), (int) z["note"],
                        (int) z.getProperty ("cc4", -1), (bool) z.getProperty ("enabled", true),
                        z["pluginName"].toString() });
+    for (int i = 0; i < m.zones.size(); ++i)
+        m.zones.getReference (i).hits = (int) tree.getChild (i).getProperty ("hits", 0);
     return m;
 }
 } // namespace emk

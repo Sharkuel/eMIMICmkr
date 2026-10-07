@@ -3,6 +3,7 @@
 // tests/test_batch_recording.py then converts the result with wav2mci.
 #include "../../Source/Core/BatchRecorder.h"
 #include "../../Source/App/LiveHost.h"
+#include "../../Source/Core/SoundPrint.h"
 
 namespace
 {
@@ -51,6 +52,12 @@ public:
                 ++ccCount;
         }
         render (buffer.getNumSamples());
+        if (clickSilently)   // a click in a window that sends no MIDI: only heard
+        {
+            level = 0.8;
+            clickSilently = false;
+            render (buffer.getNumSamples());   // nothing; the next block plays it
+        }
         if (clickNote >= 0)   // a click on a drum in the plugin's window: heard, and sent out as MIDI
         {
             midi.addEvent (juce::MidiMessage::noteOn (10, clickNote, (juce::uint8) 100), 0);
@@ -59,6 +66,7 @@ public:
     }
 
     int ccCount = 0, clickNote = -1;
+    bool clickSilently = false;
 
 private:
     double level = 0.0, decay = 0.0;
@@ -90,6 +98,43 @@ public:
     int getInputLatencyInSamples() override { return 0; }
 };
 
+/** Drum-like test sounds: a low thud, a short noisy crack, a long bright ring. */
+juce::AudioBuffer<float> testHit (int kind, double rate, float gain, int seed)
+{
+    juce::Random random (seed);
+    juce::AudioBuffer<float> b (1, (int) (0.5 * rate));
+    double lowpass = 0.0;
+    for (int i = 0; i < b.getNumSamples(); ++i)
+    {
+        const double t = i / rate;
+        double x = 0.0;
+        if (kind == 0) x = std::sin (juce::MathConstants<double>::twoPi * 60.0 * t) * std::exp (-t / 0.15);
+        if (kind == 1) { lowpass += 0.3 * ((random.nextFloat() * 2.0 - 1.0) - lowpass); x = lowpass * std::exp (-t / 0.05); }
+        if (kind == 2) x = (random.nextFloat() * 2.0 - 1.0) * std::exp (-t / 1.5) * (i % 2 == 0 ? 1.0 : -1.0);
+        b.setSample (0, i, gain * (float) x);
+    }
+    return b;
+}
+
+/** Each test sound, heard at another rate and strength, is matched to its own note. */
+bool soundPrintsMatch()
+{
+    std::map<int, emk::SoundPrint> prints;
+    for (int kind = 0; kind < 3; ++kind)
+    {
+        const auto ref = testHit (kind, 44100.0, 0.9f, 1);
+        prints[36 + kind] = emk::SoundPrint::of (ref.getReadPointer (0), ref.getNumSamples(), 44100.0);
+    }
+    bool ok = true;
+    for (int kind = 0; kind < 3; ++kind)
+    {
+        const auto heard = testHit (kind, 48000.0, 0.3f, 7);
+        ok = ok && emk::closestNote (prints, emk::SoundPrint::of (heard.getReadPointer (0), heard.getNumSamples(), 48000.0)) == 36 + kind;
+    }
+    std::printf ("sound prints %s\n", ok ? "ok" : "WRONG");
+    return ok;
+}
+
 /** Plays a note from "MIDI input" and a click in the plugin's window through LiveHost. */
 bool liveHostWorks()
 {
@@ -116,18 +161,36 @@ bool liveHostWorks()
     float fromInput = 0.0f;
     for (int i = 0; i < 4; ++i)
         fromInput = juce::jmax (fromInput, block());
-    live.deliverNotes();
+    live.poll();
     const bool inputNotLearned = learned.isEmpty();   // pads are learned from the MIDI input itself
 
     drums.clickNote = 42;
     block();
-    live.deliverNotes();
+    live.poll();
+    // A click that only makes a sound is caught for learning by ear.
+    int heard = 0;
+    live.onHeardHit = [&] (const juce::AudioBuffer<float>& hit, double rate)
+    {
+        if (hit.getNumSamples() == (int) (LiveHost::captureSeconds * rate) && hit.getMagnitude (0, 0, 256) > 0.1f)
+            ++heard;
+    };
+    live.setListening (true);
+    for (int i = 0; i < 400; ++i)   // let the earlier hits die away first
+        block();
+    live.poll();
+    const int heardBefore = heard;
+    drums.clickSilently = true;
+    for (int i = 0; i < 80; ++i)
+        block();
+    live.poll();
+
     live.setProcessor (nullptr);
     const float afterStop = block();
 
     const bool ok = before <= 0.0f && fromInput > 0.0f && inputNotLearned && learned == juce::Array<int> { 42 }
-                    && afterStop <= 0.0f;
-    std::printf ("live host %s (input level %.2f, plugin notes %d)\n", ok ? "ok" : "WRONG", fromInput, learned.size());
+                    && afterStop <= 0.0f && heardBefore == 0 && heard == 1;
+    std::printf ("live host %s (input level %.2f, plugin notes %d, clicks heard %d)\n", ok ? "ok" : "WRONG", fromInput,
+                 learned.size(), heard);
     return ok;
 }
 } // namespace
@@ -179,6 +242,29 @@ int main (int argc, char** argv)
                           && hitsOf ("CRASH1 EDGE") == 99 && hitsOf ("RIDE1 BELL") == 99 && hitsOf ("HATS BOW OPEN2") == 32;
     std::printf ("limits %s\n", limitsOk ? "ok" : "WRONG");
 
+    // A count set by hand: the snare's other ticked zones share what's left of its 300.
+    auto chosen = map;
+    int sidestick = -1;
+    for (int i = 0; i < chosen.zones.size(); ++i)
+        if (chosen.zones[i].label == "SNARE1 SIDESTICK")
+            sidestick = i;
+    const int set = chosen.setHits (sidestick, 30);
+    const int tooMany = emk::KitMap (chosen).setHits (sidestick, 1000);
+    auto hitsIn = [&chosen] (const juce::String& label, int most)
+    {
+        for (int i = 0; i < chosen.zones.size(); ++i)
+            if (chosen.zones[i].label == label)
+                return chosen.hitsFor (i, most);
+        return -1;
+    };
+    juce::String err;
+    const bool setOk = set == 30 && hitsIn ("SNARE1 SIDESTICK", 127) == 30 && hitsIn ("SNARE1 CENTER", 200) == 135
+                       && hitsIn ("SNARE1 CENTER", 127) == 127 && tooMany == 298
+                       && emk::KitMap::fromCsv (chosen.toCsv(), err).toCsv() == chosen.toCsv()
+                       && emk::KitMap::fromValueTree (chosen.toValueTree()).zones[sidestick].hits == 30;
+    std::printf ("chosen hits %s (sidestick %d, center %d, at most %d)\n", setOk ? "ok" : "WRONG", set,
+                 hitsIn ("SNARE1 CENTER", 200), tooMany);
+
     // Note names from plugins.
     const auto g1 = emk::KitMap::guessFromName ("Ride 1 Bell"), g2 = emk::KitMap::guessFromName ("Snare Rimshot"),
                g3 = emk::KitMap::guessFromName ("Hats Open 2 Edge"), g4 = emk::KitMap::guessFromName ("Tom 3 Rim");
@@ -192,9 +278,9 @@ int main (int argc, char** argv)
     const bool ok = v == juce::Array<int> { 127, 96, 64, 33, 1 }
                     && emk::BatchRecorder::safeName ("A - B/C") == "A BC"
                     && calls == enabled * settings.hitsPerZone
-                    && plugin.ccCount > 0
+                    && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && liveHostWorks();
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch();
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
