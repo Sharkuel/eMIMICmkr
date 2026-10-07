@@ -53,7 +53,16 @@ them as VST3 plugins the app can load.
    - **Save map...** / **Open map...**: keep a map per library as a .csv file
      (`piece,zone,note,cc4,record`), which a spreadsheet can edit too.
    Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.
-4. Set **Hits per zone** (default 64, spread from velocity 127 down to 1) and **Record kit**.
+4. Set **Most hits per zone** (default 127, spread from velocity 127 down to 1) and **Record kit**.
+   With **Fit Mimic limits** on, each piece records only as many hits as the Mimic can hold
+   (kick 64, snare 300, toms 200, 2-zone cymbals 200, rides 300, shared across the piece's
+   zones); the **Hits** column shows the count per row.
+5. When the recording ends, the app builds the Mimic instruments straight away, into
+   `Documents/eMIMICmkr/<kit name>/Mimic/`.
+
+**Convert WAV folder...** builds Mimic instruments from any folder (or .zip) of WAV hits in
+the layout below, such as a kit you recorded yourself or a WAV library, into a `Mimic`
+folder inside it. **Also make hi-hats as 3-zone rides** adds a ride-type copy of each hi-hat.
 
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 24-bit WAVs under `Documents/eMIMICmkr/<kit name>/`, one folder per zone, in

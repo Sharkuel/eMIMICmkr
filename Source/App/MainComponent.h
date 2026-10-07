@@ -36,6 +36,9 @@ private:
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
     void learnNote (int note);
     void readNoteNames();
+    void convertWavFolder();
+    juce::String buildMimicFiles (const juce::File& input, const juce::File& outDir, bool hatsAsRides,
+                                  juce::ThreadWithProgressWindow&);
     void setLive (bool on);
     int maxHits() const;
     bool runJob (const juce::String& title, std::function<juce::String (juce::ThreadWithProgressWindow&)> work,
@@ -70,8 +73,9 @@ private:
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
-        namesButton { "Read names" }, liveButton { "Play live" };
-    juce::ToggleButton fitLimits { "Fit Mimic limits" };
+        namesButton { "Read names" }, liveButton { "Play live" },
+        convertButton { "Convert WAV folder..." };
+    juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
     juce::TextEditor kitName, hitsPerZone;

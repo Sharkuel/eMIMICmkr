@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "../Core/BatchRecorder.h"
+#include "../Core/WavToMci.h"
 #include "PluginScanner.h"
 
 namespace
@@ -82,9 +83,13 @@ MainComponent::MainComponent()
     audioDevices.addAudioCallback (&player);
 
     for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
-                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &liveButton })
+                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &liveButton, &convertButton })
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
+    addAndMakeVisible (hatAsRide);
+    hatAsRide.setToggleState (settings->getBoolValue ("hatAsRide", false), juce::dontSendNotification);
+    hatAsRide.onClick = [this] { settings->setValue ("hatAsRide", hatAsRide.getToggleState()); };
+    convertButton.onClick = [this] { convertWavFolder(); };
     namesButton.onClick = [this] { readNoteNames(); };
     liveButton.setClickingTogglesState (true);
     liveButton.onClick = [this] { setLive (liveButton.getToggleState()); };
@@ -203,6 +208,12 @@ void MainComponent::resized()
     hitsPerZone.setBounds (row.removeFromRight (44));
     hitsLabel.setBounds (row.removeFromRight (124));
     fitLimits.setBounds (row.removeFromRight (130));
+
+    area.removeFromBottom (8);
+    row = area.removeFromBottom (28);
+    convertButton.setBounds (row.removeFromLeft (160));
+    row.removeFromLeft (12);
+    hatAsRide.setBounds (row.removeFromLeft (280));
 
     area.removeFromTop (12);
     row = area.removeFromTop (28);
@@ -401,20 +412,70 @@ void MainComponent::recordKit()
 
     player.setSource (nullptr);
     const auto map = kitMap;
-    runJob ("Recording " + map.kitName, [this, map, s] (juce::ThreadWithProgressWindow& w)
+    runJob ("Recording " + map.kitName, [this, map, s, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
     {
-        return emk::BatchRecorder::record (*plugin, map, s, outputFolder(), [&w] (const auto& p)
+        auto report = emk::BatchRecorder::record (*plugin, map, s, outputFolder(), [&w] (const auto& p)
         {
             w.setProgress (p.total > 0 ? (double) p.done / p.total : 0.0);
             w.setStatusMessage (p.current + "  (" + juce::String (p.done + 1) + " of " + juce::String (p.total) + ")");
             return ! w.threadShouldExit();
         });
-    },
-    [this, map] (const juce::String& report)
-    {
+        if (w.threadShouldExit())
+            return report;
+
+        // Straight on to the Mimic instruments, next to the recordings.
         const auto kitFolder = outputFolder().getChildFile (emk::BatchRecorder::safeName (map.kitName));
-        setStatus (report + "\nTo make Mimic instruments: python3 tools/mci/wav2mci.py \""
-                   + kitFolder.getFullPathName() + "\"");
+        return report + "\n" + buildMimicFiles (kitFolder, kitFolder.getChildFile ("Mimic"), hats, w);
+    },
+    [this] (const juce::String& report) { setStatus (report); });
+}
+
+juce::String MainComponent::buildMimicFiles (const juce::File& input, const juce::File& outDir, bool hatsAsRides,
+                                             juce::ThreadWithProgressWindow& w)
+{
+    emk::WavToMci::Options options;
+    options.hatAsRide = hatsAsRides;
+    w.setProgress (0.0);
+    w.setStatusMessage ("Building Mimic instruments");
+    outDir.createDirectory();
+    const auto report = emk::WavToMci::run (input, outDir, options,
+        [&w] (const juce::String& line) { w.setStatusMessage (line); },
+        [&w] (double progress)
+        {
+            w.setProgress (progress);
+            return ! w.threadShouldExit();
+        });
+    if (! report.foundHits)
+        return "No recognisable hits found in " + input.getFullPathName() + ".";
+    juce::String text = "Built " + juce::String (report.written.size()) + " Mimic instruments in "
+                        + outDir.getFullPathName() + ".";
+    if (report.stopped)
+        text << " Stopped before the end.";
+    if (! report.failed.isEmpty())
+        text << "\nCould not convert: " << report.failed.joinIntoString ("; ") << ".";
+    if (! report.skipped.isEmpty())
+        text << "\nSkipped " << report.skipped.size() << " files, for example " << report.skipped[0] << ".";
+    return text;
+}
+
+void MainComponent::convertWavFolder()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Pick a folder of WAV hits (or a .zip of one)", outputFolder(), "*.zip");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories
+                              | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto input = fc.getResult();
+        if (input == juce::File())
+            return;
+        const auto outDir = (input.isDirectory() ? input : input.getParentDirectory())
+                                .getChildFile ("Mimic");
+        player.setSource (nullptr);
+        runJob ("Converting " + input.getFileName(), [this, input, outDir, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+        {
+            return buildMimicFiles (input, outDir, hats, w);
+        },
+        [this] (const juce::String& report) { setStatus (report); });
     });
 }
 
@@ -425,13 +486,13 @@ bool MainComponent::runJob (const juce::String& title,
     if (job != nullptr)
         return false;
     setLive (false);
-    for (auto* b : { &recordButton, &auditionButton, &findButton })
+    for (auto* b : { &recordButton, &auditionButton, &findButton, &convertButton })
         b->setEnabled (false);
     job = std::make_unique<Job> (title, std::move (work), [this, done] (const juce::String& report)
     {
         if (plugin != nullptr)
             plugin->prepareToPlay (sampleRate, blockSize);
-        for (auto* b : { &recordButton, &auditionButton, &findButton })
+        for (auto* b : { &recordButton, &auditionButton, &findButton, &convertButton })
             b->setEnabled (true);
         done (report);
         // The job can't delete itself from inside its own callback.
