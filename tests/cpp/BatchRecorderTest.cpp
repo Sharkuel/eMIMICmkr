@@ -44,7 +44,7 @@ public:
         {
             render (m.samplePosition);
             const auto msg = m.getMessage();
-            if (msg.isNoteOn())
+            if (msg.isNoteOn() && msg.getNoteNumber() >= 20 && msg.getNoteNumber() <= 70)   // the "kit"
                 level = msg.getFloatVelocity() * 0.9;
             if (msg.isController() && msg.getControllerNumber() == 4)
                 ++ccCount;
@@ -84,12 +84,25 @@ int main (int argc, char** argv)
     const auto report = emk::BatchRecorder::record (plugin, map, settings, root, [&] (const auto&) { ++calls; return true; });
     std::printf ("%s\nprogress calls %d, CC4 messages %d\n", report.toRawUTF8(), calls, plugin.ccCount);
 
+    // Only notes 20 to 70 make a sound.
+    const auto sounding = emk::BatchRecorder::findSoundingNotes (plugin, settings.render, [] (int) { return true; });
+    std::printf ("sounding notes %d (%d to %d)\n", sounding.size(), sounding.getFirst(), sounding.getLast());
+
+    // Maps survive a trip through a .csv file.
+    juce::String csvError;
+    const auto reread = emk::KitMap::fromCsv (map.toCsv(), csvError);
+    const bool csvOk = csvError.isEmpty() && reread.toCsv() == map.toCsv();
+    juce::String badError;
+    emk::KitMap::fromCsv ("Kick,KICK1,abc", badError);
+
     // Velocity spread and names are what wav2mci depends on.
     const auto v = emk::BatchRecorder::velocities (5, 1, 127);
     const bool ok = v == juce::Array<int> { 127, 96, 64, 33, 1 }
                     && emk::BatchRecorder::safeName ("A - B/C") == "A BC"
                     && calls == enabled * settings.hitsPerZone
-                    && plugin.ccCount > 0;
+                    && plugin.ccCount > 0
+                    && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
+                    && csvOk && badError.isNotEmpty();
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

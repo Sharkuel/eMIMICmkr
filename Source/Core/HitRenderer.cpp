@@ -114,6 +114,8 @@ juce::AudioBuffer<float> HitRenderer::renderHit (int note, int velocity, int cc4
         written += n;
         if (firstSound >= 0 && silentRun >= silentNeeded)
             break;
+        if (firstSound < 0 && written >= settings.giveUpSeconds * settings.sampleRate)
+            break;
     }
 
     if (firstSound < 0)

@@ -57,12 +57,17 @@ KitMap KitMap::rolandEDrum()
         { "Snare", "SNARE1 CENTER", 38 },
         { "Snare", "SNARE1 RIMSHOT", 40 },
         { "Snare", "SNARE1 SIDESTICK", 37 },
-        { "Tom 1", "TOM1 CENTER", 48 },
-        { "Tom 2", "TOM2 CENTER", 45 },
-        { "Tom 3", "TOM3 CENTER", 43 },
-        { "Tom 4", "TOM4 CENTER", 41 },
+        { "Snare", "SNARE1 RIMCLICK", 0, -1, false },
          })
         m.zones.add (zone);
+    // Tom rims. Rimclick (rim only) has no Roland note: set one with Learn, then tick it.
+    for (auto [tom, head, rim] : { std::tuple { 1, 48, 50 }, { 2, 45, 47 }, { 3, 43, 58 }, { 4, 41, 39 } })
+    {
+        const auto piece = "Tom " + juce::String (tom), label = "TOM" + juce::String (tom);
+        m.zones.add ({ piece, label + " CENTER", head });
+        m.zones.add ({ piece, label + " RIMSHOT", rim });
+        m.zones.add ({ piece, label + " RIMCLICK", 0, -1, false });
+    }
     addHat (m, 46, 26, 44);
     for (const auto& zone : std::initializer_list<KitZone> {
         { "Crash 1", "CRASH1 BOW", 49 },
@@ -74,6 +79,41 @@ KitMap KitMap::rolandEDrum()
         { "Ride", "RIDE1 EDGE", 59 },
          })
         m.zones.add (zone);
+    return m;
+}
+
+juce::String KitMap::toCsv() const
+{
+    juce::String out = "piece,zone,note,cc4,record\n";
+    for (const auto& z : zones)
+        out << z.piece.replace (",", " ") << "," << z.label.replace (",", " ") << "," << z.note << ","
+            << (z.cc4 >= 0 ? juce::String (z.cc4) : juce::String()) << "," << (z.enabled ? "yes" : "no") << "\n";
+    return out;
+}
+
+KitMap KitMap::fromCsv (const juce::String& text, juce::String& error)
+{
+    KitMap m;
+    int lineNumber = 0;
+    for (auto line : juce::StringArray::fromLines (text))
+    {
+        ++lineNumber;
+        line = line.trim();
+        if (line.isEmpty() || line.startsWithIgnoreCase ("piece,") || line.startsWithChar ('#'))
+            continue;
+        auto cells = juce::StringArray::fromTokens (line, ",", "\"");
+        cells.trim();
+        if (cells.size() < 3 || ! cells[2].containsOnly ("0123456789") || cells[2].getIntValue() > 127)
+        {
+            error = "Line " + juce::String (lineNumber) + " should read piece,zone,note[,cc4[,record]]: " + line;
+            return {};
+        }
+        const bool record = cells.size() < 5 || ! cells[4].equalsIgnoreCase ("no");
+        m.zones.add ({ cells[0], cells[1].toUpperCase(), cells[2].getIntValue(),
+                       cells[3].isNotEmpty() ? juce::jlimit (0, 127, cells[3].getIntValue()) : -1, record });
+    }
+    if (m.zones.isEmpty())
+        error = "No zones found.";
     return m;
 }
 

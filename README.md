@@ -44,7 +44,15 @@ them as VST3 plugins the app can load.
    MIDI input map to its Roland TD preset (Superior Drummer 3: Settings > MIDI In/E-Drums) so
    the notes match and the hi-hat opens and closes with CC4. Every cell of the table can be
    edited: double-click a note to change it, untick a zone to skip it.
-3. Select a row and **Listen to zone** to check the note plays the right sound.
+3. Select a row and **Listen to zone** to check the note plays the right sound. Other ways to
+   build the map, since each library maps notes its own way:
+   - **Learn notes**: select a row, hit the pad or key on your e-kit or MIDI keyboard, and the
+     note is filled in and the next row selected.
+   - **Find notes**: plays every note once, adds any the map lacks as "?" rows to listen to and
+     name, and shows mapped rows that play nothing in red.
+   - **Save map...** / **Open map...**: keep a map per library as a .csv file
+     (`piece,zone,note,cc4,record`), which a spreadsheet can edit too.
+   Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.
 4. Set **Hits per zone** (default 64, spread from velocity 127 down to 1) and **Record kit**.
 
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,

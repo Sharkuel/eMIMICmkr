@@ -1,10 +1,13 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Core/KitMap.h"
+#include <set>
 
 /** Find drum plugins, load one, map its notes to zones, audition a zone and record the kit. */
 class MainComponent : public juce::Component,
-                      private juce::TableListBoxModel
+                      private juce::TableListBoxModel,
+                      private juce::ChangeListener,
+                      private juce::MidiInputCallback
 {
 public:
     MainComponent();
@@ -23,7 +26,19 @@ private:
     void saveMap();
     void auditionSelectedZone();
     void recordKit();
+    void findNotes();
+    void addZone();
+    void removeZone();
+    void loadMapFile();
+    void saveMapFile();
+    void enableMidiInputs();
+    void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
+    void learnNote (int note);
+    bool runJob (const juce::String& title, std::function<juce::String (juce::ThreadWithProgressWindow&)> work,
+                 std::function<void (const juce::String&)> done);
     void setStatus (const juce::String& text);
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    juce::File scanCrashFile() const;
 
     // TableListBoxModel
     int getNumRows() override;
@@ -42,10 +57,14 @@ private:
     juce::AudioDeviceManager audioDevices;
     juce::AudioSourcePlayer player;
     std::unique_ptr<juce::AudioSource> playing;
-    std::unique_ptr<juce::ThreadWithProgressWindow> recordJob;
+    std::unique_ptr<juce::ThreadWithProgressWindow> job;
+    std::unique_ptr<juce::FileChooser> chooser;
+    std::set<int> soundingNotes;   // from the last "Find notes", to flag rows that play nothing
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" },
-        showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" };
+        showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
+        learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
+        removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." };
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Hits per zone" };
     juce::TextEditor kitName, hitsPerZone;

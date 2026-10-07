@@ -42,6 +42,11 @@ public:
     static juce::String record (juce::AudioPluginInstance&, const KitMap&, const Settings&,
                                 const juce::File& root, std::function<bool (const Progress&)> onProgress);
 
+    /** Plays every MIDI note once at velocity 100 and returns those that make a sound.
+        onProgress gets the note being tried and returns false to stop. */
+    static juce::Array<int> findSoundingNotes (juce::AudioPluginInstance&, HitRenderer::Settings,
+                                               std::function<bool (int note)> onProgress);
+
     static bool writeWav (const juce::File&, const juce::AudioBuffer<float>&, double sampleRate);
 };
 } // namespace emk

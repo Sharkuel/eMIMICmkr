@@ -24,6 +24,11 @@ public:
         BFD3 and Addictive Drums all ship a preset for it. */
     static KitMap rolandEDrum();
 
+    /** Plain-text maps, one zone per line: piece,zone,note,cc4,record. Lets a map made for one
+        library be saved, edited in a spreadsheet and shared. */
+    juce::String toCsv() const;
+    static KitMap fromCsv (const juce::String&, juce::String& error);
+
     juce::ValueTree toValueTree() const;
     static KitMap fromValueTree (const juce::ValueTree&);
 

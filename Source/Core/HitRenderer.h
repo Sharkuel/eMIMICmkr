@@ -15,6 +15,7 @@ public:
         double silenceDb = -80.0;       // a hit ends once it stays below this...
         double silenceSeconds = 0.25;   // ...for this long
         double noteLengthSeconds = 0.1; // time between note-on and note-off
+        double giveUpSeconds = 1.0;     // a note still silent after this plays nothing
     };
 
     HitRenderer (juce::AudioPluginInstance& plugin, Settings settings);

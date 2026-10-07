@@ -40,38 +40,23 @@ public:
     }
 };
 
-class RecordJob final : public juce::ThreadWithProgressWindow
+/** Runs work on a background thread behind a progress window with a Cancel button. */
+class Job final : public juce::ThreadWithProgressWindow
 {
 public:
-    RecordJob (juce::AudioPluginInstance& p, const emk::KitMap& m, emk::BatchRecorder::Settings s, juce::File r)
-        : ThreadWithProgressWindow ("Recording " + m.kitName, true, true), plugin (p), map (m), settings (s), root (r)
+    Job (const juce::String& title, std::function<juce::String (ThreadWithProgressWindow&)> w,
+         std::function<void (const juce::String&)> d)
+        : ThreadWithProgressWindow (title, true, true), work (std::move (w)), done (std::move (d))
     {
     }
 
-    void run() override
-    {
-        report = emk::BatchRecorder::record (plugin, map, settings, root, [this] (const auto& p)
-        {
-            setProgress (p.total > 0 ? (double) p.done / p.total : 0.0);
-            setStatusMessage (p.current + "  (" + juce::String (p.done + 1) + " of " + juce::String (p.total) + ")");
-            return ! threadShouldExit();
-        });
-    }
-
-    void threadComplete (bool) override
-    {
-        if (onDone)
-            onDone (report);
-    }
-
-    juce::String report;
-    std::function<void (const juce::String&)> onDone;
+    void run() override { report = work (*this); }
+    void threadComplete (bool) override { done (report); }
 
 private:
-    juce::AudioPluginInstance& plugin;
-    emk::KitMap map;
-    emk::BatchRecorder::Settings settings;
-    juce::File root;
+    std::function<juce::String (ThreadWithProgressWindow&)> work;
+    std::function<void (const juce::String&)> done;
+    juce::String report;
 };
 } // namespace
 
@@ -85,11 +70,17 @@ MainComponent::MainComponent()
     settings = std::make_unique<juce::PropertiesFile> (settingsOptions);
     if (auto xml = settings->getXmlValue ("knownPlugins"))
         knownPlugins.recreateFromXml (*xml);
+    // A plugin that crashed the last scan is named in this file; it goes on the skip list.
+    juce::PluginDirectoryScanner::applyBlacklistingsFromDeadMansPedal (knownPlugins, scanCrashFile());
+    if (auto xml = knownPlugins.createXml())
+        settings->setValue ("knownPlugins", xml.get());
+    knownPlugins.addChangeListener (this);
 
     audioDevices.initialiseWithDefaultDevices (0, 2);
     audioDevices.addAudioCallback (&player);
 
-    for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton })
+    for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
+                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton })
         addAndMakeVisible (b);
     for (juce::Component* c : { (juce::Component*) &pluginChoice, (juce::Component*) &mapChoice,
                                 (juce::Component*) &kitLabel, (juce::Component*) &kitName,
@@ -102,6 +93,22 @@ MainComponent::MainComponent()
     showButton.onClick = [this] { showPluginWindow(); };
     auditionButton.onClick = [this] { auditionSelectedZone(); };
     recordButton.onClick = [this] { recordKit(); };
+    findButton.onClick = [this] { findNotes(); };
+    addButton.onClick = [this] { addZone(); };
+    removeButton.onClick = [this] { removeZone(); };
+    loadMapButton.onClick = [this] { loadMapFile(); };
+    saveMapButton.onClick = [this] { saveMapFile(); };
+    learnButton.setClickingTogglesState (true);
+    learnButton.onClick = [this]
+    {
+        if (! learnButton.getToggleState())
+            return setStatus ("Stopped learning notes.");
+        enableMidiInputs();
+        if (table.getSelectedRow() < 0)
+            table.selectRow (0);
+        setStatus ("Hit the pad or key for the selected row; the next row is selected after each one. "
+                   "Click Learn notes again to stop.");
+    };
 
     mapChoice.addItem ("Note map: e-drum (Roland TD, hi-hat on CC4)", 1);
     mapChoice.addItem ("Note map: General MIDI", 2);
@@ -132,11 +139,13 @@ MainComponent::MainComponent()
 
     refreshPluginChoices();
     setStatus ("Find your drum plugins to start.");
-    setSize (720, 640);
+    setSize (760, 700);
 }
 
 MainComponent::~MainComponent()
 {
+    knownPlugins.removeChangeListener (this);
+    audioDevices.removeMidiInputDeviceCallback ({}, this);
     audioDevices.removeAudioCallback (&player);
     player.setSource (nullptr);
     pluginWindow = nullptr;
@@ -172,6 +181,17 @@ void MainComponent::resized()
     hitsLabel.setBounds (row.removeFromRight (100));
 
     area.removeFromTop (12);
+    row = area.removeFromTop (28);
+    for (auto* b : { &learnButton, &findButton, &addButton, &removeButton })
+    {
+        b->setBounds (row.removeFromLeft (96));
+        row.removeFromLeft (6);
+    }
+    saveMapButton.setBounds (row.removeFromRight (90));
+    row.removeFromRight (6);
+    loadMapButton.setBounds (row.removeFromRight (90));
+
+    area.removeFromTop (8);
     area.removeFromBottom (8);
     table.setBounds (area);
 }
@@ -207,9 +227,25 @@ void MainComponent::refreshPluginChoices()
             pluginChoice.addItem (d.name + " (" + d.pluginFormatName + ")", id++);
 }
 
+juce::File MainComponent::scanCrashFile() const
+{
+    return settings->getFile().getSiblingFile ("eMIMICmkr-scan-crash.txt");
+}
+
+void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    // Saved after every plugin the scan finds, so a crash later in the scan loses nothing.
+    if (auto xml = knownPlugins.createXml())
+        settings->setValue ("knownPlugins", xml.get());
+    settings->saveIfNeeded();
+    refreshPluginChoices();
+}
+
 void MainComponent::scanPlugins()
 {
-    auto* list = new juce::PluginListComponent (formats, knownPlugins, {}, settings.get(), true);
+    // In-process scanning: a broken plugin can crash the app. The crash file names it, so the
+    // next scan skips it (it shows as blacklisted in the scan window) and carries on.
+    auto* list = new juce::PluginListComponent (formats, knownPlugins, scanCrashFile(), settings.get(), true);
     list->setSize (700, 500);
 
     juce::DialogWindow::LaunchOptions o;
@@ -326,28 +362,204 @@ void MainComponent::recordKit()
     s.render.sampleRate = sampleRate;
     s.render.blockSize = blockSize;
 
-    if (recordJob != nullptr)
-        return;
     player.setSource (nullptr);
-    recordButton.setEnabled (false);
-    auditionButton.setEnabled (false);
-    auto job = std::make_unique<RecordJob> (*plugin, kitMap, s, outputFolder());
-    job->onDone = [this] (const juce::String& report)
+    const auto map = kitMap;
+    runJob ("Recording " + map.kitName, [this, map, s] (juce::ThreadWithProgressWindow& w)
     {
-        plugin->prepareToPlay (sampleRate, blockSize);
-        const auto kitFolder = outputFolder().getChildFile (emk::BatchRecorder::safeName (kitMap.kitName));
+        return emk::BatchRecorder::record (*plugin, map, s, outputFolder(), [&w] (const auto& p)
+        {
+            w.setProgress (p.total > 0 ? (double) p.done / p.total : 0.0);
+            w.setStatusMessage (p.current + "  (" + juce::String (p.done + 1) + " of " + juce::String (p.total) + ")");
+            return ! w.threadShouldExit();
+        });
+    },
+    [this, map] (const juce::String& report)
+    {
+        const auto kitFolder = outputFolder().getChildFile (emk::BatchRecorder::safeName (map.kitName));
         setStatus (report + "\nTo make Mimic instruments: python3 tools/mci/wav2mci.py \""
                    + kitFolder.getFullPathName() + "\"");
-        recordButton.setEnabled (true);
-        auditionButton.setEnabled (true);
+    });
+}
+
+bool MainComponent::runJob (const juce::String& title,
+                            std::function<juce::String (juce::ThreadWithProgressWindow&)> work,
+                            std::function<void (const juce::String&)> done)
+{
+    if (job != nullptr)
+        return false;
+    for (auto* b : { &recordButton, &auditionButton, &findButton })
+        b->setEnabled (false);
+    job = std::make_unique<Job> (title, std::move (work), [this, done] (const juce::String& report)
+    {
+        if (plugin != nullptr)
+            plugin->prepareToPlay (sampleRate, blockSize);
+        for (auto* b : { &recordButton, &auditionButton, &findButton })
+            b->setEnabled (true);
+        done (report);
+        // The job can't delete itself from inside its own callback.
         juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
         {
             if (safe != nullptr)
-                safe->recordJob = nullptr;
+                safe->job = nullptr;
         });
-    };
+    });
     job->launchThread();
-    recordJob = std::move (job);
+    return true;
+}
+
+void MainComponent::findNotes()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
+
+    player.setSource (nullptr);
+    emk::HitRenderer::Settings renderSettings;
+    auto found = std::make_shared<juce::Array<int>>();
+    runJob ("Finding the notes " + plugin->getName() + " plays",
+            [this, renderSettings, found] (juce::ThreadWithProgressWindow& w)
+    {
+        *found = emk::BatchRecorder::findSoundingNotes (*plugin, renderSettings, [&w] (int note)
+        {
+            w.setProgress (note / 128.0);
+            w.setStatusMessage ("Trying note " + juce::String (note) + " of 127");
+            return ! w.threadShouldExit();
+        });
+        return juce::String();
+    },
+    [this, found] (const juce::String&)
+    {
+        soundingNotes = std::set<int> (found->begin(), found->end());
+        std::set<int> mapped;
+        juce::StringArray silent;
+        for (const auto& z : kitMap.zones)
+        {
+            mapped.insert (z.note);
+            if (z.enabled && soundingNotes.count (z.note) == 0)
+                silent.add (z.label + " (" + juce::String (z.note) + ")");
+        }
+        int added = 0;
+        for (int note : *found)
+            if (mapped.count (note) == 0)
+            {
+                kitMap.zones.add ({ "?", "NOTE " + juce::String (note), note, -1, false });
+                ++added;
+            }
+        mapChoice.setSelectedId (0, juce::dontSendNotification);
+        saveMap();
+        table.updateContent();
+        table.repaint();
+
+        juce::String report = "The plugin plays " + juce::String (found->size()) + " notes.";
+        if (added > 0)
+            report << " " << added << " of them weren't in the map and were added at the bottom as \"?\": "
+                   << "listen to each, then name its piece and zone and tick it.";
+        if (! silent.isEmpty())
+            report << "\nSilent rows (shown in red): " << silent.joinIntoString (", ") << ".";
+        setStatus (report);
+    });
+}
+
+void MainComponent::addZone()
+{
+    const int row = table.getSelectedRow();
+    auto zone = juce::isPositiveAndBelow (row, kitMap.zones.size()) ? kitMap.zones[row] : emk::KitZone { "Tom 1", "TOM1 CENTER", 0 };
+    const int at = row >= 0 ? row + 1 : kitMap.zones.size();
+    kitMap.zones.insert (at, zone);
+    mapChoice.setSelectedId (0, juce::dontSendNotification);
+    saveMap();
+    table.updateContent();
+    table.selectRow (at);
+}
+
+void MainComponent::removeZone()
+{
+    const int row = table.getSelectedRow();
+    if (! juce::isPositiveAndBelow (row, kitMap.zones.size()))
+        return setStatus ("Pick a row to remove first.");
+    kitMap.zones.remove (row);
+    mapChoice.setSelectedId (0, juce::dontSendNotification);
+    saveMap();
+    table.updateContent();
+    table.selectRow (juce::jmin (row, kitMap.zones.size() - 1));
+}
+
+void MainComponent::loadMapFile()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Open a note map", outputFolder(), "*.csv");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        juce::String error;
+        auto map = emk::KitMap::fromCsv (file.loadFileAsString(), error);
+        if (error.isNotEmpty())
+            return setStatus ("Could not read " + file.getFileName() + ". " + error);
+        mapChoice.setSelectedId (0, juce::dontSendNotification);
+        useMap (std::move (map));
+        setStatus ("Opened the map " + file.getFileName() + ".");
+    });
+}
+
+void MainComponent::saveMapFile()
+{
+    outputFolder().createDirectory();
+    const auto name = emk::BatchRecorder::safeName (kitMap.kitName.isNotEmpty() ? kitMap.kitName : juce::String ("note map"));
+    chooser = std::make_unique<juce::FileChooser> ("Save the note map", outputFolder().getChildFile (name + ".csv"), "*.csv");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this] (const juce::FileChooser& fc)
+    {
+        auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        file = file.withFileExtension ("csv");
+        setStatus (file.replaceWithText (kitMap.toCsv()) ? "Saved the map to " + file.getFullPathName() + "."
+                                                         : "Could not write " + file.getFullPathName() + ".");
+    });
+}
+
+void MainComponent::enableMidiInputs()
+{
+    // Every connected MIDI input: an e-kit module, a keyboard or a pad controller.
+    audioDevices.removeMidiInputDeviceCallback ({}, this);
+    juce::StringArray names;
+    for (const auto& device : juce::MidiInput::getAvailableDevices())
+    {
+        audioDevices.setMidiInputDeviceEnabled (device.identifier, true);
+        names.add (device.name);
+    }
+    audioDevices.addMidiInputDeviceCallback ({}, this);
+    if (names.isEmpty())
+        setStatus ("No MIDI input found. Connect your e-kit or keyboard, then click Learn notes again.");
+}
+
+void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
+{
+    if (message.isNoteOn())
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this),
+                                          note = message.getNoteNumber()]
+        {
+            if (safe != nullptr)
+                safe->learnNote (note);
+        });
+}
+
+void MainComponent::learnNote (int note)
+{
+    const int row = table.getSelectedRow();
+    if (! learnButton.getToggleState() || ! juce::isPositiveAndBelow (row, kitMap.zones.size()))
+        return;
+    auto& zone = kitMap.zones.getReference (row);
+    zone.note = note;
+    zone.enabled = true;
+    mapChoice.setSelectedId (0, juce::dontSendNotification);
+    saveMap();
+    table.updateContent();
+    table.repaint();
+    setStatus (zone.piece + " " + zone.label + " is now note " + juce::String (note) + ".");
+    if (row + 1 < kitMap.zones.size())
+        table.selectRow (row + 1);
 }
 
 int MainComponent::getNumRows()
@@ -355,10 +567,13 @@ int MainComponent::getNumRows()
     return kitMap.zones.size();
 }
 
-void MainComponent::paintRowBackground (juce::Graphics& g, int, int, int, bool selected)
+void MainComponent::paintRowBackground (juce::Graphics& g, int row, int, int, bool selected)
 {
     if (selected)
         g.fillAll (getLookAndFeel().findColour (juce::TextEditor::highlightColourId));
+    else if (! soundingNotes.empty() && juce::isPositiveAndBelow (row, kitMap.zones.size())
+             && kitMap.zones[row].enabled && soundingNotes.count (kitMap.zones[row].note) == 0)
+        g.fillAll (juce::Colours::red.withAlpha (0.25f));   // this note played nothing in "Find notes"
 }
 
 void MainComponent::paintCell (juce::Graphics&, int, int, int, int, bool)

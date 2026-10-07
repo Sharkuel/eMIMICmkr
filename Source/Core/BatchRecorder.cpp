@@ -30,6 +30,21 @@ juce::File BatchRecorder::fileFor (const juce::File& root, const juce::String& k
     return root.getChildFile (kit).getChildFile (piece).getChildFile (label).getChildFile (name);
 }
 
+juce::Array<int> BatchRecorder::findSoundingNotes (juce::AudioPluginInstance& plugin, HitRenderer::Settings settings,
+                                                   std::function<bool (int)> onProgress)
+{
+    juce::Array<int> found;
+    HitRenderer renderer (plugin, settings);
+    for (int note = 0; note < 128; ++note)
+    {
+        if (! onProgress (note))
+            break;
+        if (renderer.renderHit (note, 100).getNumSamples() > 0)
+            found.add (note);
+    }
+    return found;
+}
+
 bool BatchRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<float>& audio, double sampleRate)
 {
     file.getParentDirectory().createDirectory();
