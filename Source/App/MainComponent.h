@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Core/KitMap.h"
+#include "LiveHost.h"
 #include <map>
 #include <set>
 
@@ -64,7 +65,7 @@ private:
     juce::AudioDeviceManager audioDevices;
     juce::AudioSourcePlayer player;
     std::unique_ptr<juce::AudioSource> playing;
-    juce::AudioProcessorPlayer livePlayer;   // plays the plugin from your e-kit or keyboard
+    LiveHost live;   // the plugin on the sound card, played from MIDI inputs and its own window
     std::unique_ptr<juce::ThreadWithProgressWindow> job;
     std::unique_ptr<juce::FileChooser> chooser;
     std::set<int> soundingNotes;   // from the last "Find notes", to flag rows that play nothing
@@ -73,7 +74,7 @@ private:
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
-        namesButton { "Read names" }, liveButton { "Play live" },
+        namesButton { "Read names" },
         convertButton { "Convert WAV folder..." };
     juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };
     juce::ComboBox pluginChoice, mapChoice;

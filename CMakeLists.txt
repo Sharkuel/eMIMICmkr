@@ -60,6 +60,7 @@ target_sources(eMIMICmkr_tests PRIVATE
     Source/Core/WavToMci.cpp)
 target_compile_definitions(eMIMICmkr_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(eMIMICmkr_tests PRIVATE
+    juce::juce_audio_devices
     juce::juce_audio_processors
     juce::juce_audio_formats
     juce::juce_cryptography

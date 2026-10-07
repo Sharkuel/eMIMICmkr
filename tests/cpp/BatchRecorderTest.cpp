@@ -2,6 +2,7 @@
 // without a commercial plugin. Usage: eMIMICmkr_tests OUTPUT_FOLDER
 // tests/test_batch_recording.py then converts the result with wav2mci.
 #include "../../Source/Core/BatchRecorder.h"
+#include "../../Source/App/LiveHost.h"
 
 namespace
 {
@@ -50,14 +51,85 @@ public:
                 ++ccCount;
         }
         render (buffer.getNumSamples());
+        if (clickNote >= 0)   // a click on a drum in the plugin's window: heard, and sent out as MIDI
+        {
+            midi.addEvent (juce::MidiMessage::noteOn (10, clickNote, (juce::uint8) 100), 0);
+            clickNote = -1;
+        }
     }
 
-    int ccCount = 0;
+    int ccCount = 0, clickNote = -1;
 
 private:
     double level = 0.0, decay = 0.0;
     juce::Random random { 1 };
 };
+/** Just enough of a sound card to drive LiveHost. */
+class FakeDevice final : public juce::AudioIODevice
+{
+public:
+    FakeDevice() : AudioIODevice ("fake", "fake") {}
+    juce::StringArray getOutputChannelNames() override { return { "L", "R" }; }
+    juce::StringArray getInputChannelNames() override { return {}; }
+    juce::Array<double> getAvailableSampleRates() override { return { 48000.0 }; }
+    juce::Array<int> getAvailableBufferSizes() override { return { 256 }; }
+    int getDefaultBufferSize() override { return 256; }
+    juce::String open (const juce::BigInteger&, const juce::BigInteger&, double, int) override { return {}; }
+    void close() override {}
+    bool isOpen() override { return true; }
+    void start (juce::AudioIODeviceCallback*) override {}
+    void stop() override {}
+    bool isPlaying() override { return true; }
+    juce::String getLastError() override { return {}; }
+    int getCurrentBufferSizeSamples() override { return 256; }
+    double getCurrentSampleRate() override { return 48000.0; }
+    int getCurrentBitDepth() override { return 24; }
+    juce::BigInteger getActiveOutputChannels() const override { return 3; }
+    juce::BigInteger getActiveInputChannels() const override { return 0; }
+    int getOutputLatencyInSamples() override { return 0; }
+    int getInputLatencyInSamples() override { return 0; }
+};
+
+/** Plays a note from "MIDI input" and a click in the plugin's window through LiveHost. */
+bool liveHostWorks()
+{
+    FakeDrums drums;
+    FakeDevice device;
+    LiveHost live;
+    juce::Array<int> learned;
+    live.onPluginNote = [&] (int note) { learned.add (note); };
+    live.audioDeviceAboutToStart (&device);
+    live.setProcessor (&drums);
+
+    juce::AudioBuffer<float> out (2, 256);
+    auto block = [&]
+    {
+        out.clear();
+        live.audioDeviceIOCallbackWithContext (nullptr, 0, out.getArrayOfWritePointers(), 2, 256, {});
+        return out.getMagnitude (0, 0, 256) + out.getMagnitude (1, 0, 256);
+    };
+
+    const float before = block();
+    live.handleIncomingMidiMessage (nullptr, juce::MidiMessage::noteOn (10, 36, (juce::uint8) 100)
+                                                 .withTimeStamp (juce::Time::getMillisecondCounterHiRes() * 0.001));
+    juce::Thread::sleep (20);
+    float fromInput = 0.0f;
+    for (int i = 0; i < 4; ++i)
+        fromInput = juce::jmax (fromInput, block());
+    live.deliverNotes();
+    const bool inputNotLearned = learned.isEmpty();   // pads are learned from the MIDI input itself
+
+    drums.clickNote = 42;
+    block();
+    live.deliverNotes();
+    live.setProcessor (nullptr);
+    const float afterStop = block();
+
+    const bool ok = before <= 0.0f && fromInput > 0.0f && inputNotLearned && learned == juce::Array<int> { 42 }
+                    && afterStop <= 0.0f;
+    std::printf ("live host %s (input level %.2f, plugin notes %d)\n", ok ? "ok" : "WRONG", fromInput, learned.size());
+    return ok;
+}
 } // namespace
 
 int main (int argc, char** argv)
@@ -122,7 +194,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && liveHostWorks();
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

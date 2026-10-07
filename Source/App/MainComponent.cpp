@@ -83,7 +83,7 @@ MainComponent::MainComponent()
     audioDevices.addAudioCallback (&player);
 
     for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
-                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &liveButton, &convertButton })
+                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &convertButton })
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
     addAndMakeVisible (hatAsRide);
@@ -91,8 +91,9 @@ MainComponent::MainComponent()
     hatAsRide.onClick = [this] { settings->setValue ("hatAsRide", hatAsRide.getToggleState()); };
     convertButton.onClick = [this] { convertWavFolder(); };
     namesButton.onClick = [this] { readNoteNames(); };
-    liveButton.setClickingTogglesState (true);
-    liveButton.onClick = [this] { setLive (liveButton.getToggleState()); };
+    audioDevices.addAudioCallback (&live);
+    live.onPluginNote = [this] (int note) { learnNote (note); };
+    enableMidiInputs();   // the e-kit plays the plugin as soon as one is loaded
     fitLimits.setToggleState (settings->getBoolValue ("fitMimicLimits", true), juce::dontSendNotification);
     fitLimits.onClick = [this]
     {
@@ -172,6 +173,8 @@ MainComponent::~MainComponent()
     setLive (false);
     knownPlugins.removeChangeListener (this);
     audioDevices.removeMidiInputDeviceCallback ({}, this);
+    audioDevices.removeMidiInputDeviceCallback ({}, &live);
+    audioDevices.removeAudioCallback (&live);
     audioDevices.removeAudioCallback (&player);
     player.setSource (nullptr);
     pluginWindow = nullptr;
@@ -201,8 +204,6 @@ void MainComponent::resized()
     area.removeFromBottom (8);
     row = area.removeFromBottom (32);
     auditionButton.setBounds (row.removeFromLeft (120));
-    row.removeFromLeft (6);
-    liveButton.setBounds (row.removeFromLeft (90));
     recordButton.setBounds (row.removeFromRight (120));
     row.removeFromRight (8);
     hitsPerZone.setBounds (row.removeFromRight (44));
@@ -337,6 +338,7 @@ void MainComponent::loadSelectedPlugin()
         auto program = plugin->getProgramName (plugin->getCurrentProgram()).trim();
         kitName.setText (program.isNotEmpty() ? program : plugin->getName(), juce::sendNotification);
     }
+    setLive (true);
     setStatus ("Loaded " + plugin->getName() + ". Load a kit in the plugin window, set its MIDI map to match "
                "the note map here, then listen to a zone or record the kit.");
     showPluginWindow();
@@ -370,6 +372,7 @@ void MainComponent::auditionSelectedZone()
         hit = renderer.renderHit (zone.note, 100, zone.cc4);
     }
     plugin->prepareToPlay (sampleRate, blockSize);
+    setLive (true);
 
     if (hit.getNumSamples() == 0)
     {
@@ -492,6 +495,7 @@ bool MainComponent::runJob (const juce::String& title,
     {
         if (plugin != nullptr)
             plugin->prepareToPlay (sampleRate, blockSize);
+        setLive (true);
         for (auto* b : { &recordButton, &auditionButton, &findButton, &convertButton })
             b->setEnabled (true);
         done (report);
@@ -667,38 +671,26 @@ void MainComponent::readNoteNames()
 
 void MainComponent::setLive (bool on)
 {
-    // Live playing and offline recording can't share the plugin: recording switches this off.
-    if (! on || plugin == nullptr)
+    // The plugin runs on the sound card whenever it's loaded, except while it renders offline.
+    if (on && plugin != nullptr)
     {
-        audioDevices.removeMidiInputDeviceCallback ({}, &livePlayer);
-        audioDevices.removeAudioCallback (&livePlayer);
-        if (livePlayer.getCurrentProcessor() != nullptr)
-        {
-            livePlayer.setProcessor (nullptr);
-            if (plugin != nullptr)
-                plugin->prepareToPlay (sampleRate, blockSize);
-        }
-        liveButton.setToggleState (false, juce::dontSendNotification);
-        if (on)
-            setStatus ("Load a plugin first.");
+        player.setSource (nullptr);
+        live.setProcessor (plugin.get());
         return;
     }
-    player.setSource (nullptr);
-    plugin->setNonRealtime (false);
-    livePlayer.setProcessor (plugin.get());
-    audioDevices.addAudioCallback (&livePlayer);
-    enableMidiInputs();
-    audioDevices.addMidiInputDeviceCallback ({}, &livePlayer);
-    auto* device = audioDevices.getCurrentAudioDevice();
-    setStatus (device == nullptr ? "No audio output device is open, so live playing can't be heard."
-                                 : "Playing live through " + device->getName() + ": hit your pads or keys. "
-                                   "Click Play live again to stop.");
+    if (live.getProcessor() != nullptr)
+    {
+        live.setProcessor (nullptr);
+        if (plugin != nullptr)
+            plugin->prepareToPlay (sampleRate, blockSize);
+    }
 }
 
 void MainComponent::enableMidiInputs()
 {
     // Every connected MIDI input: an e-kit module, a keyboard or a pad controller.
     audioDevices.removeMidiInputDeviceCallback ({}, this);
+    audioDevices.removeMidiInputDeviceCallback ({}, &live);
     juce::StringArray names;
     for (const auto& device : juce::MidiInput::getAvailableDevices())
     {
@@ -706,7 +698,8 @@ void MainComponent::enableMidiInputs()
         names.add (device.name);
     }
     audioDevices.addMidiInputDeviceCallback ({}, this);
-    if (names.isEmpty())
+    audioDevices.addMidiInputDeviceCallback ({}, &live);
+    if (names.isEmpty() && learnButton.getToggleState())
         setStatus ("No MIDI input found. Connect your e-kit or keyboard, then click Learn notes again.");
 }
 
