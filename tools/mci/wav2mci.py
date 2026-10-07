@@ -40,6 +40,9 @@ import mci  # noqa: E402
 
 SAMPLE_RATE = 44100      # the Mimic's rate, judging by Pearl's factory content
 MAX_LAYERS = 20          # what the Editor's and Pearl's cymbal files use
+# Wave cells the Mimic allows per instrument, shared by its zones (Alexandre, 2026-10-07).
+# Cymbals and rides keep one of theirs for the choke ring. Hi-hats: not known yet.
+CELL_LIMITS = {"Kick": 64, "Snare": 300, "Tom": 200, "Cymbal": 200, "Ride": 300, "Perc": 200}
 HIT_NAME = re.compile(r"^(?P<piece>.+?) - (?P<zone>[^-]+?) - (?P<hit>\d+)v(?P<vel>\d+)\.wav$", re.I)
 
 CYMBAL_WORDS = ("RIDE", "CRASH", "SPLASH", "CHINA", "STACK", "CYMBAL", "BELL")
@@ -186,6 +189,25 @@ def scan(src: Source) -> tuple[list[Piece], list[str]]:
     return list(pieces.values()), skipped
 
 
+def share_cells(budget: int, available: dict[str, int]) -> dict[str, int]:
+    """Split a cell budget across zones as evenly as possible. A zone with fewer hits
+    than its share keeps them all and hands the rest to the others."""
+    out, left, remaining = {}, dict(available), budget
+    while left:
+        each = remaining // len(left)
+        small = {k: v for k, v in left.items() if v <= each}
+        if not small:
+            extra = remaining - each * len(left)
+            for i, k in enumerate(left):
+                out[k] = each + (1 if i < extra else 0)
+            break
+        for k, v in small.items():
+            out[k] = v
+            remaining -= v
+            del left[k]
+    return out
+
+
 def split_layers(hits: list[Hit], max_layers: int = MAX_LAYERS) -> list[list[Hit]]:
     """Softest to hardest, as even as possible, every layer at least one hit."""
     hits = sorted(hits, key=lambda h: h.velocity)
@@ -231,7 +253,8 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         hits = piece.zones[key]
         if max_hits and len(hits) > max_hits:     # keep an even spread of velocities
             hits = sorted(hits, key=lambda h: h.velocity)
-            hits = [hits[round(i * (len(hits) - 1) / (max_hits - 1))] for i in range(max_hits)]
+            hits = ([hits[-1]] if max_hits == 1 else
+                    [hits[round(i * (len(hits) - 1) / (max_hits - 1))] for i in range(max_hits)])
         layers = split_layers(hits, max_layers)
         return load(layers), min_velocities(layers)
 
@@ -239,7 +262,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         return build_hat(piece, zone, name, hat_as_ride, log)
 
     if piece.family == "kick":
-        audio, vel = zone("kick")
+        audio, vel = zone("kick", max_hits=CELL_LIMITS["Kick"])
         arts = [mci.Articulation("Kick", mci.ZONE_TYPES["kick"], audio, vel)]
         return mci.build_instrument(name, "Kick", arts, thumbnail(), mic="Kick")
 
@@ -252,24 +275,27 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         if edge_key != "edge" or bow_key != "bow":
             log(f"  {name}: no {'bow' if bow_key == 'edge' else 'edge'} recording, reusing the "
                 f"{bow_key if bow_key == 'edge' else edge_key} for that zone")
-        edge, edge_vel = zone(edge_key)
-        bow, bow_vel = zone(bow_key)
+        kind = "Ride" if "bell" in z else "Cymbal"
+        shares = share_cells(CELL_LIMITS[kind] - 1, {"edge": len(z[edge_key]), "bow": len(z[bow_key]),
+                                                     **({"bell": len(z["bell"])} if "bell" in z else {})})
+        edge, edge_vel = zone(edge_key, max_hits=shares["edge"])
+        bow, bow_vel = zone(bow_key, max_hits=shares["bow"])
         choke_layers = None
-        if "choke" in z:
-            hits = sorted(z["choke"], key=lambda h: h.velocity)[-mci.MAX_ROUND_ROBINS:]
-            choke_layers = [[read_wav(src.read(h.path)) for h in hits]]
+        if "choke" in z:      # the Mimic keeps one choke-ring cell: the hardest recording
+            hardest = max(z["choke"], key=lambda h: h.velocity)
+            choke_layers = [[read_wav(src.read(hardest.path))]]
         elif choke:
             hardest = max(z[edge_key], key=lambda h: h.velocity)
             x = read_wav(src.read(hardest.path))
             top = 2 ** 23 - 1
             choke_layers = [[[max(-top, min(top, round(v))) for v in mci.make_choke(x, SAMPLE_RATE)]]]
         if "bell" in z:
-            bell, bell_vel = zone("bell")
+            bell, bell_vel = zone("bell", max_hits=shares["bell"])
             arts = mci.ride_articulations(bow, bell, edge, choke=choke_layers)
-            vels, kind = [bow_vel, bell_vel, edge_vel], "Ride"
+            vels = [bow_vel, bell_vel, edge_vel]
         else:
             arts = mci.cymbal_articulations(edge, bow, choke=choke_layers)
-            vels, kind = [edge_vel, bow_vel], "Cymbal"
+            vels = [edge_vel, bow_vel]
         for art, v in zip(arts, vels):
             art.min_velocities = v
         return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind)
@@ -277,13 +303,15 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
     zone_ids = ({"center": "drum center", "rimshot": "drum rimshot", "rimclick": "drum rimclick",
                  "sidestick": "snare sidestick"})
     names = {"center": "Center", "rimshot": "Rimshot", "rimclick": "Rimclick", "sidestick": "Sidestick"}
-    arts = []
-    for key in ["center", "rimclick", "rimshot", "sidestick"]:
-        if key in piece.zones and (key != "sidestick" or piece.family == "snare"):
-            audio, vel = zone(key)
-            label = f"{'Snare' if piece.family == 'snare' else 'Tom'} {names[key]}"
-            arts.append(mci.Articulation(label, mci.ZONE_TYPES[zone_ids[key]], audio, vel))
     kind = "Snare" if piece.family == "snare" else "Tom"
+    keys = [k for k in ["center", "rimclick", "rimshot", "sidestick"]
+            if k in piece.zones and (k != "sidestick" or piece.family == "snare")]
+    shares = share_cells(CELL_LIMITS[kind], {k: len(piece.zones[k]) for k in keys})
+    arts = []
+    for key in keys:
+        audio, vel = zone(key, max_hits=shares[key])
+        label = f"{'Snare' if piece.family == 'snare' else 'Tom'} {names[key]}"
+        arts.append(mci.Articulation(label, mci.ZONE_TYPES[zone_ids[key]], audio, vel))
     return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind,
                                 sample_volume=0.599 if kind == "Snare" else 0.52)
 

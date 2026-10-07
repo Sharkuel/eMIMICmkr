@@ -84,3 +84,12 @@ def test_openness_steps_run_closed_to_open():
     assert wav2mci.pick_openness(["tight", "closed2", "open1", "open2", "open3", "open4", "open5", "open6"]) \
         == ["closed2", "open2", "open3", "open4", "open6"]
     assert wav2mci.pick_openness(["closed", "open1"]) == ["closed", "open1", "open1", "open1", "open1"]
+
+
+def test_share_cells():
+    assert wav2mci.share_cells(199, {"edge": 127, "bow": 127}) == {"edge": 100, "bow": 99}
+    assert wav2mci.share_cells(300, {"center": 127, "rimshot": 127, "sidestick": 40}) == \
+        {"sidestick": 40, "center": 127, "rimshot": 127}
+    assert wav2mci.share_cells(300, {"center": 200, "rimshot": 200, "sidestick": 40}) == \
+        {"sidestick": 40, "center": 130, "rimshot": 130}
+    assert wav2mci.share_cells(64, {"kick": 20}) == {"kick": 20}

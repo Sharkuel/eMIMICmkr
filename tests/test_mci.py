@@ -3,6 +3,7 @@
 Point MCI_SAMPLES at a folder of .mci files:
     MCI_SAMPLES=/path/to/mci python3 -m pytest tests
 """
+import math
 import os
 import struct
 import sys
@@ -104,14 +105,14 @@ def test_cymbal_layout_matches_2_zone_files():
         assert built.get(k) == f.get(k)
 
 
-def test_make_choke_follows_the_template():
-    hit = [1.0] * 48000
-    choke = mci.make_choke(hit, rate=48000)
-    assert len(choke) == round(0.5187 * 48000)
-    assert choke[0] == pytest.approx(1.3862, rel=1e-4)
-    assert choke[-1] == pytest.approx(0.2520, rel=1e-4)
-    mid = int((0.0446 + 0.4685) / 2 * 48000)
-    assert choke[mid] == pytest.approx((1.3862 * 0.2520) ** 0.5, rel=1e-2)   # fades in dB
+def test_make_choke_keeps_only_the_ring():
+    rate = 44100
+    # a loud 30 ms click on top of a quieter ring
+    hit = [(1.0 if i < rate * 0.03 else 0.2) * math.sin(i / 3) for i in range(rate * 5)]
+    choke = mci.make_choke(hit, rate=rate)
+    assert len(choke) == 3 * rate                       # 3 s of ring
+    assert max(abs(v) for v in choke) <= 0.2 + 1e-9     # the click is gone
+    assert choke[0] == 0.0 and abs(choke[-1]) < 1e-3     # faded in and out
 
 
 SPLIT = sorted(p for p in Path(os.environ.get("MCI_SAMPLES", ".")).glob("*.bin")

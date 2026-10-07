@@ -420,22 +420,36 @@ def hat_articulations(tip, shank, edge, pedal, footsplash, transition=None
     return arts, ctrl
 
 
-def make_choke(samples: list[float], rate: int = 48000, length: float = 0.5187,
-               hold: float = 0.0446, start_gain: float = 1.3862,
-               end: float = 0.4685, end_gain: float = 0.2520) -> list[float]:
-    """Turn an open cymbal hit into a choke (grabbed cymbal) sample.
+def make_choke(samples: list[float], rate: int = 44100, length: float = 3.0,
+               fade_in: float = 0.005, fade_out: float = 1.0) -> list[float]:
+    """Turn an open cymbal hit into a choke-ring sample: the ring without the hit.
 
-    Follows Alexandre's Audacity template: keep the first ~0.52 s, boost by
-    start_gain until `hold`, then fade in dB to end_gain at `end`. Pass the
-    hardest edge hit. Times are in seconds.
+    The Mimic plays one choke-ring sample and scales it to how hard the pad is hit,
+    so it should hold only the cymbal's ringing (Alexandre, 2026-10-07). Pass the
+    hardest edge hit: the attack is cut where the envelope, after its peak, first
+    falls 6 dB below it (and at least 20 ms after the peak), then up to `length`
+    seconds of ring are kept, with a short fade in and a fade out at the end.
     """
-    n = min(len(samples), int(round(length * rate)))
-    g0, g1 = math.log(start_gain), math.log(end_gain)
+    n = len(samples)
+    if n == 0:
+        return []
+    win = max(1, int(rate * 0.005))                      # 5 ms |x| average
+    env, acc = [], 0.0
+    for i, v in enumerate(samples):
+        acc += abs(v)
+        if i >= win:
+            acc -= abs(samples[i - win])
+        env.append(acc / min(i + 1, win))
+    peak = max(range(n), key=env.__getitem__)
+    start = min(n - 1, peak + int(rate * 0.02))
+    while start < n - 1 and env[start] > env[peak] * 0.5:
+        start += 1
+    ring = samples[start:start + int(round(length * rate))]
+    m, fi, fo = len(ring), max(1, int(fade_in * rate)), max(1, int(fade_out * rate))
     out = []
-    for i in range(n):
-        t = i / rate
-        u = min(max((t - hold) / (end - hold), 0.0), 1.0)
-        out.append(samples[i] * math.exp(g0 + (g1 - g0) * u))
+    for i, v in enumerate(ring):
+        g = min(1.0, i / fi) * min(1.0, (m - 1 - i) / fo if m > fo else 1.0)
+        out.append(v * g)
     return out
 
 
