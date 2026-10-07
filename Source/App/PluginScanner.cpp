@@ -1,10 +1,40 @@
 #include "PluginScanner.h"
+#include <juce_gui_basics/juce_gui_basics.h>
 
 namespace
 {
 const juce::String scanFlag = "--scan-plugin";
-constexpr int timeoutMs = 300000;   // a big library loading through a bridge can take minutes
-}
+
+/** A small always-on-top window, shown while one plugin is slow to open, with a Skip button. */
+class SkipWindow final : public juce::DocumentWindow
+{
+public:
+    SkipWindow (const juce::String& plugin, std::shared_ptr<std::atomic<bool>> skip)
+        : DocumentWindow ("Slow plugin", juce::Colours::darkgrey, 0)
+    {
+        auto* content = new juce::Component();
+        message.setText ("Still opening " + plugin + "...\nIt is skipped automatically after "
+                             + juce::String (OutOfProcessScanner::timeoutSeconds) + " seconds.",
+                         juce::dontSendNotification);
+        message.setJustificationType (juce::Justification::centred);
+        button.onClick = [skip] { skip->store (true); };
+        content->addAndMakeVisible (message);
+        content->addAndMakeVisible (button);
+        content->setSize (380, 110);
+        message.setBounds (10, 8, 360, 56);
+        button.setBounds (140, 70, 100, 28);
+        setContentOwned (content, true);
+        setUsingNativeTitleBar (true);
+        setAlwaysOnTop (true);
+        centreWithSize (380, 110);
+        setVisible (true);
+    }
+
+private:
+    juce::Label message;
+    juce::TextButton button { "Skip plugin" };
+};
+} // namespace
 
 bool OutOfProcessScanner::findPluginTypesFor (juce::AudioPluginFormat& format,
                                               juce::OwnedArray<juce::PluginDescription>& result,
@@ -18,16 +48,31 @@ bool OutOfProcessScanner::findPluginTypesFor (juce::AudioPluginFormat& format,
         return false;
 
     const auto start = juce::Time::getMillisecondCounter();
+    auto skip = std::make_shared<std::atomic<bool>> (false);
+    auto window = std::make_shared<std::unique_ptr<SkipWindow>>();
+    bool offered = false;
+    const auto name = juce::File::createFileWithoutCheckingPath (fileOrIdentifier).getFileNameWithoutExtension();
+    auto closeWindow = [window] { juce::MessageManager::callAsync ([window] { window->reset(); }); };
+
     while (child.isRunning())
     {
-        if (shouldExit() || juce::Time::getMillisecondCounter() - start > (juce::uint32) timeoutMs)
+        const auto elapsed = juce::Time::getMillisecondCounter() - start;
+        if (! offered && elapsed > (juce::uint32) skipOfferSeconds * 1000)
+        {
+            offered = true;
+            juce::MessageManager::callAsync ([window, name, skip] { *window = std::make_unique<SkipWindow> (name, skip); });
+        }
+        if (shouldExit() || skip->load() || elapsed > (juce::uint32) timeoutSeconds * 1000)
         {
             child.kill();
             output.deleteFile();
-            return shouldExit();   // a timeout counts as a crash (skipped); a cancel does not
+            closeWindow();
+            return shouldExit();   // skipped or timed out: on the skip list; a cancelled scan: not
         }
         juce::Thread::sleep (50);
     }
+    if (offered)
+        closeWindow();
 
     auto xml = juce::parseXML (output);
     output.deleteFile();

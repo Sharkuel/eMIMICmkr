@@ -12,4 +12,7 @@ public:
     /** The child's side: "--scan-plugin <format> <file> <output.xml>" on the command line.
         Returns true when the command line asked for a scan (which then ends the process). */
     static bool runChildScanIfRequested (const juce::String& commandLine);
+
+    static constexpr int timeoutSeconds = 60;   // a plugin still opening after this is skipped
+    static constexpr int skipOfferSeconds = 5;  // after this, a small window offers "Skip"
 };
