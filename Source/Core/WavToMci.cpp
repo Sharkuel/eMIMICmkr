@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <set>
 
 namespace emk
 {
@@ -169,21 +170,72 @@ int WavToMci::cellLimit (const juce::String& type)
     return 0;
 }
 
-WavToMci::Input::Input (const juce::File& file) : root (file)
+juce::File WavToMci::commonFolder (const juce::Array<juce::File>& files)
 {
-    if (file.isDirectory())
+    if (files.isEmpty())
+        return {};
+    for (auto folder = files.getFirst();;)
     {
-        walk (file, file, entries);
-        valid = true;
+        if (std::all_of (files.begin(), files.end(), [&] (const juce::File& f) { return f == folder || f.isAChildOf (folder); }))
+            return folder;
+        const auto parent = folder.getParentDirectory();
+        if (parent == folder)
+            return {};
+        folder = parent;
     }
-    else if (file.existsAsFile())
+}
+
+WavToMci::Input::Input (const juce::File& file) : Input (juce::Array<juce::File> { file })
+{
+}
+
+WavToMci::Input::Input (const juce::Array<juce::File>& files)
+{
+    if (files.size() == 1)
     {
-        zip = std::make_unique<juce::ZipFile> (file);
-        for (int i = 0; i < zip->getNumEntries(); ++i)
-            if (! zip->getEntry (i)->filename.endsWithChar ('/'))
-                entries.add (zip->getEntry (i)->filename);
-        valid = zip->getNumEntries() > 0;
+        const auto& file = root = files.getFirst();
+        if (file.isDirectory())
+        {
+            walk (file, file, entries);
+            valid = true;
+        }
+        else if (file.existsAsFile())
+        {
+            zip = std::make_unique<juce::ZipFile> (file);
+            for (int i = 0; i < zip->getNumEntries(); ++i)
+                if (! zip->getEntry (i)->filename.endsWithChar ('/'))
+                    entries.add (zip->getEntry (i)->filename);
+            valid = zip->getNumEntries() > 0;
+        }
+        return;
     }
+
+    // Several inputs read as one: every file under each folder, named relative to the folder
+    // holding them all, so a ride's BOW, BELL and EDGE folders read like their parent.
+    juce::Array<juce::File> folders;
+    for (const auto& f : files)
+    {
+        if (f.isDirectory())
+            folders.add (f);
+        else
+            skippedInputs.add (f.getFullPathName() + ": "
+                               + (f.existsAsFile() && (f.hasFileExtension ("zip") || juce::ZipFile (f).getNumEntries() > 0)
+                                      ? "a .zip is converted on its own, not with other inputs"
+                                      : "not a folder"));
+    }
+    root = commonFolder (folders);
+    if (folders.isEmpty() || root == juce::File())
+        return;
+    std::set<juce::String> seen;
+    for (const auto& folder : folders)
+    {
+        juce::StringArray names;
+        walk (root, folder, names);
+        for (const auto& n : names)
+            if (seen.insert (n).second)   // a folder given inside another one
+                entries.add (n);
+    }
+    valid = true;
 }
 
 WavToMci::Input::~Input() = default;
@@ -353,6 +405,7 @@ std::pair<juce::String, juce::String> WavToMci::classify (const juce::String& zo
 std::vector<WavToMci::Piece> WavToMci::scan (const Input& src, juce::StringArray& skipped)
 {
     std::vector<Piece> pieces;
+    skipped.addArray (src.skipped());
     for (const auto& name : src.names())
     {
         const auto base = name.replaceCharacter ('\\', '/').fromLastOccurrenceOf ("/", false, false);
@@ -426,6 +479,34 @@ std::vector<WavToMci::Hits> WavToMci::splitLayers (Hits hits, int layersWanted)
         out.emplace_back (hits.begin() + from, hits.begin() + to);
     }
     return out;
+}
+
+int WavToMci::roundRobins (const juce::String& family, const juce::String& zone)
+{
+    if ((zone == "center" || zone == "rimshot") && (family == "snare" || family == "tom"))
+        return family == "snare" ? 6 : 5;
+    return 4;
+}
+
+WavToMci::Hits WavToMci::evenSpread (Hits hits, int count)
+{
+    hits = byVelocity (std::move (hits));
+    Hits picked;
+    if (count == 1)
+        picked.push_back (hits.back());
+    else
+        for (int i = 0; i < count; ++i)
+            picked.push_back (hits[(size_t) roundHalfEven ((double) (i * ((int) hits.size() - 1)) / (double) (count - 1))]);
+    return picked;
+}
+
+std::vector<WavToMci::Hits> WavToMci::roundRobinLayers (Hits hits, int rr)
+{
+    const auto n = (int) hits.size();
+    const int layers = std::min (maxLayers, std::max (1, roundHalfEven ((double) n / (double) rr)));
+    if (n > layers * maxRoundRobins)
+        hits = evenSpread (std::move (hits), layers * maxRoundRobins);
+    return splitLayers (std::move (hits), layers);
 }
 
 std::vector<int> WavToMci::minVelocities (const std::vector<Hits>& layers)
@@ -602,21 +683,13 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         mci::Layers audio;
         std::vector<int> velocities;
     };
-    auto zone = [&] (const juce::String& key, int layers = maxLayers, int maxHits = 0)
+    // rr > 0: about rr round robins per layer (roundRobinLayers), else up to layers layers.
+    auto zone = [&] (const juce::String& key, int layers = maxLayers, int maxHits = 0, int rr = 0)
     {
         auto hits = hitsOf (key);
         if (maxHits > 0 && (int) hits.size() > maxHits)   // keep an even spread of velocities
-        {
-            hits = byVelocity (std::move (hits));
-            Hits picked;
-            if (maxHits == 1)
-                picked.push_back (hits.back());
-            else
-                for (int i = 0; i < maxHits; ++i)
-                    picked.push_back (hits[(size_t) roundHalfEven ((double) (i * ((int) hits.size() - 1)) / (double) (maxHits - 1))]);
-            hits = picked;
-        }
-        const auto split = splitLayers (hits, layers);
+            hits = evenSpread (std::move (hits), maxHits);
+        const auto split = rr > 0 ? roundRobinLayers (std::move (hits), rr) : splitLayers (std::move (hits), layers);
         Zone z;
         for (const auto& layer : split)
         {
@@ -707,7 +780,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
 
     if (piece.family == "kick")
     {
-        auto z = zone ("kick", maxLayers, cellLimit ("Kick"));
+        auto z = zone ("kick", maxLayers, cellLimit ("Kick"), roundRobins ("kick", "kick"));
         mci::Articulation a;
         a.name = "Kick";
         a.zoneType = mci::zoneType ("kick");
@@ -720,21 +793,25 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
 
     if (piece.family == "cymbal")
     {
-        if (! has ("edge") && ! has ("bow"))
-            throw Error ((piece.name + ": a cymbal needs an edge or bow recording").toStdString());
-        const juce::String edgeKey = has ("edge") ? "edge" : "bow";
-        const juce::String bowKey = has ("bow") ? "bow" : "edge";
-        if (edgeKey != "edge" || bowKey != "bow")
+        if (! has ("edge") && ! has ("bow") && ! has ("bell"))
+            throw Error ((piece.name + ": a cymbal needs an edge, bow or bell recording").toStdString());
+        const bool bellOnly = ! has ("edge") && ! has ("bow");   // say a BELL folder converted on its own
+        const juce::String edgeKey = has ("edge") ? "edge" : has ("bow") ? "bow" : "bell";
+        const juce::String bowKey = has ("bow") ? "bow" : has ("edge") ? "edge" : "bell";
+        if (bellOnly)
+            log ("  " + name + ": only a bell recording, using it for the edge and bow zones");
+        else if (edgeKey != "edge" || bowKey != "bow")
             log ("  " + name + ": no " + (bowKey == "edge" ? "bow" : "edge") + " recording, reusing the "
                  + (bowKey == "edge" ? bowKey : edgeKey) + " for that zone");
-        const juce::String kind = has ("bell") ? "Ride" : "Cymbal";
+        const bool hasBell = has ("bell") && ! bellOnly;
+        const juce::String kind = hasBell ? "Ride" : "Cymbal";
         Shares available { { "edge", (int) hitsOf (edgeKey).size() }, { "bow", (int) hitsOf (bowKey).size() } };
-        if (has ("bell"))
+        if (hasBell)
             available.emplace_back ("bell", (int) hitsOf ("bell").size());
         const auto shares = shareCells (cellLimit (kind) - 1, available);   // one cell is the choke ring's
 
-        auto edge = zone (edgeKey, maxLayers, shareOf (shares, "edge"));
-        auto bow = zone (bowKey, maxLayers, shareOf (shares, "bow"));
+        auto edge = zone (edgeKey, maxLayers, shareOf (shares, "edge"), roundRobins ("cymbal", "edge"));
+        auto bow = zone (bowKey, maxLayers, shareOf (shares, "bow"), roundRobins ("cymbal", "bow"));
         mci::Layers chokeLayers;
         if (has ("choke"))   // the Mimic keeps one choke-ring cell: the hardest recording
         {
@@ -752,9 +829,9 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         }
 
         std::vector<mci::Articulation> arts;
-        if (has ("bell"))
+        if (hasBell)
         {
-            auto bell = zone ("bell", maxLayers, shareOf (shares, "bell"));
+            auto bell = zone ("bell", maxLayers, shareOf (shares, "bell"), roundRobins ("cymbal", "bell"));
             arts = mci::rideArticulations (std::move (bow.audio), std::move (bell.audio), std::move (edge.audio), std::move (chokeLayers));
             arts[0].minVelocities = bow.velocities;
             arts[1].minVelocities = bell.velocities;
@@ -786,7 +863,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     {
         if (! has (dz.key) || (juce::String (dz.key) == "sidestick" && ! snare))
             continue;
-        auto z = zone (dz.key, maxLayers, shareOf (shares, dz.key));
+        auto z = zone (dz.key, maxLayers, shareOf (shares, dz.key), roundRobins (piece.family, dz.key));
         mci::Articulation a;
         a.name = kind + " " + dz.label;
         a.zoneType = mci::zoneType (dz.zoneType);
@@ -831,7 +908,21 @@ juce::String WavToMci::convert (const juce::File& input, const juce::File& outDi
     return run (input, outDir, options, std::move (log), std::move (keepGoing)).toString();
 }
 
+juce::String WavToMci::convert (const juce::Array<juce::File>& inputs, const juce::File& outDir, const Options& options,
+                                std::function<void (const juce::String&)> log,
+                                std::function<bool (double)> keepGoing)
+{
+    return run (inputs, outDir, options, std::move (log), std::move (keepGoing)).toString();
+}
+
 WavToMci::Report WavToMci::run (const juce::File& input, const juce::File& outDir, const Options& options,
+                                std::function<void (const juce::String&)> log,
+                                std::function<bool (double)> keepGoing)
+{
+    return run (juce::Array<juce::File> { input }, outDir, options, std::move (log), std::move (keepGoing));
+}
+
+WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juce::File& outDir, const Options& options,
                                 std::function<void (const juce::String&)> log,
                                 std::function<bool (double)> keepGoing)
 {
@@ -841,11 +932,22 @@ WavToMci::Report WavToMci::run (const juce::File& input, const juce::File& outDi
         keepGoing = [] (double) { return true; };
 
     Report report;
-    const Input src (input);
+    if (inputs.isEmpty())
+    {
+        report.failed.add ("nothing to convert");
+        return report;
+    }
+    const Input src (inputs);
     if (! src.isValid())
     {
-        report.failed.add (input.getFullPathName() + ": not a folder or a .zip");
-        log ("cannot read " + input.getFullPathName());
+        report.skipped.addArray (src.skipped());
+        for (const auto& s : report.skipped)
+            log ("skipped " + s);
+        const auto what = inputs.size() == 1 ? inputs.getFirst().getFullPathName() + ": not a folder or a .zip"
+                        : src.skipped().size() < inputs.size() ? juce::String ("the inputs share no folder")
+                                                               : juce::String ("none of the inputs is a folder");
+        report.failed.add (what);
+        log ("cannot read " + what);
         return report;
     }
     auto pieces = scan (src, report.skipped);
@@ -858,7 +960,12 @@ WavToMci::Report WavToMci::run (const juce::File& input, const juce::File& outDi
     }
     report.foundHits = true;
 
-    const auto dir = outDir == juce::File() ? input.getParentDirectory() : outDir;
+    juce::Array<juce::File> parents;   // with no outDir: next to the inputs, in the folder holding them all
+    for (const auto& input : inputs)
+        parents.add (input.getParentDirectory());
+    auto dir = outDir == juce::File() ? commonFolder (parents) : outDir;
+    if (dir == juce::File())
+        dir = inputs.getFirst().getParentDirectory();
     if (! dir.createDirectory())
     {
         report.failed.add ("cannot create " + dir.getFullPathName());

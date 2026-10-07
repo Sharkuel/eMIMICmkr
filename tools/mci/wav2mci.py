@@ -5,12 +5,14 @@ files named "<piece> - <ZONE> - <hit>v<velocity>.wav", for example
 
     22 ZILDJIAN K Dark Medium Ride_DEH9 - RIDE1 BELL - 001v127.wav
 
-Folders that share a piece name become one instrument. Usage:
+Folders that share a piece name become one instrument. Several folders given
+together (say a ride's BOW, BELL and EDGE folders) are read as one input. Usage:
 
-    python3 tools/mci/wav2mci.py INPUT.zip|FOLDER [--out DIR] [--name NAME]
+    python3 tools/mci/wav2mci.py INPUT.zip|FOLDER [FOLDER...] [--out DIR] [--name NAME]
 
-Hits are sorted by velocity and split into up to 20 layers, the rest of each
-layer becoming round robins, as in the Editor's own files. Each layer's
+Hits are sorted by velocity and split into velocity layers of about 4 to 6
+round robins each, depending on the zone (see round_robins), at most 20 layers
+of 6; hits beyond that are thinned out evenly across velocities. Each layer's
 minimum velocity is the lowest velocity recorded in it, so the Mimic follows
 the plugin's own velocity response. Cymbals with no choke recording get one
 made from the hardest edge hit (see mci.make_choke).
@@ -40,6 +42,7 @@ import mci  # noqa: E402
 
 SAMPLE_RATE = 44100      # the Mimic's rate, judging by Pearl's factory content
 MAX_LAYERS = 20          # what the Editor's and Pearl's cymbal files use
+MAX_ROUND_ROBINS = 6     # per velocity layer, for kicks, snares, toms and cymbals
 # Wave cells the Mimic allows per instrument, shared by its zones (Alexandre, 2026-10-07).
 # Cymbals and rides keep one of theirs for the choke ring. Hi-hats: not known yet.
 CELL_LIMITS = {"Kick": 64, "Snare": 300, "Tom": 200, "Cymbal": 200, "Ride": 300, "Perc": 200}
@@ -65,19 +68,51 @@ class Piece:
     zones: dict[str, list[Hit]] = field(default_factory=dict)
 
 
-class Source:
-    """A folder or a zip, read the same way."""
+def common_folder(paths: list[str]) -> str | None:
+    """The deepest folder holding every path (absolute), None when there is none."""
+    try:
+        return os.path.commonpath([os.path.abspath(p) for p in paths])
+    except ValueError:      # different drives, or no paths
+        return None
 
-    def __init__(self, path: str):
-        self.path = path
-        self.zip = zipfile.ZipFile(path) if zipfile.is_zipfile(path) else None
+
+class Source:
+    """A folder or a zip, read the same way. Several inputs are read as one: every file
+    under each folder, named relative to the folder holding them all, so a ride's BOW,
+    BELL and EDGE folders given together read like their parent folder. A zip or anything
+    else that is not a folder among several inputs is skipped (see .skipped)."""
+
+    def __init__(self, paths: str | list[str]):
+        paths = [paths] if isinstance(paths, str) else list(paths)
+        self.skipped: list[str] = []
+        self.zip = None
+        if len(paths) == 1:
+            self.path, self.roots = paths[0], [paths[0]]
+            self.zip = zipfile.ZipFile(paths[0]) if zipfile.is_zipfile(paths[0]) else None
+            return
+        self.roots = []
+        for p in paths:
+            if os.path.isdir(p):
+                self.roots.append(os.path.abspath(p))
+            else:
+                why = ("a .zip is converted on its own, not with other inputs" if zipfile.is_zipfile(p)
+                       else "not a folder")
+                self.skipped.append(f"{os.path.abspath(p)}: {why}")
+        self.path = common_folder(self.roots) if self.roots else None
 
     def names(self) -> list[str]:
         if self.zip:
             return [n for n in self.zip.namelist() if not n.endswith("/")]
-        out = []
-        for root, _, files in os.walk(self.path):
-            out += [os.path.relpath(os.path.join(root, f), self.path) for f in files]
+        if self.path is None:
+            return []
+        out, seen = [], set()
+        for top in self.roots:
+            for root, _, files in os.walk(top):
+                for f in files:
+                    name = os.path.relpath(os.path.join(root, f), self.path)
+                    if name not in seen:      # a folder given inside another one
+                        seen.add(name)
+                        out.append(name)
         return out
 
     def read(self, name: str) -> bytes:
@@ -171,7 +206,7 @@ def classify(zone_label: str) -> tuple[str, str]:
 
 def scan(src: Source) -> tuple[list[Piece], list[str]]:
     pieces: dict[str, Piece] = {}
-    skipped = []
+    skipped = list(src.skipped)
     for name in src.names():
         base = name.replace("\\", "/").rsplit("/", 1)[-1]
         m = HIT_NAME.match(base)
@@ -216,6 +251,31 @@ def split_layers(hits: list[Hit], max_layers: int = MAX_LAYERS) -> list[list[Hit
     return [hits[bounds[i]:bounds[i + 1]] for i in range(n)]
 
 
+def round_robins(family: str, zone: str) -> int:
+    """Round robins wanted per velocity layer: 6 on snare heads and rims, 5 on toms', 4
+    elsewhere (kick, sidestick, rimclick, cymbals)."""
+    if zone in ("center", "rimshot") and family in ("snare", "tom"):
+        return 6 if family == "snare" else 5
+    return 4
+
+
+def even_spread(hits: list[Hit], count: int) -> list[Hit]:
+    """count of the hits, spread evenly over their velocities (the hardest alone for 1)."""
+    hits = sorted(hits, key=lambda h: h.velocity)
+    if count == 1:
+        return [hits[-1]]
+    return [hits[round(i * (len(hits) - 1) / (count - 1))] for i in range(count)]
+
+
+def round_robin_layers(hits: list[Hit], rr: int) -> list[list[Hit]]:
+    """About rr round robins per velocity layer: round(n / rr) layers, 1 to MAX_LAYERS.
+    Hits beyond MAX_ROUND_ROBINS per layer are thinned out evenly across velocities."""
+    layers = min(MAX_LAYERS, max(1, round(len(hits) / rr)))
+    if len(hits) > layers * MAX_ROUND_ROBINS:
+        hits = even_spread(hits, layers * MAX_ROUND_ROBINS)
+    return split_layers(hits, layers)
+
+
 def min_velocities(layers: list[list[Hit]]) -> list[int]:
     out = [0] + [layer[0].velocity for layer in layers[1:]]
     for i in range(1, len(out)):          # strictly rising, as the Mimic expects
@@ -249,37 +309,39 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
     def load(hits_layers):
         return [[read_wav(src.read(h.path)) for h in layer] for layer in hits_layers]
 
-    def zone(key, max_layers=MAX_LAYERS, max_hits=None):
+    def zone(key, max_layers=MAX_LAYERS, max_hits=None, rr=None):
         hits = piece.zones[key]
         if max_hits and len(hits) > max_hits:     # keep an even spread of velocities
-            hits = sorted(hits, key=lambda h: h.velocity)
-            hits = ([hits[-1]] if max_hits == 1 else
-                    [hits[round(i * (len(hits) - 1) / (max_hits - 1))] for i in range(max_hits)])
-        layers = split_layers(hits, max_layers)
+            hits = even_spread(hits, max_hits)
+        layers = round_robin_layers(hits, rr) if rr else split_layers(hits, max_layers)
         return load(layers), min_velocities(layers)
 
     if piece.family == "hat":
         return build_hat(piece, zone, name, hat_as_ride, log)
 
     if piece.family == "kick":
-        audio, vel = zone("kick", max_hits=CELL_LIMITS["Kick"])
+        audio, vel = zone("kick", max_hits=CELL_LIMITS["Kick"], rr=round_robins("kick", "kick"))
         arts = [mci.Articulation("Kick", mci.ZONE_TYPES["kick"], audio, vel)]
         return mci.build_instrument(name, "Kick", arts, thumbnail(), mic="Kick")
 
     if piece.family == "cymbal":
         z = piece.zones
-        if "edge" not in z and "bow" not in z:
-            raise ValueError(f"{piece.name}: a cymbal needs an edge or bow recording")
-        edge_key = "edge" if "edge" in z else "bow"
-        bow_key = "bow" if "bow" in z else "edge"
-        if edge_key != "edge" or bow_key != "bow":
+        if "edge" not in z and "bow" not in z and "bell" not in z:
+            raise ValueError(f"{piece.name}: a cymbal needs an edge, bow or bell recording")
+        bell_only = "edge" not in z and "bow" not in z     # say a BELL folder converted on its own
+        edge_key = "edge" if "edge" in z else "bow" if "bow" in z else "bell"
+        bow_key = "bow" if "bow" in z else "edge" if "edge" in z else "bell"
+        if bell_only:
+            log(f"  {name}: only a bell recording, using it for the edge and bow zones")
+        elif edge_key != "edge" or bow_key != "bow":
             log(f"  {name}: no {'bow' if bow_key == 'edge' else 'edge'} recording, reusing the "
                 f"{bow_key if bow_key == 'edge' else edge_key} for that zone")
-        kind = "Ride" if "bell" in z else "Cymbal"
+        has_bell = "bell" in z and not bell_only
+        kind = "Ride" if has_bell else "Cymbal"
         shares = share_cells(CELL_LIMITS[kind] - 1, {"edge": len(z[edge_key]), "bow": len(z[bow_key]),
-                                                     **({"bell": len(z["bell"])} if "bell" in z else {})})
-        edge, edge_vel = zone(edge_key, max_hits=shares["edge"])
-        bow, bow_vel = zone(bow_key, max_hits=shares["bow"])
+                                                     **({"bell": len(z["bell"])} if has_bell else {})})
+        edge, edge_vel = zone(edge_key, max_hits=shares["edge"], rr=round_robins("cymbal", "edge"))
+        bow, bow_vel = zone(bow_key, max_hits=shares["bow"], rr=round_robins("cymbal", "bow"))
         choke_layers = None
         if "choke" in z:      # the Mimic keeps one choke-ring cell: the hardest recording
             hardest = max(z["choke"], key=lambda h: h.velocity)
@@ -289,8 +351,8 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
             x = read_wav(src.read(hardest.path))
             top = 2 ** 23 - 1
             choke_layers = [[[max(-top, min(top, round(v))) for v in mci.make_choke(x, SAMPLE_RATE)]]]
-        if "bell" in z:
-            bell, bell_vel = zone("bell", max_hits=shares["bell"])
+        if has_bell:
+            bell, bell_vel = zone("bell", max_hits=shares["bell"], rr=round_robins("cymbal", "bell"))
             arts = mci.ride_articulations(bow, bell, edge, choke=choke_layers)
             vels = [bow_vel, bell_vel, edge_vel]
         else:
@@ -309,7 +371,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
     shares = share_cells(CELL_LIMITS[kind], {k: len(piece.zones[k]) for k in keys})
     arts = []
     for key in keys:
-        audio, vel = zone(key, max_hits=shares[key])
+        audio, vel = zone(key, max_hits=shares[key], rr=round_robins(piece.family, key))
         label = f"{'Snare' if piece.family == 'snare' else 'Tom'} {names[key]}"
         arts.append(mci.Articulation(label, mci.ZONE_TYPES[zone_ids[key]], audio, vel))
     return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind,
@@ -366,8 +428,9 @@ def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print) -> mci.Mc
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("input", help="a .zip or a folder of rendered WAVs")
-    ap.add_argument("--out", help="output folder (default: next to the input)")
+    ap.add_argument("input", nargs="+",
+                    help="a .zip or a folder of rendered WAVs; several folders are read as one input")
+    ap.add_argument("--out", help="output folder (default: next to the input, in the folder holding them all)")
     ap.add_argument("--name", help="instrument name (only when the input holds one piece)")
     ap.add_argument("--no-choke", action="store_true", help="leave the Choke Ring empty")
     ap.add_argument("--hat-as-ride", action="store_true",
@@ -375,13 +438,17 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     src = Source(args.input)
+    if len(args.input) > 1 and src.roots and src.path is None:
+        print("the inputs share no folder")
+        return 1
     pieces, skipped = scan(src)
     for s in skipped:
         print("skipped", s)
     if not pieces:
         print("no recognisable hits found")
         return 1
-    out_dir = args.out or os.path.dirname(os.path.abspath(args.input))
+    out_dir = (args.out or common_folder([os.path.dirname(os.path.abspath(p)) for p in args.input])
+               or os.path.dirname(os.path.abspath(args.input[0])))
     os.makedirs(out_dir, exist_ok=True)
     for piece in pieces:
         name = args.name if args.name and len(pieces) == 1 else piece_title(piece, src)

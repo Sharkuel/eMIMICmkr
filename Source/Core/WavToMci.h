@@ -11,8 +11,9 @@ namespace emk
 
     Reads the layout SDSE, similar renderers and BatchRecorder write: one folder per zone,
     files named "<piece> - <ZONE> - <hit>v<velocity>.wav", in a folder or a .zip. Folders
-    that share a piece name become one instrument. Nothing here touches the message
-    thread, so it can run on a background thread. */
+    that share a piece name become one instrument, and several folders given together (a
+    ride's BOW, BELL and EDGE folders, or several kit pieces) are read as one input. Nothing
+    here touches the message thread, so it can run on a background thread. */
 class WavToMci
 {
 public:
@@ -44,31 +45,51 @@ public:
                        std::function<void (const juce::String&)> log,
                        std::function<bool (double progress)> keepGoing);
 
+    /** The same for several inputs read as one: every WAV under each folder, named relative
+        to the folder holding them all. One input behaves exactly as above; among several, a
+        .zip (or anything else that is not a folder) is skipped. With no outDir, the files
+        go to the folder holding all the inputs. */
+    static juce::String convert (const juce::Array<juce::File>& inputs, const juce::File& outDir, const Options&,
+                                 std::function<void (const juce::String&)> log,
+                                 std::function<bool (double progress)> keepGoing);
+
+    static Report run (const juce::Array<juce::File>& inputs, const juce::File& outDir, const Options&,
+                       std::function<void (const juce::String&)> log,
+                       std::function<bool (double progress)> keepGoing);
+
     //==============================================================================
     // The steps, public for tests.
 
     static constexpr int sampleRate = 44100;   // the Mimic's rate, judging by Pearl's factory content
     static constexpr int maxLayers = 20;       // what the Editor's and Pearl's cymbal files use
+    static constexpr int maxRoundRobins = 6;   // per velocity layer, for kicks, snares, toms and cymbals
     static constexpr int hatLayers = 8, hatHits = 32;   // per hi-hat articulation, or it runs to gigabytes
 
     /** Wave cells the Mimic allows per instrument, shared by its zones; 0 = no limit known. */
     static int cellLimit (const juce::String& instrumentType);
 
-    /** A folder or a zip, read the same way. */
+    /** The deepest folder holding every file, or File() when there is none. */
+    static juce::File commonFolder (const juce::Array<juce::File>&);
+
+    /** A folder or a zip, read the same way; or several folders read as one, their files
+        named relative to the folder holding them all. Among several inputs, anything that
+        is not a folder (a .zip included) is left out and listed in skipped(). */
     class Input
     {
     public:
         explicit Input (const juce::File&);
+        explicit Input (const juce::Array<juce::File>&);
         ~Input();
         bool isValid() const { return valid; }
         const juce::StringArray& names() const { return entries; }   // in the order Python lists them
+        const juce::StringArray& skipped() const { return skippedInputs; }   // "<input>: why"
         juce::MemoryBlock read (const juce::String& name) const;
         juce::String topFolder() const;
 
     private:
-        juce::File root;
+        juce::File root;   // names are relative to it
         std::unique_ptr<juce::ZipFile> zip;
-        juce::StringArray entries;
+        juce::StringArray entries, skippedInputs;
         bool valid = false;
     };
 
@@ -95,6 +116,7 @@ public:
     static double opennessRank (const juce::String& level);
     static juce::StringArray pickOpenness (juce::StringArray levels, int steps = 5);
 
+    /** Adds the input's own skipped() entries to skipped first. */
     static std::vector<Piece> scan (const Input&, juce::StringArray& skipped);
 
     using Shares = std::vector<std::pair<juce::String, int>>;
@@ -102,6 +124,14 @@ public:
         its share keeps them all and hands the rest to the others. */
     static Shares shareCells (int budget, const Shares& available);
     static std::vector<Hits> splitLayers (Hits, int maxLayers = WavToMci::maxLayers);
+    /** Round robins wanted per velocity layer: 6 on snare heads and rims, 5 on toms', 4
+        elsewhere (kick, sidestick, rimclick, cymbals). */
+    static int roundRobins (const juce::String& family, const juce::String& zone);
+    /** count of the hits, spread evenly over their velocities (the hardest alone for 1). */
+    static Hits evenSpread (Hits, int count);
+    /** About roundRobins hits per velocity layer: round (n / roundRobins) layers, 1 to
+        maxLayers. Hits beyond maxRoundRobins per layer are thinned out evenly across velocities. */
+    static std::vector<Hits> roundRobinLayers (Hits, int roundRobins);
     static std::vector<int> minVelocities (const std::vector<Hits>& layers);
 
     static juce::MemoryBlock thumbnail (int width = 76, int height = 63);

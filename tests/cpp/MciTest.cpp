@@ -1,8 +1,9 @@
 // Checks of the C++ .mci writer and WAV converter, and the converter's command line.
 //
 //   eMIMICmkr_mci_tests                      run the self-checks
-//   eMIMICmkr_mci_tests --convert INPUT [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]
-//                                            convert a folder or .zip of rendered WAVs
+//   eMIMICmkr_mci_tests --convert INPUT [INPUT...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]
+//                                            convert a folder or .zip of rendered WAVs, or
+//                                            several folders read as one
 //   eMIMICmkr_mci_tests --rewrite IN OUT     read a .mci and write it back (reader/writer check)
 //
 // tests/test_cpp_converter.py compares --convert with tools/mci/wav2mci.py.
@@ -65,6 +66,29 @@ void checkBuilders()
     check (layers.size() == 20 && layers[0].size() == 5, "splitLayers");
     const auto vel = WavToMci::minVelocities (layers);
     check (vel[0] == 0 && vel[1] == 6 && vel[2] == 11, "minVelocities");
+
+    auto hitsOf = [] (int n)
+    {
+        WavToMci::Hits h;
+        for (int i = 0; i < n; ++i)
+            h.push_back ({ 1 + i * 126 / std::max (1, n - 1), {} });
+        return h;
+    };
+    auto sizes = [] (const std::vector<WavToMci::Hits>& split)
+    {
+        std::vector<size_t> out;
+        for (const auto& l : split)
+            out.push_back (l.size());
+        return out;
+    };
+    check (WavToMci::roundRobins ("kick", "kick") == 4 && WavToMci::roundRobins ("snare", "rimshot") == 6
+               && WavToMci::roundRobins ("tom", "center") == 5 && WavToMci::roundRobins ("snare", "sidestick") == 4
+               && WavToMci::roundRobins ("cymbal", "edge") == 4,
+           "roundRobins");
+    check (sizes (WavToMci::roundRobinLayers (hitsOf (64), 4)) == std::vector<size_t> (16, 4), "64 kick hits: 16 layers of 4");
+    check (WavToMci::roundRobinLayers (hitsOf (100), 6).size() == 17, "100 snare hits: 17 layers");
+    check (sizes (WavToMci::roundRobinLayers (hitsOf (300), 4)) == std::vector<size_t> (20, 6), "300 cymbal hits: 20 layers of 6");
+    check (sizes (WavToMci::roundRobinLayers (hitsOf (3), 4)) == std::vector<size_t> { 3 }, "3 sidesticks: 1 layer");
 
     check (WavToMci::pickOpenness ({ "tight", "closed2", "open1", "open2", "open3", "open4", "open5", "open6" })
                == juce::StringArray { "closed2", "open2", "open3", "open4", "open6" },
@@ -129,7 +153,8 @@ void checkContainer()
 int convert (const juce::StringArray& args)
 {
     WavToMci::Options options;
-    juce::File input, outDir;
+    juce::Array<juce::File> inputs;
+    juce::File outDir;
     for (int i = 0; i < args.size(); ++i)
     {
         const auto& a = args[i];
@@ -141,20 +166,20 @@ int convert (const juce::StringArray& args)
             options.choke = false;
         else if (a == "--hat-as-ride")
             options.hatAsRide = true;
-        else if (input == juce::File() && ! a.startsWith ("--"))
-            input = juce::File::getCurrentWorkingDirectory().getChildFile (a);
+        else if (! a.startsWith ("--"))
+            inputs.add (juce::File::getCurrentWorkingDirectory().getChildFile (a));
         else
         {
             std::fprintf (stderr, "unknown argument %s\n", a.toRawUTF8());
             return 2;
         }
     }
-    if (input == juce::File())
+    if (inputs.isEmpty())
     {
-        std::fprintf (stderr, "usage: --convert INPUT.zip|FOLDER [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]\n");
+        std::fprintf (stderr, "usage: --convert INPUT.zip|FOLDER [FOLDER...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]\n");
         return 2;
     }
-    const auto report = WavToMci::run (input, outDir, options,
+    const auto report = WavToMci::run (inputs, outDir, options,
                                        [] (const juce::String& line) { std::printf ("%s\n", line.toRawUTF8()); std::fflush (stdout); },
                                        [] (double) { return true; });
     std::printf ("%s\n", report.toString().toRawUTF8());
@@ -195,7 +220,7 @@ int main (int argc, char** argv)
         return rewrite (args[1], args[2]);
     if (args.size() > 0 && args[0] != "--selftest")
     {
-        std::fprintf (stderr, "usage: %s [--selftest | --convert INPUT [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]"
+        std::fprintf (stderr, "usage: %s [--selftest | --convert INPUT [INPUT...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]"
                               " | --rewrite IN.mci OUT.mci]\n", argv[0]);
         return 2;
     }

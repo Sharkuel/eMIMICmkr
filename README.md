@@ -87,7 +87,17 @@ MCI_SAMPLES=/path/to/folder/with/mci python3 -m pytest tests
 The app turns hits rendered by SDSE, a similar tool or its own batch recorder into Mimic
 instruments, with no Python needed (`emk::WavToMci` in `Source/Core`). It reads a zip or a
 folder laid out one folder per zone, with files named
-`<piece> - <ZONE> - <hit>v<velocity>.wav`, and writes one `.mci` per kit piece.
+`<piece> - <ZONE> - <hit>v<velocity>.wav`, and writes one `.mci` per kit piece. Several
+folders given together (say a ride's `BOW`, `BELL` and `EDGE` folders, or several kit
+pieces) are read as one input, their files named relative to the folder holding them all,
+so they convert exactly like that folder would; a single zone folder converts on its own too.
+A .zip among several inputs is skipped: convert it on its own.
+
+Each zone's hits are sorted by velocity and split into velocity layers of about 4 to 6
+round robins: 6 on snare heads and rims, 5 on tom heads and rims, 4 on kicks, sidesticks,
+rimclicks and cymbals. That makes round(hits / round robins) layers, from 1 to 20; when a
+zone has more than 6 hits per layer to fill, it keeps an even spread of velocities. Hi-hats
+keep 8 layers of up to 32 hits.
 
 Cymbals with a bell become 3-zone ride-type instruments, the rest 2-zone cymbals, and a
 choke sound is made from the hardest edge hit when none was recorded. Kicks, snares and
@@ -99,9 +109,10 @@ The converter also runs headless, from the `eMIMICmkr_mci_tests` console tool:
 ```
 cmake --build build --target eMIMICmkr_mci_tests
 build/eMIMICmkr_mci_tests_artefacts/Release/eMIMICmkr_mci_tests --convert "22 ZILDJIAN K Dark Medium Ride.zip" --out ~/Mimic
+build/eMIMICmkr_mci_tests_artefacts/Release/eMIMICmkr_mci_tests --convert "My Kit Ride/BOW" "My Kit Ride/BELL" "My Kit Ride/EDGE"
 ```
 
-Options: `--out DIR` (default: next to the input), `--name NAME` (only when the input holds
+Options: `--out DIR` (default: next to the input, or for several, the folder holding them all), `--name NAME` (only when the input holds
 one piece), `--no-choke` (leave the Choke Ring empty) and `--hat-as-ride`. Run with no
 arguments, the tool checks the codec and builders instead.
 

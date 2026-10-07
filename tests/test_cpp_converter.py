@@ -47,8 +47,13 @@ REAL_ZIPS = sorted(REAL_DIR.glob("*.zip")) if os.environ.get("MCI_REAL") else []
 # ---------------------------------------------------------------------------
 # Running both converters and comparing
 
+def sources(src):
+    """One input or a list of them, as command-line arguments."""
+    return [str(s) for s in src] if isinstance(src, (list, tuple)) else [str(src)]
+
+
 def run_cpp(src, out, *flags):
-    run = subprocess.run([EXE, "--convert", str(src), "--out", str(out), *flags],
+    run = subprocess.run([EXE, "--convert", *sources(src), "--out", str(out), *flags],
                          capture_output=True, text=True)
     return run.returncode, run.stdout + run.stderr
 
@@ -80,7 +85,7 @@ def compare_files(py_path, cpp_path):
 
 def convert_both(tmp_path, src, *flags, expect=None):
     py_out, cpp_out = tmp_path / "py", tmp_path / "cpp"
-    assert wav2mci.main([str(src), "--out", str(py_out), *flags]) == 0
+    assert wav2mci.main([*sources(src), "--out", str(py_out), *flags]) == 0
     code, log = run_cpp(src, cpp_out, *flags)
     assert code == 0, log
     py_files = sorted(p.name for p in py_out.glob("*.mci"))
@@ -224,6 +229,58 @@ def test_hi_hat_folders(tmp_path, flags):
 def test_sdse_hi_hat_with_bell_tight_and_foot_splash(tmp_path, flags):
     render(tmp_path / "in", HAT_FOLDERS, [30, 90, 127], piece="14 Z K Cust Session_XY1", family="HATS")
     convert_both(tmp_path, tmp_path / "in" / "14 Test Crash", *flags)
+
+
+def ride_folders(root, velocities=range(127, 0, -2)):
+    """A ride laid out as BatchRecorder writes it: one plain folder per zone."""
+    ride = root / "My Kit Ride"
+    for z, zone in enumerate(["BOW", "BELL", "EDGE"]):
+        for i, v in enumerate(velocities, 1):
+            write_wav(ride / zone / f"My Kit Ride - RIDE1 {zone} - {i:03d}v{v}.wav",
+                      noisy_hit(v, 2000 + 50 * z, 3, 1, 100 * z + i))
+    return ride
+
+
+def test_several_zone_folders_convert_like_their_parent(tmp_path):
+    ride = ride_folders(tmp_path / "in")
+    whole, _, _ = convert_both(tmp_path / "whole", ride, expect=["My Kit Ride.mci"])
+    zones = [ride / "EDGE", ride / "BOW", ride / "BELL"]
+    picked, _, log = convert_both(tmp_path / "picked", zones, expect=["My Kit Ride.mci"])
+    assert (whole / "My Kit Ride.mci").read_bytes() == (picked / "My Kit Ride.mci").read_bytes()
+    f = mci.read_mci(str(picked / "My Kit Ride.mci"))
+    assert f.get("INST0instyp") == "Ride" and f.get("INST0artic0numlay") == 16   # 64 hits, 4 round robins
+
+    # a folder given inside another one adds nothing; a zip among several inputs is skipped
+    z = tmp_path / "bell.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        for p in sorted((ride / "BELL").iterdir()):
+            zf.write(p, p.name)
+    again, _, log = convert_both(tmp_path / "again", [ride, ride / "BELL", z], expect=["My Kit Ride.mci"])
+    assert (again / "My Kit Ride.mci").read_bytes() == (whole / "My Kit Ride.mci").read_bytes()
+    assert "bell.zip: a .zip is converted on its own" in log
+
+
+def test_several_inputs_default_to_the_folder_holding_them(tmp_path):
+    ride = ride_folders(tmp_path / "in", [127, 64, 1])
+    zones = [ride / "BOW", ride / "EDGE"]
+    assert wav2mci.main([str(z) for z in zones]) == 0
+    assert (ride / "My Kit Ride.mci").is_file()
+    (ride / "My Kit Ride.mci").unlink()
+    run = subprocess.run([EXE, "--convert", *map(str, zones)], capture_output=True, text=True)
+    assert run.returncode == 0 and (ride / "My Kit Ride.mci").is_file(), run.stdout
+
+
+def test_a_zone_folder_converts_on_its_own(tmp_path):
+    ride = ride_folders(tmp_path / "in", [127, 90, 64, 30, 1])
+    _, cpp_out, _ = convert_both(tmp_path, ride / "BELL", expect=["My Kit Ride.mci"])
+    f = mci.read_mci(str(cpp_out / "My Kit Ride.mci"))
+    assert f.get("INST0instyp") == "Cymbal"     # a bell alone: no edge or bow to make a ride of
+
+
+def test_kit_pieces_selected_together(tmp_path):
+    kit = mixed_kit(tmp_path / "in")
+    pieces = [kit / "22 Kick_K1 - KICK1", kit / "14 Snare_S1 - SNARE1 CENTER", kit / "14 Snare_S1 - SNARE1 RIMSHOT"]
+    convert_both(tmp_path, pieces, expect=["22 Kick.mci", "14 Snare.mci"])
 
 
 def test_rejects_other_sample_rates(tmp_path):
