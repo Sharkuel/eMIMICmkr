@@ -50,8 +50,28 @@ void HitRenderer::waitForSilence()
     }
 }
 
-juce::AudioBuffer<float> HitRenderer::renderHit (int note, int velocity)
+void HitRenderer::addMainOutput (juce::AudioBuffer<float>& dest, int destStart,
+                                 const juce::AudioBuffer<float>& src, int n)
 {
+    // Average the main stereo (or mono) output: a centred mono mix, whatever the plugin's panning.
+    // Extra outputs (SD3's multi-out busses) are left out so they can't double or thin the sound.
+    auto* bus = plugin.getBus (false, 0);
+    const int outs = juce::jlimit (1, src.getNumChannels(), bus != nullptr ? bus->getNumberOfChannels() : 2);
+    for (int ch = 0; ch < outs; ++ch)
+        dest.addFrom (0, destStart, src, ch, 0, n, 1.0f / (float) outs);
+}
+
+juce::AudioBuffer<float> HitRenderer::renderHit (int note, int velocity, int cc4)
+{
+    if (cc4 >= 0)
+    {
+        // Move the pedal first; any sound that makes (a pedal chick) rings out before the hit.
+        const int channels = juce::jmax (plugin.getTotalNumInputChannels(), plugin.getTotalNumOutputChannels());
+        juce::AudioBuffer<float> buffer (channels, settings.blockSize);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::controllerEvent (10, 4, juce::jlimit (0, 127, cc4)), 0);
+        processBlock (buffer, midi);
+    }
     waitForSilence();
 
     const int channels = juce::jmax (plugin.getTotalNumInputChannels(), plugin.getTotalNumOutputChannels());
@@ -75,9 +95,7 @@ juce::AudioBuffer<float> HitRenderer::renderHit (int note, int velocity)
 
         processBlock (buffer, midi);
         const int n = juce::jmin (block, maxSamples - written);
-        const int outs = juce::jmax (1, plugin.getTotalNumOutputChannels());
-        for (int ch = 0; ch < outs && ch < buffer.getNumChannels(); ++ch)
-            recorded.addFrom (0, written, buffer, ch, 0, n, 1.0f / (float) outs);
+        addMainOutput (recorded, written, buffer, n);
 
         for (int i = 0; i < n; ++i)
         {

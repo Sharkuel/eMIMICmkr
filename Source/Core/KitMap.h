@@ -1,5 +1,5 @@
 #pragma once
-#include <juce_core/juce_core.h>
+#include <juce_data_structures/juce_data_structures.h>
 
 namespace emk
 {
@@ -7,9 +7,9 @@ namespace emk
 struct KitZone
 {
     juce::String piece;      // Kick, Snare, Tom 1, Hi-Hat, Ride, Crash 1...
-    juce::String zone;       // Center, Rimshot, Bow, Bell, Edge...
+    juce::String label;      // folder/file zone label wav2mci reads: "RIDE1 BELL", "HATS BOW OPEN2"
     int note = 0;            // MIDI note that triggers it in the plugin
-    int mimicZoneType = 0;   // INST0zoneType id in the .mci (0 = not known yet)
+    int cc4 = -1;            // hi-hat openness sent before the note (127 closed, 0 open), -1 = none
     bool enabled = true;
 };
 
@@ -19,6 +19,13 @@ class KitMap
 public:
     /** General MIDI drum map, used when a plugin exposes no note names. */
     static KitMap generalMidi();
+
+    /** The Roland TD-style e-drum map, with hi-hat openness on CC4. Superior Drummer 3,
+        BFD3 and Addictive Drums all ship a preset for it. */
+    static KitMap rolandEDrum();
+
+    juce::ValueTree toValueTree() const;
+    static KitMap fromValueTree (const juce::ValueTree&);
 
     juce::Array<KitZone> zones;
     juce::String kitName;    // read from the plugin when it exposes one

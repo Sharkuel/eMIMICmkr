@@ -13,9 +13,9 @@ sorted by how hard each hit was played.
 | Part | State |
 | --- | --- |
 | .mci format | Decoded. Reader and writer work, tested on five Editor files ([docs/mci-format.md](docs/mci-format.md)) |
-| Plugin hosting | Skeleton app: find plugins, load one, show its window, render a test hit to WAV |
-| Kit auto-mapping | General MIDI fallback map only |
-| Multi-velocity recording | Single hits work, batch recording not yet |
+| Plugin hosting | Find plugins, load one, show its window, listen to any zone |
+| Kit auto-mapping | Editable note map with Roland e-drum and General MIDI presets; reading the plugin's own map not yet |
+| Multi-velocity recording | Batch recording of a whole kit, hi-hat openness on CC4; awaiting a Superior Drummer 3 test |
 | .mci export | Python (`tools/mci`): every instrument type, plus a WAV-folder converter. C++ port not yet |
 
 ## Building the app
@@ -36,6 +36,24 @@ sudo apt install libasound2-dev libx11-dev libxrandr-dev libxinerama-dev \
 
 On Linux, Windows plugins can run through a bridge such as yabridge, which exposes
 them as VST3 plugins the app can load.
+
+## Recording a kit
+
+1. **Find plugins**, pick your drum plugin and **Load plugin**. Load a kit in the plugin window.
+2. Pick the note map. **e-drum (Roland TD, hi-hat on CC4)** is the default: set the plugin's
+   MIDI input map to its Roland TD preset (Superior Drummer 3: Settings > MIDI In/E-Drums) so
+   the notes match and the hi-hat opens and closes with CC4. Every cell of the table can be
+   edited: double-click a note to change it, untick a zone to skip it.
+3. Select a row and **Listen to zone** to check the note plays the right sound.
+4. Set **Hits per zone** (default 64, spread from velocity 127 down to 1) and **Record kit**.
+
+Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
+and saved as 24-bit WAVs under `Documents/eMIMICmkr/<kit name>/`, one folder per zone, in
+the layout `wav2mci.py` reads (below). The hi-hat is recorded at five pedal positions
+(CC4 127, 96, 64, 32, 0) on both bow and edge, plus the pedal chick.
+
+`cmake --build build --target eMIMICmkr_tests` builds a check of the recorder against a
+stand-in plugin; `tests/test_batch_recording.py` runs it and converts the result.
 
 ## The .mci tools
 
