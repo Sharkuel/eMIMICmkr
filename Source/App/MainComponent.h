@@ -41,7 +41,7 @@ private:
     void learnFromSound (const juce::AudioBuffer<float>& hit, double rate);
     void readNoteNames();
     void convertWavFolder();
-    juce::String buildMimicFiles (const juce::File& input, const juce::File& outDir, bool hatsAsRides,
+    juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides,
                                   juce::ThreadWithProgressWindow&);
     void setLive (bool on);
     int maxHits() const;

@@ -433,12 +433,12 @@ void MainComponent::recordKit()
 
         // Straight on to the Mimic instruments, next to the recordings.
         const auto kitFolder = outputFolder().getChildFile (emk::BatchRecorder::safeName (map.kitName));
-        return report + "\n" + buildMimicFiles (kitFolder, kitFolder.getChildFile ("Mimic"), hats, w);
+        return report + "\n" + buildMimicFiles ({ kitFolder }, kitFolder.getChildFile ("Mimic"), hats, w);
     },
     [this] (const juce::String& report) { setStatus (report); });
 }
 
-juce::String MainComponent::buildMimicFiles (const juce::File& input, const juce::File& outDir, bool hatsAsRides,
+juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides,
                                              juce::ThreadWithProgressWindow& w)
 {
     emk::WavToMci::Options options;
@@ -446,7 +446,7 @@ juce::String MainComponent::buildMimicFiles (const juce::File& input, const juce
     w.setProgress (0.0);
     w.setStatusMessage ("Building Mimic instruments");
     outDir.createDirectory();
-    const auto report = emk::WavToMci::run (input, outDir, options,
+    const auto report = emk::WavToMci::run (inputs, outDir, options,
         [&w] (const juce::String& line) { w.setStatusMessage (line); },
         [&w] (double progress)
         {
@@ -454,7 +454,7 @@ juce::String MainComponent::buildMimicFiles (const juce::File& input, const juce
             return ! w.threadShouldExit();
         });
     if (! report.foundHits)
-        return "No recognisable hits found in " + input.getFullPathName() + ".";
+        return "No recognisable hits found in " + inputs[0].getFullPathName() + (inputs.size() > 1 ? " and the other folders." : ".");
     juce::String text = "Built " + juce::String (report.written.size()) + " Mimic instruments in "
                         + outDir.getFullPathName() + ".";
     if (report.stopped)
@@ -468,22 +468,43 @@ juce::String MainComponent::buildMimicFiles (const juce::File& input, const juce
 
 void MainComponent::convertWavFolder()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Pick a folder of WAV hits (or a .zip of one)", outputFolder(), "*.zip");
-    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories
-                              | juce::FileBrowserComponent::canSelectFiles,
-                          [this] (const juce::FileChooser& fc)
+    juce::PopupMenu menu;
+    menu.addItem (1, "Folders...  (a kit, a piece, or several zone folders: Ctrl/Shift-click to pick more than one)");
+    menu.addItem (2, "A .zip file...");
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (convertButton), [this] (int choice)
     {
-        const auto input = fc.getResult();
-        if (input == juce::File())
+        if (choice == 0)
             return;
-        const auto outDir = (input.isDirectory() ? input : input.getParentDirectory())
-                                .getChildFile ("Mimic");
-        player.setSource (nullptr);
-        runJob ("Converting " + input.getFileName(), [this, input, outDir, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+        const bool zip = choice == 2;
+        chooser = std::make_unique<juce::FileChooser> (zip ? "Pick a .zip of WAV hits" : "Pick the folders of WAV hits",
+                                                       outputFolder(), zip ? "*.zip" : "");
+        const int chooserFlags = juce::FileBrowserComponent::openMode
+                          | (zip ? juce::FileBrowserComponent::canSelectFiles
+                                 : juce::FileBrowserComponent::canSelectDirectories
+                                       | juce::FileBrowserComponent::canSelectMultipleItems);
+        chooser->launchAsync (chooserFlags, [this] (const juce::FileChooser& fc)
         {
-            return buildMimicFiles (input, outDir, hats, w);
-        },
-        [this] (const juce::String& report) { setStatus (report); });
+            juce::Array<juce::File> inputs;
+            for (const auto& f : fc.getResults())
+                if (f != juce::File())
+                    inputs.add (f);
+            if (inputs.isEmpty())
+                return;
+
+            // Next to what was picked: inside a single folder, or beside a zip or several folders.
+            auto base = inputs.size() == 1 && inputs[0].isDirectory() ? inputs[0] : inputs[0].getParentDirectory();
+            for (const auto& f : inputs)
+                while (! f.isAChildOf (base) && f != base && base.getParentDirectory() != base)
+                    base = base.getParentDirectory();
+            const auto outDir = base.getChildFile ("Mimic");
+            player.setSource (nullptr);
+            const auto title = inputs.size() == 1 ? inputs[0].getFileName() : juce::String (inputs.size()) + " folders";
+            runJob ("Converting " + title, [this, inputs, outDir, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+            {
+                return buildMimicFiles (inputs, outDir, hats, w);
+            },
+            [this] (const juce::String& report) { setStatus (report); });
+        });
     });
 }
 

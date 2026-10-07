@@ -46,7 +46,9 @@ them as VST3 plugins the app can load.
    edited: double-click a note to change it, untick a zone to skip it.
 3. Select a row and **Listen to zone** to check the note plays the right sound. Other ways to
    build the map, since each library maps notes its own way:
-   - **Learn notes**: select a row, hit the pad or key on your e-kit or MIDI keyboard, and the
+   - **Learn notes**: select a row, hit the pad or key on your e-kit or MIDI keyboard (or click
+     the drum in the plugin's window: the app first plays every note once and matches the click
+     by sound), and the
      note is filled in and the next row selected.
    - **Find notes**: plays every note once, adds any the map lacks as "?" rows to listen to and
      name, and shows mapped rows that play nothing in red.
@@ -56,11 +58,12 @@ them as VST3 plugins the app can load.
 4. Set **Most hits per zone** (default 127, spread from velocity 127 down to 1) and **Record kit**.
    With **Fit Mimic limits** on, each piece records only as many hits as the Mimic can hold
    (kick 64, snare 300, toms 200, 2-zone cymbals 200, rides 300, shared across the piece's
-   zones); the **Hits** column shows the count per row.
+   zones); the **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
+   count yourself (marked *); the piece's other ticked zones share what is left.
 5. When the recording ends, the app builds the Mimic instruments straight away, into
    `Documents/eMIMICmkr/<kit name>/Mimic/`.
 
-**Convert WAV folder...** builds Mimic instruments from any folder (or .zip) of WAV hits in
+**Convert WAV folder...** builds Mimic instruments from one or several folders (or a .zip) of WAV hits in
 the layout below, such as a kit you recorded yourself or a WAV library, into a `Mimic`
 folder inside it. **Also make hi-hats as 3-zone rides** adds a ride-type copy of each hi-hat.
 
