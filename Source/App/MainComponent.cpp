@@ -222,11 +222,21 @@ void MainComponent::saveMap()
 
 void MainComponent::refreshPluginChoices()
 {
-    pluginChoice.clear();
+    // Rebuilt after every scan step, so keep the user's pick (or the last plugin loaded) selected.
+    auto keep = pluginChoice.getText();
+    if (keep.isEmpty())
+        keep = settings->getValue ("lastPlugin");
+    pluginChoice.clear (juce::dontSendNotification);
     int id = 1;
     for (auto& d : knownPlugins.getTypes())
         if (d.isInstrument)
-            pluginChoice.addItem (d.name + " (" + d.pluginFormatName + ")", id++);
+        {
+            const auto name = d.name + " (" + d.pluginFormatName + ")";
+            pluginChoice.addItem (name, id);
+            if (name == keep)
+                pluginChoice.setSelectedId (id, juce::dontSendNotification);
+            ++id;
+        }
 }
 
 juce::File MainComponent::scanCrashFile() const
@@ -262,26 +272,26 @@ void MainComponent::scanPlugins()
 
 void MainComponent::loadSelectedPlugin()
 {
-    if (auto xml = knownPlugins.createXml())
-        settings->setValue ("knownPlugins", xml.get());
-    refreshPluginChoices();
-
-    juce::Array<juce::PluginDescription> instruments;
-    for (auto& d : knownPlugins.getTypes())
-        if (d.isInstrument)
-            instruments.add (d);
-
-    const int index = pluginChoice.getSelectedItemIndex();
-    if (! juce::isPositiveAndBelow (index, instruments.size()))
+    const auto chosen = pluginChoice.getText();
+    juce::PluginDescription desc;
+    bool found = false;
+    for (const auto& d : knownPlugins.getTypes())   // getTypes() returns a copy: keep our own
+        if (d.isInstrument && d.name + " (" + d.pluginFormatName + ")" == chosen)
+        {
+            desc = d;
+            found = true;
+        }
+    if (chosen.isEmpty() || ! found)
     {
         setStatus ("Pick a plugin first.");
         return;
     }
+    settings->setValue ("lastPlugin", chosen);
 
     pluginWindow = nullptr;
     plugin = nullptr;
     juce::String error;
-    plugin = formats.createPluginInstance (instruments[index], sampleRate, blockSize, error);
+    plugin = formats.createPluginInstance (desc, sampleRate, blockSize, error);
     if (plugin == nullptr)
     {
         setStatus ("Could not load the plugin: " + error);
