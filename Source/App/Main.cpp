@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "PluginScanner.h"
 
 class EMimicApplication : public juce::JUCEApplication
 {
@@ -6,7 +7,14 @@ public:
     const juce::String getApplicationName() override { return JUCE_APPLICATION_NAME_STRING; }
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
 
-    void initialise (const juce::String&) override { mainWindow = std::make_unique<MainWindow> (getApplicationName()); }
+    bool moreThanOneInstanceAllowed() override { return true; }   // plugin scans run in a child copy
+
+    void initialise (const juce::String& commandLine) override
+    {
+        if (OutOfProcessScanner::runChildScanIfRequested (commandLine))
+            return;
+        mainWindow = std::make_unique<MainWindow> (getApplicationName());
+    }
     void shutdown() override { mainWindow = nullptr; }
     void systemRequestedQuit() override { quit(); }
 

@@ -18,6 +18,7 @@ juce_add_gui_app(eMIMICmkr
 target_sources(eMIMICmkr PRIVATE
     Source/App/Main.cpp
     Source/App/MainComponent.cpp
+    Source/App/PluginScanner.cpp
     Source/Core/KitMap.cpp
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp)

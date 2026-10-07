@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "../Core/BatchRecorder.h"
+#include "PluginScanner.h"
 
 namespace
 {
@@ -75,6 +76,7 @@ MainComponent::MainComponent()
     if (auto xml = knownPlugins.createXml())
         settings->setValue ("knownPlugins", xml.get());
     knownPlugins.addChangeListener (this);
+    knownPlugins.setCustomScanner (std::make_unique<OutOfProcessScanner>());
 
     audioDevices.initialiseWithDefaultDevices (0, 2);
     audioDevices.addAudioCallback (&player);
@@ -243,8 +245,8 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void MainComponent::scanPlugins()
 {
-    // In-process scanning: a broken plugin can crash the app. The crash file names it, so the
-    // next scan skips it (it shows as blacklisted in the scan window) and carries on.
+    // Each plugin is opened in a child process (OutOfProcessScanner); one that crashes is skipped.
+    // The crash file is a second line of defence should the app itself go down mid-scan.
     auto* list = new juce::PluginListComponent (formats, knownPlugins, scanCrashFile(), settings.get(), true);
     list->setSize (700, 500);
 
