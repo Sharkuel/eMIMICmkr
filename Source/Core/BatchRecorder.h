@@ -16,7 +16,8 @@ class BatchRecorder
 public:
     struct Settings
     {
-        int hitsPerZone = 64;
+        int hitsPerZone = 127;          // the most per zone...
+        bool fitMimicLimits = true;     // ...but no more than the Mimic can hold (KitMap::hitsFor)
         int softestVelocity = 1;
         int hardestVelocity = 127;
         HitRenderer::Settings render;

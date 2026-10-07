@@ -95,6 +95,26 @@ int main (int argc, char** argv)
     juce::String badError;
     emk::KitMap::fromCsv ("Kick,KICK1,abc", badError);
 
+    // Hits per zone that fit the Mimic's wave-cell limits.
+    auto hitsOf = [&map] (const juce::String& label)
+    {
+        for (int i = 0; i < map.zones.size(); ++i)
+            if (map.zones[i].label == label)
+                return map.hitsFor (i, 127);
+        return -1;
+    };
+    const bool limitsOk = hitsOf ("KICK1") == 64 && hitsOf ("SNARE1 CENTER") == 100 && hitsOf ("TOM1 RIMSHOT") == 100
+                          && hitsOf ("CRASH1 EDGE") == 99 && hitsOf ("RIDE1 BELL") == 99 && hitsOf ("HATS BOW OPEN2") == 32;
+    std::printf ("limits %s\n", limitsOk ? "ok" : "WRONG");
+
+    // Note names from plugins.
+    const auto g1 = emk::KitMap::guessFromName ("Ride 1 Bell"), g2 = emk::KitMap::guessFromName ("Snare Rimshot"),
+               g3 = emk::KitMap::guessFromName ("Hats Open 2 Edge"), g4 = emk::KitMap::guessFromName ("Tom 3 Rim");
+    const bool namesOk = g1.second == "RIDE1 BELL" && g2.second == "SNARE1 RIMSHOT" && g3.second == "HATS EDGE OPEN2"
+                         && g4.second == "TOM3 RIMSHOT" && emk::KitMap::guessFromName ("Tambourine").first.isEmpty();
+    std::printf ("names %s (%s, %s, %s, %s)\n", namesOk ? "ok" : "WRONG", g1.second.toRawUTF8(), g2.second.toRawUTF8(),
+                 g3.second.toRawUTF8(), g4.second.toRawUTF8());
+
     // Velocity spread and names are what wav2mci depends on.
     const auto v = emk::BatchRecorder::velocities (5, 1, 127);
     const bool ok = v == juce::Array<int> { 127, 96, 64, 33, 1 }
@@ -102,7 +122,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty();
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

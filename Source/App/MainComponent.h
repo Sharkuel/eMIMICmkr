@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Core/KitMap.h"
+#include <map>
 #include <set>
 
 /** Find drum plugins, load one, map its notes to zones, audition a zone and record the kit. */
@@ -16,7 +17,7 @@ public:
     void resized() override;
 
 private:
-    enum Column { colOn = 1, colPiece, colZone, colNote, colCc4 };
+    enum Column { colOn = 1, colPiece, colZone, colNote, colCc4, colHits, colName };
 
     void scanPlugins();
     void refreshPluginChoices();
@@ -34,6 +35,9 @@ private:
     void enableMidiInputs();
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
     void learnNote (int note);
+    void readNoteNames();
+    void setLive (bool on);
+    int maxHits() const;
     bool runJob (const juce::String& title, std::function<juce::String (juce::ThreadWithProgressWindow&)> work,
                  std::function<void (const juce::String&)> done);
     void setStatus (const juce::String& text);
@@ -57,6 +61,7 @@ private:
     juce::AudioDeviceManager audioDevices;
     juce::AudioSourcePlayer player;
     std::unique_ptr<juce::AudioSource> playing;
+    juce::AudioProcessorPlayer livePlayer;   // plays the plugin from your e-kit or keyboard
     std::unique_ptr<juce::ThreadWithProgressWindow> job;
     std::unique_ptr<juce::FileChooser> chooser;
     std::set<int> soundingNotes;   // from the last "Find notes", to flag rows that play nothing
@@ -64,9 +69,11 @@ private:
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" },
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
-        removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." };
+        removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
+        namesButton { "Read names" }, liveButton { "Play live" };
+    juce::ToggleButton fitLimits { "Fit Mimic limits" };
     juce::ComboBox pluginChoice, mapChoice;
-    juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Hits per zone" };
+    juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
     juce::TextEditor kitName, hitsPerZone;
     juce::TableListBox table { {}, this };
     juce::Label status;

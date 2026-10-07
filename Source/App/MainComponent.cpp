@@ -82,8 +82,19 @@ MainComponent::MainComponent()
     audioDevices.addAudioCallback (&player);
 
     for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
-                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton })
+                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &liveButton })
         addAndMakeVisible (b);
+    addAndMakeVisible (fitLimits);
+    namesButton.onClick = [this] { readNoteNames(); };
+    liveButton.setClickingTogglesState (true);
+    liveButton.onClick = [this] { setLive (liveButton.getToggleState()); };
+    fitLimits.setToggleState (settings->getBoolValue ("fitMimicLimits", true), juce::dontSendNotification);
+    fitLimits.onClick = [this]
+    {
+        settings->setValue ("fitMimicLimits", fitLimits.getToggleState());
+        table.updateContent();
+        table.repaint();
+    };
     for (juce::Component* c : { (juce::Component*) &pluginChoice, (juce::Component*) &mapChoice,
                                 (juce::Component*) &kitLabel, (juce::Component*) &kitName,
                                 (juce::Component*) &hitsLabel, (juce::Component*) &hitsPerZone,
@@ -123,15 +134,22 @@ MainComponent::MainComponent()
 
     kitName.onTextChange = [this] { kitMap.kitName = kitName.getText(); saveMap(); };
     hitsPerZone.setInputRestrictions (3, "0123456789");
-    hitsPerZone.setText (settings->getValue ("hitsPerZone", "64"));
-    hitsPerZone.onTextChange = [this] { settings->setValue ("hitsPerZone", hitsPerZone.getText()); };
+    hitsPerZone.setText (settings->getValue ("maxHitsPerZone", "127"));
+    hitsPerZone.onTextChange = [this]
+    {
+        settings->setValue ("maxHitsPerZone", hitsPerZone.getText());
+        table.updateContent();
+        table.repaint();
+    };
 
     auto& header = table.getHeader();
     header.addColumn ("Record", colOn, 60);
     header.addColumn ("Piece", colPiece, 110);
     header.addColumn ("Zone (file label)", colZone, 200);
     header.addColumn ("Note", colNote, 60);
-    header.addColumn ("CC4", colCc4, 60);
+    header.addColumn ("CC4", colCc4, 50);
+    header.addColumn ("Hits", colHits, 50);
+    header.addColumn ("Name in plugin", colName, 180);
     table.setRowHeight (24);
 
     if (auto xml = settings->getXmlValue ("kitMap"))
@@ -141,11 +159,12 @@ MainComponent::MainComponent()
 
     refreshPluginChoices();
     setStatus ("Find your drum plugins to start.");
-    setSize (760, 700);
+    setSize (860, 720);
 }
 
 MainComponent::~MainComponent()
 {
+    setLive (false);
     knownPlugins.removeChangeListener (this);
     audioDevices.removeMidiInputDeviceCallback ({}, this);
     audioDevices.removeAudioCallback (&player);
@@ -176,17 +195,20 @@ void MainComponent::resized()
     status.setBounds (area.removeFromBottom (64));
     area.removeFromBottom (8);
     row = area.removeFromBottom (32);
-    auditionButton.setBounds (row.removeFromLeft (130));
-    recordButton.setBounds (row.removeFromRight (130));
+    auditionButton.setBounds (row.removeFromLeft (120));
+    row.removeFromLeft (6);
+    liveButton.setBounds (row.removeFromLeft (90));
+    recordButton.setBounds (row.removeFromRight (120));
     row.removeFromRight (8);
-    hitsPerZone.setBounds (row.removeFromRight (50));
-    hitsLabel.setBounds (row.removeFromRight (100));
+    hitsPerZone.setBounds (row.removeFromRight (44));
+    hitsLabel.setBounds (row.removeFromRight (124));
+    fitLimits.setBounds (row.removeFromRight (130));
 
     area.removeFromTop (12);
     row = area.removeFromTop (28);
-    for (auto* b : { &learnButton, &findButton, &addButton, &removeButton })
+    for (auto* b : { &learnButton, &findButton, &namesButton, &addButton, &removeButton })
     {
-        b->setBounds (row.removeFromLeft (96));
+        b->setBounds (row.removeFromLeft (92));
         row.removeFromLeft (6);
     }
     saveMapButton.setBounds (row.removeFromRight (90));
@@ -288,6 +310,7 @@ void MainComponent::loadSelectedPlugin()
     }
     settings->setValue ("lastPlugin", chosen);
 
+    setLive (false);
     pluginWindow = nullptr;
     plugin = nullptr;
     juce::String error;
@@ -328,6 +351,7 @@ void MainComponent::auditionSelectedZone()
         return;
     }
 
+    setLive (false);
     const auto zone = kitMap.zones[row];
     juce::AudioBuffer<float> hit;
     {
@@ -370,7 +394,8 @@ void MainComponent::recordKit()
     }
 
     emk::BatchRecorder::Settings s;
-    s.hitsPerZone = juce::jlimit (1, 999, hitsPerZone.getText().getIntValue());
+    s.hitsPerZone = maxHits();
+    s.fitMimicLimits = fitLimits.getToggleState();
     s.render.sampleRate = sampleRate;
     s.render.blockSize = blockSize;
 
@@ -399,6 +424,7 @@ bool MainComponent::runJob (const juce::String& title,
 {
     if (job != nullptr)
         return false;
+    setLive (false);
     for (auto* b : { &recordButton, &auditionButton, &findButton })
         b->setEnabled (false);
     job = std::make_unique<Job> (title, std::move (work), [this, done] (const juce::String& report)
@@ -531,6 +557,83 @@ void MainComponent::saveMapFile()
     });
 }
 
+int MainComponent::maxHits() const
+{
+    return juce::jlimit (1, 999, hitsPerZone.getText().getIntValue());
+}
+
+void MainComponent::readNoteNames()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
+
+    // VST3 plugins can name their notes (Cubase shows them in its drum editor); not all do.
+    std::map<int, juce::String> names;
+    for (int note = 0; note < 128; ++note)
+        if (auto name = plugin->getNameForMidiNoteNumber (note, 10); name && name->trim().isNotEmpty())
+            names[note] = name->trim();
+    if (names.empty())
+        return setStatus (plugin->getName() + " doesn't share its note names. Use Find notes and Listen to "
+                          "zone instead, then Save map so you only do it once per library.");
+
+    std::set<int> mapped;
+    for (auto& z : kitMap.zones)
+    {
+        mapped.insert (z.note);
+        if (auto it = names.find (z.note); it != names.end())
+            z.pluginName = it->second;
+    }
+    int added = 0, guessed = 0;
+    for (const auto& [note, name] : names)
+        if (mapped.count (note) == 0)
+        {
+            auto [piece, label] = emk::KitMap::guessFromName (name);
+            const bool known = piece.isNotEmpty();
+            kitMap.zones.add ({ known ? piece : juce::String ("?"), known ? label : "NOTE " + juce::String (note),
+                                note, -1, false, name });
+            ++added;
+            guessed += known ? 1 : 0;
+        }
+    mapChoice.setSelectedId (0, juce::dontSendNotification);
+    saveMap();
+    table.updateContent();
+    table.repaint();
+    setStatus (juce::String (names.size()) + " notes have names in " + plugin->getName() + "; they're in the "
+               "\"Name in plugin\" column. " + juce::String (added) + " notes weren't in the map and were added "
+               "unticked at the bottom (" + juce::String (guessed) + " with a guessed piece and zone): check them, "
+               "then tick the ones to record.");
+}
+
+void MainComponent::setLive (bool on)
+{
+    // Live playing and offline recording can't share the plugin: recording switches this off.
+    if (! on || plugin == nullptr)
+    {
+        audioDevices.removeMidiInputDeviceCallback ({}, &livePlayer);
+        audioDevices.removeAudioCallback (&livePlayer);
+        if (livePlayer.getCurrentProcessor() != nullptr)
+        {
+            livePlayer.setProcessor (nullptr);
+            if (plugin != nullptr)
+                plugin->prepareToPlay (sampleRate, blockSize);
+        }
+        liveButton.setToggleState (false, juce::dontSendNotification);
+        if (on)
+            setStatus ("Load a plugin first.");
+        return;
+    }
+    player.setSource (nullptr);
+    plugin->setNonRealtime (false);
+    livePlayer.setProcessor (plugin.get());
+    audioDevices.addAudioCallback (&livePlayer);
+    enableMidiInputs();
+    audioDevices.addMidiInputDeviceCallback ({}, &livePlayer);
+    auto* device = audioDevices.getCurrentAudioDevice();
+    setStatus (device == nullptr ? "No audio output device is open, so live playing can't be heard."
+                                 : "Playing live through " + device->getName() + ": hit your pads or keys. "
+                                   "Click Play live again to stop.");
+}
+
 void MainComponent::enableMidiInputs()
 {
     // Every connected MIDI input: an e-kit module, a keyboard or a pad controller.
@@ -615,6 +718,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
             kitMap.zones.getReference (row).enabled = toggle->getToggleState();
             mapChoice.setSelectedId (0, juce::dontSendNotification);
             saveMap();
+            table.updateContent();   // the other zones of this piece get a new share of hits
         };
         return toggle;
     }
@@ -625,11 +729,15 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         delete existing;
         cell = new EditableCell();
     }
+    const int hits = ! zone.enabled ? 0 : fitLimits.getToggleState() ? kitMap.hitsFor (row, maxHits()) : maxHits();
     cell->setText (column == colPiece ? zone.piece
                    : column == colZone ? zone.label
                    : column == colNote ? juce::String (zone.note)
+                   : column == colHits ? (hits > 0 ? juce::String (hits) : juce::String())
+                   : column == colName ? zone.pluginName
                    : zone.cc4 >= 0 ? juce::String (zone.cc4) : juce::String(),
                    juce::dontSendNotification);
+    cell->setEditable (false, column != colHits && column != colName, false);   // hits and names are read-only
     cell->onEdit = [this, row, column] (const juce::String& text)
     {
         auto& z = kitMap.zones.getReference (row);

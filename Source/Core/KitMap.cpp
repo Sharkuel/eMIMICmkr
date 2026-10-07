@@ -82,6 +82,93 @@ KitMap KitMap::rolandEDrum()
     return m;
 }
 
+namespace
+{
+juce::String familyOf (const juce::String& label)
+{
+    return label.upToFirstOccurrenceOf (" ", false, false).retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+}
+} // namespace
+
+int KitMap::hitsFor (int index, int maxHits) const
+{
+    const auto& zone = zones.getReference (index);
+    const auto family = familyOf (zone.label);
+    if (family == "HATS" || family == "HAT" || family == "HH" || family == "HIHAT")
+        return juce::jmin (maxHits, 32);
+
+    juce::StringArray siblings;   // the ticked zones of this piece
+    for (const auto& z : zones)
+        if (z.enabled && z.piece == zone.piece)
+            siblings.add (z.label);
+    const bool hasBell = siblings.joinIntoString (" ").contains ("BELL");
+    const int cells = family == "KICK" ? 64
+                    : family == "SNARE" ? 300
+                    : family == "TOM" ? 200
+                    : family == "RIDE" || ((family == "CRASH" || family == "SPLASH" || family == "CHINA"
+                                            || family == "STACK" || family == "CYMBAL") && hasBell) ? 299
+                    : family == "CRASH" || family == "SPLASH" || family == "CHINA" || family == "STACK"
+                          || family == "CYMBAL" ? 199
+                    : 200;
+    return juce::jlimit (1, maxHits, cells / juce::jmax (1, siblings.size()));
+}
+
+std::pair<juce::String, juce::String> KitMap::guessFromName (const juce::String& noteName)
+{
+    const auto n = " " + noteName.toLowerCase().replaceCharacters ("-_/()[].,", "         ") + " ";
+    auto has = [&n] (const char* word) { return n.contains (juce::String (" ") + word); };
+    auto number = [&n] (const char* word)
+    {
+        const auto after = n.fromFirstOccurrenceOf (word, false, false).trimStart();
+        const int v = after.getIntValue();
+        return v > 0 && v < 10 ? juce::String (v) : juce::String ("1");
+    };
+
+    if (has ("kick") || has ("bass drum") || has ("bd "))
+        return { "Kick", "KICK1" };
+    if (has ("hat") || has ("hh"))
+    {
+        const auto area = has ("edge") || has ("shank") ? "EDGE" : has ("bell") ? "BELL" : "BOW";
+        if (has ("splash")) return { "Hi-Hat", "HATS FOOT SPLASH" };
+        if (has ("pedal") || has ("foot")) return { "Hi-Hat", "HATS PEDAL CLOSED" };
+        const auto open = has ("open") ? juce::String ("OPEN") + (n.contains ("open 1") || n.contains ("open1") ? "1"
+                                                               : n.contains ("open 2") || n.contains ("open2") ? "2"
+                                                               : n.contains ("open 3") || n.contains ("open3") ? "3" : "4")
+                        : has ("tight") ? juce::String ("TIGHT") : juce::String ("CLOSED");
+        return { "Hi-Hat", juce::String ("HATS ") + area + " " + open };
+    }
+    if (has ("snare") || has ("sd "))
+    {
+        const auto zone = has ("rimclick") || has ("rim only") || has ("rimonly") ? "RIMCLICK"
+                        : has ("side") || has ("cross") || has ("xstick") ? "SIDESTICK"
+                        : has ("rim") ? "RIMSHOT" : "CENTER";
+        return { "Snare", juce::String ("SNARE1 ") + zone };
+    }
+    if (has ("tom") || has ("floor"))
+    {
+        const auto t = number (has ("floor") ? "floor" : "tom");
+        const auto zone = has ("rimclick") || has ("rim only") || has ("rimonly") ? "RIMCLICK"
+                        : has ("rim") ? "RIMSHOT" : "CENTER";
+        const auto piece = (has ("floor") ? "Floor Tom " : "Tom ") + t;
+        return { piece, (has ("floor") ? "FLOORTOM" : "TOM") + t + " " + zone };
+    }
+    for (auto [word, label] : { std::pair { "ride", "RIDE" }, { "crash", "CRASH" }, { "china", "CHINA" },
+                                { "splash", "SPLASH" }, { "stack", "STACK" } })
+        if (has (word))
+        {
+            const bool ride = juce::String (label) == "RIDE";
+            const auto zone = has ("bell") || has ("cup") ? "BELL"
+                            : has ("edge") || (ride && has ("crash")) ? "EDGE"   // a ride's "crash" is its edge
+                            : has ("choke") || has ("grab") ? "CHOKE"
+                            : has ("bow") || has ("tip") || ride ? "BOW"
+                            : "EDGE";
+            const auto t = number (word);
+            return { juce::String (label).substring (0, 1) + juce::String (label).substring (1).toLowerCase() + " " + t,
+                     juce::String (label) + t + " " + zone };
+        }
+    return {};
+}
+
 juce::String KitMap::toCsv() const
 {
     juce::String out = "piece,zone,note,cc4,record\n";
@@ -124,7 +211,7 @@ juce::ValueTree KitMap::toValueTree() const
     for (const auto& z : zones)
         tree.appendChild (juce::ValueTree ("Zone", { { "piece", z.piece }, { "label", z.label },
                                                      { "note", z.note }, { "cc4", z.cc4 },
-                                                     { "enabled", z.enabled } }),
+                                                     { "enabled", z.enabled }, { "pluginName", z.pluginName } }),
                           nullptr);
     return tree;
 }
@@ -135,7 +222,8 @@ KitMap KitMap::fromValueTree (const juce::ValueTree& tree)
     m.kitName = tree["kitName"].toString();
     for (const auto& z : tree)
         m.zones.add ({ z["piece"].toString(), z["label"].toString(), (int) z["note"],
-                       (int) z.getProperty ("cc4", -1), (bool) z.getProperty ("enabled", true) });
+                       (int) z.getProperty ("cc4", -1), (bool) z.getProperty ("enabled", true),
+                       z["pluginName"].toString() });
     return m;
 }
 } // namespace emk

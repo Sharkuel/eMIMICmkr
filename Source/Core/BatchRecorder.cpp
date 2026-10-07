@@ -63,20 +63,26 @@ bool BatchRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<fl
 juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const KitMap& map, const Settings& settings,
                                     const juce::File& root, std::function<bool (const Progress&)> onProgress)
 {
-    const auto vels = velocities (settings.hitsPerZone, settings.softestVelocity, settings.hardestVelocity);
     juce::Array<KitZone> zones;
-    for (const auto& z : map.zones)
-        if (z.enabled)
-            zones.add (z);
-
+    juce::Array<juce::Array<int>> zoneVelocities;
     Progress progress;
-    progress.total = zones.size() * vels.size();
+    for (int i = 0; i < map.zones.size(); ++i)
+        if (map.zones[i].enabled)
+        {
+            const int hits = settings.fitMimicLimits ? map.hitsFor (i, settings.hitsPerZone) : settings.hitsPerZone;
+            zones.add (map.zones[i]);
+            zoneVelocities.add (velocities (hits, settings.softestVelocity, settings.hardestVelocity));
+            progress.total += hits;
+        }
+
     int written = 0, clipped = 0;
     juce::StringArray silent, failed;
 
     HitRenderer renderer (plugin, settings.render);
-    for (const auto& zone : zones)
+    for (int z = 0; z < zones.size(); ++z)
     {
+        const auto& zone = zones.getReference (z);
+        const auto& vels = zoneVelocities.getReference (z);
         int silentHits = 0;
         for (int i = 0; i < vels.size(); ++i)
         {
