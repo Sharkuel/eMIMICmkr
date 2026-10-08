@@ -25,9 +25,19 @@ sorted by how hard each hit was played.
 Every push builds the app for Linux, Windows and macOS on GitHub (Actions tab, "Build",
 artifacts at the bottom of a run); a version tag such as `v0.2.0` publishes them under
 Releases. The macOS build is unsigned: right-click it and choose Open the first time.
-On Linux, the archive also holds `eMIMICmkr.desktop` and `eMIMICmkr.png`: to get a menu entry
-with the icon, copy the desktop file to `~/.local/share/applications/` (with `Exec=` set to
-where you put the app) and the picture to `~/.local/share/icons/hicolor/512x512/apps/`.
+
+Linux comes in four forms, all built for x86-64 on Ubuntu 22.04 (glibc 2.35 or newer):
+
+| File | For |
+| --- | --- |
+| `emimicmkr_<version>_amd64.deb` | Debian, Ubuntu, Mint, Pop!_OS: `sudo apt install ./emimicmkr_*.deb` |
+| `emimicmkr-<version>.x86_64.rpm` | Fedora: `sudo dnf install ./emimicmkr-*.rpm`; openSUSE: `sudo zypper install ./emimicmkr-*.rpm` |
+| `eMIMICmkr-x86_64.AppImage` | Any distribution: `chmod +x` it and run it (needs FUSE 2, `libfuse2` on most distributions) |
+| `eMIMICmkr-Linux-x86_64.tar.gz` | The bare program, with `eMIMICmkr.desktop` and `eMIMICmkr.png` for a menu entry |
+
+On Arch, `packaging/aur/PKGBUILD` builds `emimicmkr-git` from the latest source (`makepkg -si`
+in that folder); it is ready to publish on the AUR once the repository is public. There is no
+Flatpak: its sandbox can't reach plugins installed on the system or run yabridge's Wine.
 
 ## Building the app
 
