@@ -687,7 +687,8 @@ void MainComponent::removeZone()
 
 void MainComponent::loadMapFile()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Open a note map", outputFolder(), "*.csv");
+    chooser = std::make_unique<juce::FileChooser> ("Open a note map, or a Superior Drummer 3 preset", outputFolder(),
+                                                   "*.csv;*.sd3p");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
     {
@@ -695,7 +696,13 @@ void MainComponent::loadMapFile()
         if (file == juce::File())
             return;
         juce::String error;
-        auto map = emk::KitMap::fromCsv (file.loadFileAsString(), error);
+        juce::MemoryBlock data;
+        file.loadFileAsData (data);
+        const auto sd3 = emk::KitMap::sd3TextIn (data);
+        auto map = sd3.isNotEmpty() ? emk::KitMap::fromSd3 (sd3, error) : emk::KitMap::fromCsv (file.loadFileAsString(), error);
+        if (sd3.isNotEmpty() && error.isEmpty())
+            map.kitName = kitMap.kitName.isNotEmpty() ? kitMap.kitName
+                                                      : file.getFileNameWithoutExtension().replaceCharacter ('_', ' ');
         if (error.isNotEmpty())
             return setStatus ("Could not read " + file.getFileName() + ". " + error);
         mapChoice.setSelectedId (0, juce::dontSendNotification);
@@ -731,14 +738,32 @@ void MainComponent::readNoteNames()
     if (plugin == nullptr)
         return setStatus ("Load a plugin first.");
 
+    // Superior Drummer 3 keeps its whole kit (slots, articulations, their notes) in its state.
+    juce::MemoryBlock state;
+    plugin->getStateInformation (state);
+    juce::String sd3Note;
+    if (const auto sd3 = emk::KitMap::sd3TextIn (state); sd3.isNotEmpty())
+    {
+        juce::String error;
+        auto map = emk::KitMap::fromSd3 (sd3, error);
+        if (error.isEmpty())
+        {
+            map.kitName = kitMap.kitName;
+            mapChoice.setSelectedId (0, juce::dontSendNotification);
+            useMap (std::move (map));
+            sd3Note = "Read the kit's map from " + plugin->getName() + ": each instrument and the notes it plays. ";
+        }
+    }
+
     // VST3 plugins can name their notes (Cubase shows them in its drum editor); not all do.
     std::map<int, juce::String> names;
     for (int note = 0; note < 128; ++note)
         if (auto name = plugin->getNameForMidiNoteNumber (note, 10); name && name->trim().isNotEmpty())
             names[note] = name->trim();
     if (names.empty())
-        return setStatus (plugin->getName() + " doesn't share its note names. Use Find notes and Listen to "
-                          "zone instead, then Save map so you only do it once per library.");
+        return setStatus (sd3Note.isNotEmpty() ? sd3Note + "Check the ticked rows with Listen to zone, then Save map."
+                                               : plugin->getName() + " doesn't share its note names. Use Find notes and "
+                                                 "Listen to zone instead, then Save map so you only do it once per library.");
 
     std::set<int> mapped;
     for (auto& z : kitMap.zones)
@@ -749,7 +774,7 @@ void MainComponent::readNoteNames()
     }
     int added = 0, guessed = 0;
     for (const auto& [note, name] : names)
-        if (mapped.count (note) == 0)
+        if (mapped.count (note) == 0 && sd3Note.isEmpty())   // SD3's own map already lists every articulation
         {
             auto [piece, label] = emk::KitMap::guessFromName (name);
             const bool known = piece.isNotEmpty();
@@ -762,6 +787,9 @@ void MainComponent::readNoteNames()
     saveMap();
     table.updateContent();
     table.repaint();
+    if (sd3Note.isNotEmpty())
+        return setStatus (sd3Note + "The main zones are ticked; the rest are below them, unticked. Check them with "
+                          "Listen to zone, then Save map.");
     setStatus (juce::String (names.size()) + " notes have names in " + plugin->getName() + "; they're in the "
                "\"Name in plugin\" column. " + juce::String (added) + " notes weren't in the map and were added "
                "unticked at the bottom (" + juce::String (guessed) + " with a guessed piece and zone): check them, "

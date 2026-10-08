@@ -35,6 +35,15 @@ public:
     juce::String toCsv() const;
     static KitMap fromCsv (const juce::String&, juce::String& error);
 
+    /** The map a Superior Drummer 3 kit uses, from its preset (.sd3p) or plugin state: each
+        instrument slot (Kick, Snare, Racktom1, Ride4...), its articulations and the notes
+        they're on. The main zones are ticked; the rest are added unticked. Empty, with error
+        set, when the text isn't SD3's. */
+    static KitMap fromSd3 (const juce::String& text, juce::String& error);
+
+    /** Finds SD3's kit text inside a plugin state or preset file, which may wrap it. */
+    static juce::String sd3TextIn (const juce::MemoryBlock&);
+
     /** How many hits to record for zones[index] so the piece fits the Mimic's wave-cell limit
         for its instrument type (kick 64, snare 300, tom 200, cymbal 200, ride 300, percussion 200,
         shared by the piece's ticked zones; one cymbal cell goes to the choke ring). Hi-hat

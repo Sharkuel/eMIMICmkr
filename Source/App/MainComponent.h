@@ -83,7 +83,7 @@ private:
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
-        namesButton { "Read names" },
+        namesButton { "Read plugin" },
         convertButton { "Convert WAV folder..." }, saveToButton { "Change..." }, stateButton { "Save state..." };
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
     juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };

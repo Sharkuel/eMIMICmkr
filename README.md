@@ -52,6 +52,10 @@ them as VST3 plugins the app can load.
      note is filled in and the next row selected.
    - **Find notes**: plays every note once, adds any the map lacks as "?" rows to listen to and
      name, and shows mapped rows that play nothing in red.
+   - **Read plugin**: with Superior Drummer 3, reads the loaded kit straight from the plugin:
+     every instrument slot, its articulations and their notes (main zones ticked). Other VST3
+     plugins fill the "Name in plugin" column from their note names. **Open map...** also opens
+     an SD3 preset (.sd3p) the same way.
    - **Save map...** / **Open map...**: keep a map per library as a .csv file
      (`piece,zone,note,cc4,record`), which a spreadsheet can edit too.
    Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.

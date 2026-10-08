@@ -98,6 +98,44 @@ public:
     int getInputLatencyInSamples() override { return 0; }
 };
 
+/** A Superior Drummer 3 kit (trimmed from a real preset) read into a map, also when wrapped in other bytes. */
+bool sd3KitReads()
+{
+    const auto file = juce::File (__FILE__).getParentDirectory().getParentDirectory().getChildFile ("data/sd3-kit.txt");
+    juce::MemoryBlock wrapped;
+    wrapped.append ("VST3\x01\x02junk", 10);
+    wrapped.append (file.loadFileAsString().toRawUTF8(), file.loadFileAsString().getNumBytesAsUTF8() + 1);
+    juce::String error;
+    const auto map = emk::KitMap::fromSd3 (emk::KitMap::sd3TextIn (wrapped), error);
+    auto noteOf = [&map] (const juce::String& piece, const juce::String& label, bool* on = nullptr)
+    {
+        for (const auto& z : map.zones)
+            if (z.piece == piece && z.label == label)
+            {
+                if (on != nullptr) *on = z.enabled;
+                return z.note;
+            }
+        return -1;
+    };
+    bool rimclickOn = true;
+    const bool ok = error.isEmpty()
+                    && noteOf ("Kick", "KICK1") == 36 && noteOf ("Snare", "SNARE1 CENTER") == 38
+                    && noteOf ("Snare", "SNARE1 SIDESTICK") == 37 && noteOf ("Snare", "SNARE1 RIMSHOT") == 76
+                    && noteOf ("Snare 2", "SNARE2 CENTER") == 67 && noteOf ("Tom 1", "TOM1 CENTER") == 48
+                    && noteOf ("Tom 1", "TOM1 RIMSHOT") == 81 && noteOf ("Tom 1", "TOM1 RIMCLICK", &rimclickOn) == 82
+                    && ! rimclickOn && noteOf ("Tom 5", "TOM5 CENTER") == 41
+                    && noteOf ("Ride 1", "RIDE1 BOW") == 51 && noteOf ("Ride 1", "RIDE1 BELL") == 53
+                    && noteOf ("Ride 1", "RIDE1 EDGE") == 59 && noteOf ("Crash 2", "CRASH2 EDGE") == 57
+                    && noteOf ("Splash 1", "SPLASH1 EDGE") == 55 && noteOf ("Hi-Hat", "HATS EDGE OPEN2") == 7
+                    && noteOf ("Hi-Hat", "HATS BOW CLOSED") == 8 && noteOf ("Hi-Hat", "HATS PEDAL CLOSED") == 21
+                    && noteOf ("Hi-Hat", "HATS FOOT SPLASH") == 23;
+    juce::String notSd3;
+    emk::KitMap::fromSd3 ("piece,zone,note", notSd3);
+    std::printf ("sd3 kit %s (%d zones, snare rimshot %d)\n", ok && notSd3.isNotEmpty() ? "ok" : "WRONG",
+                 map.zones.size(), noteOf ("Snare", "SNARE1 RIMSHOT"));
+    return ok && notSd3.isNotEmpty();
+}
+
 /** Drum-like test sounds: a low thud, a short noisy crack, a long bright ring. */
 juce::AudioBuffer<float> testHit (int kind, double rate, float gain, int seed)
 {
@@ -280,7 +318,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch();
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads();
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

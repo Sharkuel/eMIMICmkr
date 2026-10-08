@@ -1,4 +1,7 @@
 #include "KitMap.h"
+#include <algorithm>
+#include <map>
+#include <set>
 
 namespace emk
 {
@@ -244,6 +247,145 @@ KitMap KitMap::fromCsv (const juce::String& text, juce::String& error)
     }
     if (m.zones.isEmpty())
         error = "No zones found.";
+    return m;
+}
+
+juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
+{
+    auto find = [] (const juce::MemoryBlock& block) -> juce::String
+    {
+        const auto* bytes = static_cast<const char*> (block.getData());
+        const auto size = block.getSize();
+        static const std::string marker = "PlugVersion";
+        const auto at = std::search (bytes, bytes + size, marker.begin(), marker.end());
+        if (at == bytes + size)
+            return {};
+        const auto end = std::find (at, bytes + size, '\0');
+        return juce::String::fromUTF8 (at, (int) (end - at));
+    };
+    if (auto text = find (data); text.isNotEmpty())
+        return text;
+    // Some hosts and plugins compress their state.
+    juce::MemoryInputStream raw (data, false);
+    juce::GZIPDecompressorInputStream unzipped (raw);
+    juce::MemoryBlock inflated;
+    juce::MemoryOutputStream out (inflated, false);
+    out.writeFromInputStream (unzipped, 64 * 1024 * 1024);
+    out.flush();
+    return find (inflated);
+}
+
+KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
+{
+    struct Slot
+    {
+        juce::String pos;
+        std::vector<std::pair<juce::String, juce::Array<int>>> pads;   // in the order SD3 lists them
+    };
+    std::vector<Slot> slots;
+    for (auto line : juce::StringArray::fromLines (text))
+    {
+        line = line.trim();
+        if (line.startsWith ("pos \""))
+            slots.push_back ({ line.fromFirstOccurrenceOf ("\"", false, false).upToLastOccurrenceOf ("\"", false, false), {} });
+        else if (line.startsWith ("alias ") && ! slots.empty())
+        {
+            auto words = juce::StringArray::fromTokens (line, " ", "");
+            words.removeEmptyStrings();
+            juce::Array<int> notes;
+            for (int w = 2; w < words.size(); ++w)
+                if (words[w].containsOnly ("0123456789") && words[w].getIntValue() <= 127)
+                    notes.add (words[w].getIntValue());
+            if (words.size() > 1 && ! notes.isEmpty())
+                slots.back().pads.push_back ({ words[1], notes });
+        }
+    }
+    if (slots.empty())
+    {
+        error = "This isn't a Superior Drummer 3 kit (no instrument slots found).";
+        return {};
+    }
+
+    KitMap m;
+    std::map<juce::String, int> counts;   // the how-manyth tom, crash... so far
+    for (const auto& slot : slots)
+    {
+        const auto pos = slot.pos.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
+        const auto family = pos.startsWith ("kick") ? "kick"
+                          : pos.startsWith ("hat") ? "hats"
+                          : pos.contains ("snare") ? "snare"
+                          : pos.contains ("tom") ? "tom"
+                          : pos.startsWith ("ride") ? "ride"
+                          : pos.startsWith ("crash") ? "crash"
+                          : pos.startsWith ("splash") ? "splash"
+                          : pos.startsWith ("china") ? "china" : "";
+        if (juce::String (family).isEmpty())
+        {
+            for (const auto& [pad, notes] : slot.pads)   // percussion and the like: listen and name them
+                m.zones.add ({ slot.pos, "NOTE " + juce::String (notes[0]), notes[0], -1, false, slot.pos + ": " + pad });
+            continue;
+        }
+        const int n = ++counts[family];
+        const juce::String num (n), upper = juce::String (family).toUpperCase();
+        const juce::String piece = juce::String (family) == "kick" ? "Kick"
+                                 : juce::String (family) == "hats" ? "Hi-Hat"
+                                 : juce::String (family) == "snare" ? (n == 1 ? "Snare" : "Snare " + num)
+                                 : juce::String (family).substring (0, 1).toUpperCase() + juce::String (family).substring (1) + " " + num;
+
+        auto noteOf = [&slot] (const juce::String& suffix) -> int
+        {
+            for (const auto& [pad, notes] : slot.pads)
+                if (pad.trimCharactersAtStart ("abcdefghijklmnopqrstuvwxyz0123456789") == suffix)
+                    return notes[0];
+            return -1;
+        };
+
+        if (juce::String (family) == "hats")
+        {
+            // SD3's trigger notes follow the pedal (CC4), as an e-kit's hi-hat does.
+            const int tip = noteOf ("TipTrig"), edge = noteOf ("Trig"), pedal = noteOf ("PL");
+            if (tip >= 0 || edge >= 0)
+            {
+                const int before = m.zones.size();
+                addHat (m, tip >= 0 ? tip : edge, edge >= 0 ? edge : tip, pedal >= 0 ? pedal : 44);
+                for (int z = before; z < m.zones.size(); ++z)
+                    m.zones.getReference (z).pluginName = slot.pos;
+                if (const int splash = noteOf ("PLO"); splash >= 0)
+                    for (int z = before; z < m.zones.size(); ++z)
+                        if (m.zones[z].label == "HATS FOOT SPLASH")
+                            m.zones.getReference (z).note = splash;
+            }
+            continue;
+        }
+
+        // Articulation codes as SD3 names its pads: <slot><CODE>, e.g. snareRO, ride4BL.
+        struct Code { const char* code; const char* zone; bool on; };
+        static const std::map<juce::String, std::vector<Code>> codes {
+            { "kick", { { "R", "", true }, { "O", "OPEN", false } } },
+            { "snare", { { "R", "CENTER", true }, { "RO", "RIMSHOT", true }, { "SL", "SIDESTICK", true },
+                         { "FX", "RIMCLICK", false }, { "FO", "EDGE", false }, { "MC", "OFF CENTER", false },
+                         { "MR", "RIMSHOT EDGE", false }, { "BZ", "BUZZ", false }, { "FL", "FLAM", false } } },
+            { "tom", { { "R", "CENTER", true }, { "RO", "RIMSHOT", true }, { "FX", "RIMCLICK", false } } },
+            { "ride", { { "", "BOW", true }, { "BL", "BELL", true }, { "PU", "EDGE", true }, { "M", "CHOKE", false } } },
+            { "crash", { { "", "EDGE", true }, { "RT", "BOW", true }, { "BL", "BELL", false }, { "M", "CHOKE", false } } },
+        };
+        const auto& table = codes.count (family) ? codes.at (family) : codes.at ("crash");   // splash, china
+        const juce::String labelHead = juce::String (family) == "kick" ? juce::String ("KICK1") : upper + num;
+        std::set<juce::String> used;
+        for (const auto& c : table)
+            if (const int note = noteOf (c.code); note >= 0)
+            {
+                m.zones.add ({ piece, juce::String (c.zone).isEmpty() ? labelHead : labelHead + " " + c.zone, note, -1, c.on,
+                               slot.pos + ": " + juce::String (c.code).toLowerCase() });
+                used.insert (c.code);
+            }
+        for (const auto& [pad, notes] : slot.pads)   // anything else: there to listen to and tick
+        {
+            const auto code = pad.trimCharactersAtStart ("abcdefghijklmnopqrstuvwxyz0123456789");
+            if (used.count (code) == 0 && ! code.contains ("Trig") && ! code.contains ("Ctrl"))
+                m.zones.add ({ piece, labelHead + " " + code.toUpperCase(), notes[0], -1, false, slot.pos + ": " + code });
+        }
+    }
     return m;
 }
 
