@@ -47,14 +47,25 @@ jobs:
           fi
 
       - name: Build
-        run: cmake --build build --config Release --target eMIMICmkr eMIMICmkr_tests --parallel 4
+        shell: bash
+        run: |
+          # Compiler errors also go up as annotations, readable without the full log.
+          set -o pipefail
+          cmake --build build --config Release --target eMIMICmkr eMIMICmkr_tests --parallel 4 2>&1 | tee build.log || {
+            grep -E "error|Error" build.log | grep -v "warning" | head -20 | sed 's/^/::error::/'
+            exit 1
+          }
 
       - name: Test
         shell: bash
         run: |
           tests=$(find build -type f \( -name eMIMICmkr_tests -o -name eMIMICmkr_tests.exe \) -perm -u+x | head -1)
           [ -z "$tests" ] && tests=$(find build -type f -name eMIMICmkr_tests.exe | head -1)
-          "$tests" "$RUNNER_TEMP/emimicmkr-test"
+          set -o pipefail
+          "$tests" "$RUNNER_TEMP/emimicmkr-test" 2>&1 | tee test.log || {
+            grep -E "WRONG|FAIL|error" test.log | head -20 | sed 's/^/::error::/'
+            exit 1
+          }
 
       - name: Package
         shell: bash
