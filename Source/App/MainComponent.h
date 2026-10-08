@@ -41,6 +41,10 @@ private:
     void learnFromSound (const juce::AudioBuffer<float>& hit, double rate);
     void readNoteNames();
     void convertWavFolder();
+    juce::File outputFolder() const;
+    void chooseOutputFolder();
+    void showOutputFolder();
+    void savePluginState();
     juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides,
                                   juce::ThreadWithProgressWindow&);
     void setLive (bool on);
@@ -80,7 +84,8 @@ private:
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
         namesButton { "Read names" },
-        convertButton { "Convert WAV folder..." };
+        convertButton { "Convert WAV folder..." }, saveToButton { "Change..." }, stateButton { "Save state..." };
+    juce::Label saveToLabel { {}, "Save to" }, saveToPath;
     juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };

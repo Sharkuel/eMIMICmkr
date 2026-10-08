@@ -9,7 +9,7 @@ namespace
 constexpr double sampleRate = 44100.0;   // the Mimic's rate
 constexpr int blockSize = 512;
 
-juce::File outputFolder()
+juce::File defaultOutputFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("eMIMICmkr");
 }
@@ -91,6 +91,15 @@ MainComponent::MainComponent()
     hatAsRide.setToggleState (settings->getBoolValue ("hatAsRide", false), juce::dontSendNotification);
     hatAsRide.onClick = [this] { settings->setValue ("hatAsRide", hatAsRide.getToggleState()); };
     convertButton.onClick = [this] { convertWavFolder(); };
+    for (juce::Component* c : { (juce::Component*) &saveToButton, (juce::Component*) &saveToLabel,
+                                (juce::Component*) &saveToPath, (juce::Component*) &stateButton })
+        addAndMakeVisible (c);
+    saveToButton.onClick = [this] { chooseOutputFolder(); };
+    saveToPath.setMinimumHorizontalScale (0.5f);
+    showOutputFolder();
+    stateButton.onClick = [this] { savePluginState(); };
+    stateButton.setTooltip ("Saves what the plugin stores about its kit to a file. Send it to us to help teach "
+                            "eMIMICmkr to read piece names (brand and model) from this plugin.");
     namesButton.onClick = [this] { readNoteNames(); };
     audioDevices.addAudioCallback (&live);
     live.onPluginNote = [this] (int note)
@@ -217,13 +226,17 @@ void MainComponent::resized()
 
     area.removeFromBottom (8);
     row = area.removeFromBottom (28);
+    saveToButton.setBounds (row.removeFromRight (80));
+    row.removeFromRight (6);
+    saveToPath.setBounds (row.removeFromRight (200));
+    saveToLabel.setBounds (row.removeFromRight (60));
     convertButton.setBounds (row.removeFromLeft (160));
     row.removeFromLeft (12);
-    hatAsRide.setBounds (row.removeFromLeft (280));
+    hatAsRide.setBounds (row.removeFromLeft (250));
 
     area.removeFromTop (12);
     row = area.removeFromTop (28);
-    for (auto* b : { &learnButton, &findButton, &namesButton, &addButton, &removeButton })
+    for (auto* b : { &learnButton, &findButton, &namesButton, &stateButton, &addButton, &removeButton })
     {
         b->setBounds (row.removeFromLeft (92));
         row.removeFromLeft (6);
@@ -235,6 +248,57 @@ void MainComponent::resized()
     area.removeFromTop (8);
     area.removeFromBottom (8);
     table.setBounds (area);
+}
+
+juce::File MainComponent::outputFolder() const
+{
+    const auto chosen = settings->getValue ("outputFolder");
+    return chosen.isNotEmpty() && juce::File::isAbsolutePath (chosen) ? juce::File (chosen) : defaultOutputFolder();
+}
+
+void MainComponent::chooseOutputFolder()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Where should recordings and Mimic files go?", outputFolder());
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto folder = fc.getResult();
+        if (folder == juce::File())
+            return;
+        if (! folder.createDirectory() || ! folder.hasWriteAccess())
+            return setStatus ("Can't write to " + folder.getFullPathName() + ".");
+        settings->setValue ("outputFolder", folder.getFullPathName());
+        showOutputFolder();
+        setStatus ("Kits will be recorded to " + folder.getFullPathName() + "/<kit name>, with their Mimic files in "
+                   "its Mimic folder.");
+    });
+}
+
+void MainComponent::showOutputFolder()
+{
+    saveToPath.setText (outputFolder().getFullPathName(), juce::dontSendNotification);
+    saveToPath.setTooltip (outputFolder().getFullPathName());
+}
+
+void MainComponent::savePluginState()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
+    juce::MemoryBlock state;
+    plugin->getStateInformation (state);
+    const auto name = emk::BatchRecorder::safeName (plugin->getName()) + " state.bin";
+    chooser = std::make_unique<juce::FileChooser> ("Save the plugin's state", outputFolder().getChildFile (name));
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this, state] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (file == juce::File())
+            return;
+        setStatus (file.replaceWithData (state.getData(), state.getSize())
+                       ? "Saved " + juce::String ((int) state.getSize()) + " bytes to " + file.getFullPathName() + "."
+                       : "Couldn't write " + file.getFullPathName() + ".");
+    });
 }
 
 void MainComponent::setStatus (const juce::String& text)
@@ -420,9 +484,9 @@ void MainComponent::recordKit()
 
     player.setSource (nullptr);
     const auto map = kitMap;
-    runJob ("Recording " + map.kitName, [this, map, s, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+    runJob ("Recording " + map.kitName, [this, map, s, hats = hatAsRide.getToggleState(), root = outputFolder()] (juce::ThreadWithProgressWindow& w)
     {
-        auto report = emk::BatchRecorder::record (*plugin, map, s, outputFolder(), [&w] (const auto& p)
+        auto report = emk::BatchRecorder::record (*plugin, map, s, root, [&w] (const auto& p)
         {
             w.setProgress (p.total > 0 ? (double) p.done / p.total : 0.0);
             w.setStatusMessage (p.current + "  (" + juce::String (p.done + 1) + " of " + juce::String (p.total) + ")");
@@ -432,7 +496,7 @@ void MainComponent::recordKit()
             return report;
 
         // Straight on to the Mimic instruments, next to the recordings.
-        const auto kitFolder = outputFolder().getChildFile (emk::BatchRecorder::safeName (map.kitName));
+        const auto kitFolder = root.getChildFile (emk::BatchRecorder::safeName (map.kitName));
         return report + "\n" + buildMimicFiles ({ kitFolder }, kitFolder.getChildFile ("Mimic"), hats, w);
     },
     [this] (const juce::String& report) { setStatus (report); });
@@ -491,19 +555,28 @@ void MainComponent::convertWavFolder()
             if (inputs.isEmpty())
                 return;
 
-            // Next to what was picked: inside a single folder, or beside a zip or several folders.
+            // The chooser for where the instruments go starts next to what was picked.
             auto base = inputs.size() == 1 && inputs[0].isDirectory() ? inputs[0] : inputs[0].getParentDirectory();
             for (const auto& f : inputs)
                 while (! f.isAChildOf (base) && f != base && base.getParentDirectory() != base)
                     base = base.getParentDirectory();
-            const auto outDir = base.getChildFile ("Mimic");
-            player.setSource (nullptr);
             const auto title = inputs.size() == 1 ? inputs[0].getFileName() : juce::String (inputs.size()) + " folders";
-            runJob ("Converting " + title, [this, inputs, outDir, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+
+            // Then where the instruments go: any folder, on any disk.
+            chooser = std::make_unique<juce::FileChooser> ("Where should the Mimic files for " + title + " go?", base);
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                                  [this, inputs, title] (const juce::FileChooser& out)
             {
-                return buildMimicFiles (inputs, outDir, hats, w);
-            },
-            [this] (const juce::String& report) { setStatus (report); });
+                const auto outDir = out.getResult();
+                if (outDir == juce::File())
+                    return;
+                player.setSource (nullptr);
+                runJob ("Converting " + title, [this, inputs, outDir, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+                {
+                    return buildMimicFiles (inputs, outDir, hats, w);
+                },
+                [this] (const juce::String& report) { setStatus (report); });
+            });
         });
     });
 }
@@ -896,7 +969,15 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
     cell->onEdit = [this, row, column] (const juce::String& text)
     {
         auto& z = kitMap.zones.getReference (row);
-        if (column == colPiece) z.piece = text.trim();
+        if (column == colPiece)
+        {
+            // A piece is all its zones: renaming one row (to "14\" Brass Snare", say) renames them all.
+            const auto old = z.piece;
+            for (auto& other : kitMap.zones)
+                if (old.isNotEmpty() && old != "?" && other.piece == old)
+                    other.piece = text.trim();
+            z.piece = text.trim();
+        }
         if (column == colZone) z.label = text.trim().toUpperCase();
         if (column == colNote) z.note = juce::jlimit (0, 127, text.getIntValue());
         if (column == colCc4) z.cc4 = text.trim().isEmpty() ? -1 : juce::jlimit (0, 127, text.getIntValue());

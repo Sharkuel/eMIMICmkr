@@ -61,14 +61,14 @@ them as VST3 plugins the app can load.
    zones); the **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
    count yourself (marked *); the piece's other ticked zones share what is left.
 5. When the recording ends, the app builds the Mimic instruments straight away, into
-   `Documents/eMIMICmkr/<kit name>/Mimic/`.
+   `<Save to folder>/<kit name>/Mimic/`.
 
 **Convert WAV folder...** builds Mimic instruments from one or several folders (or a .zip) of WAV hits in
 the layout below, such as a kit you recorded yourself or a WAV library, into a `Mimic`
 folder inside it. **Also make hi-hats as 3-zone rides** adds a ride-type copy of each hi-hat.
 
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
-and saved as 24-bit WAVs under `Documents/eMIMICmkr/<kit name>/`, one folder per zone, in
+and saved as 24-bit WAVs under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
 the layout the converter reads (below). The hi-hat is recorded at five pedal positions
 (CC4 127, 96, 64, 32, 0) on both bow and edge, plus the pedal chick.
 
