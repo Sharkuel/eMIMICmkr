@@ -372,14 +372,8 @@ void MainComponent::setImage (int row, const juce::Image& picture, const juce::F
 
 void MainComponent::offerNameFrom (int row, const juce::File& picture)
 {
-    // "5x14_DW_Timeless_Timber_Maple.png" -> "5x14 DW Timeless Timber Maple"; not "Screenshot_20261008".
-    auto name = picture.getFileNameWithoutExtension().replaceCharacter ('_', ' ').trim();
-    while (name.contains ("  "))
-        name = name.replace ("  ", " ");
-    const auto lower = name.toLowerCase();
-    if (! name.containsAnyOf ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
-        || lower.startsWith ("image") || lower.startsWith ("img") || lower.startsWith ("screenshot")
-        || lower.startsWith ("unnamed") || lower.startsWith ("pasted") || name == kitMap.zones[row].name)
+    const auto name = emk::KitMap::nameFromFileName (picture.getFileName());
+    if (name.isEmpty() || name == kitMap.zones[row].name)
         return;
 
     auto apply = [this, row, name]

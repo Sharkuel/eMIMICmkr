@@ -296,6 +296,32 @@ void KitMap::applyNames (const std::map<juce::String, DrumInfo>& drums,
     }
 }
 
+juce::String KitMap::nameFromFileName (const juce::String& fileName)
+{
+    const auto stem = fileName.upToLastOccurrenceOf (".", false, false).isNotEmpty()
+                          ? fileName.upToLastOccurrenceOf (".", false, false) : fileName;
+    // Spaces for underscores, and between words run together: "YamahaVintage", "DWTimeless".
+    juce::String name;
+    for (int i = 0; i < stem.length(); ++i)
+    {
+        const auto c = stem[i];
+        const auto prev = i > 0 ? stem[i - 1] : 0, next = i + 1 < stem.length() ? stem[i + 1] : 0;
+        const bool upper = juce::CharacterFunctions::isUpperCase (c);
+        if (upper && i > 0 && (juce::CharacterFunctions::isLowerCase (prev)
+                               || (juce::CharacterFunctions::isUpperCase (prev) && juce::CharacterFunctions::isLowerCase (next))))
+            name << ' ';
+        name << (c == '_' ? juce::juce_wchar (' ') : c);
+    }
+    while (name.contains ("  "))
+        name = name.replace ("  ", " ");
+    name = name.trim();
+    const auto lower = name.toLowerCase();
+    for (const char* generic : { "image", "img", "screenshot", "unnamed", "pasted", "untitled" })
+        if (lower.startsWith (generic))
+            return {};
+    return name.containsAnyOf ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") ? name : juce::String();
+}
+
 void KitMap::setPieceName (int index, const juce::String& name)
 {
     const auto piece = zones[index].piece;

@@ -63,7 +63,7 @@ them as VST3 plugins the app can load.
      library. Click an Image cell to choose, paste or capture a picture, or drop an image file on
      it; any picture is resized to 94x63. A picture from a file (chosen, dropped, or copied in a
      file manager and pasted) can also name the piece: "5x14_DW_Timeless_Timber_Maple.png" offers
-     "5x14 DW Timeless Timber Maple" (the Image menu's last item does it without asking). With SD3, names and pictures are remembered by SD3's ID
+     "5x14 DW Timeless Timber Maple" and "YamahaVintage.png" "Yamaha Vintage" (the Image menu's last item does it without asking). With SD3, names and pictures are remembered by SD3's ID
      for the drum and come back in every kit that uses it. Mimic kit presets find instruments by
      name, so settle the names before saving kit presets on the Mimic.
    - **Capture...**: takes a screenshot (with grim on Hyprland and Sway, Spectacle on KDE, or

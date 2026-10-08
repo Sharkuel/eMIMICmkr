@@ -363,6 +363,14 @@ int main (int argc, char** argv)
                          e.toRawUTF8());
         }
     }
+    using K = emk::KitMap;
+    const bool fileNamesOk = K::nameFromFileName ("YamahaVintage.png") == "Yamaha Vintage"
+                             && K::nameFromFileName ("5x14_DW_Timeless_Timber_Maple.png") == "5x14 DW Timeless Timber Maple"
+                             && K::nameFromFileName ("DWTimelessTimberMaple.jpg") == "DW Timeless Timber Maple"
+                             && K::nameFromFileName ("22in K Custom Ride.png") == "22in K Custom Ride"
+                             && K::nameFromFileName ("Screenshot_20261008.png").isEmpty();
+    std::printf ("names from files %s (%s)\n", fileNamesOk ? "ok" : "WRONG", K::nameFromFileName ("DWTimelessTimberMaple.jpg").toRawUTF8());
+    infoOk = infoOk && fileNamesOk;
     std::printf ("piece info %s, picture %s\n", infoOk ? "ok" : "WRONG", imageOk ? "ok" : "WRONG");
 
     // Only notes 20 to 70 make a sound.

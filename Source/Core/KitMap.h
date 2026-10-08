@@ -64,6 +64,10 @@ public:
     void applyNames (const std::map<juce::String, DrumInfo>& drums,
                      const std::map<juce::String, juce::String>& libraries = {});
 
+    /** A Mimic name from a picture's file name: "5x14_DW-TimelessTimberMaple.png" ->
+        "5x14 DW Timeless Timber Maple". Empty for names that say nothing, like "Screenshot_2026". */
+    static juce::String nameFromFileName (const juce::String& fileName);
+
     /** Sets name, library or image on every zone of zones[index]'s piece. */
     void setPieceName (int index, const juce::String&);
     void setPieceLibrary (int index, const juce::String&);
