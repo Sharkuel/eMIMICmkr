@@ -3,6 +3,7 @@
 #include "../Core/KitMap.h"
 #include "../Core/SoundPrint.h"
 #include "LiveHost.h"
+#include "ScreenTools.h"
 #include <map>
 #include <set>
 
@@ -19,7 +20,7 @@ public:
     void resized() override;
 
 private:
-    enum Column { colOn = 1, colPiece, colZone, colNote, colCc4, colHits, colName };
+    enum Column { colOn = 1, colPiece, colZone, colNote, colCc4, colHits, colName, colMimicName, colLibrary, colImage };
 
     void scanPlugins();
     void refreshPluginChoices();
@@ -77,16 +78,24 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     std::map<int, emk::SoundPrint> notePrints;   // what each note sounds like, to learn clicks in the plugin window
     juce::uint32 lastPluginNoteMs = 0;
-    std::map<juce::String, juce::String> drumNames;   // names you gave drums, by the plugin's ID for them
-    void loadDrumNames();
-    void rememberDrumName (const juce::String& piece);
+    std::map<juce::String, emk::DrumInfo> drums;       // names and pictures you gave drums, by the plugin's ID for them
+    std::map<juce::String, juce::String> libraries;   // library names you gave, by the plugin's library ID
+    void loadDrums();
+    void saveDrums();
+    void rememberDrum (int row);
+    void setLibrary (int row, const juce::String&);
+    void setImage (int row, const juce::Image&);
+    void showImageMenu (int row);
+    void startCapture();
+    void useCapture (const juce::Image& crop, juce::Point<int> at);
+    std::unique_ptr<ScreenTools::CaptureView> captureView;
     std::set<int> soundingNotes;   // from the last "Find notes", to flag rows that play nothing
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" },
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
-        namesButton { "Read plugin" },
+        namesButton { "Read plugin" }, captureButton { "Capture..." },
         convertButton { "Convert WAV folder..." }, saveToButton { "Change..." }, stateButton { "Save state..." };
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
     juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };

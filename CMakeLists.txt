@@ -26,12 +26,14 @@ target_sources(eMIMICmkr PRIVATE
     Source/App/Main.cpp
     Source/App/MainComponent.cpp
     Source/App/PluginScanner.cpp
+    Source/App/ScreenTools.cpp
     Source/Core/KitMap.cpp
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp
     Source/Core/Mci.cpp
     Source/Core/WavToMci.cpp
-    Source/Core/SoundPrint.cpp)
+    Source/Core/SoundPrint.cpp
+    Source/Core/MimicImage.cpp)
 
 target_compile_definitions(eMIMICmkr PRIVATE
     JUCE_PLUGINHOST_VST3=1
@@ -60,7 +62,9 @@ target_sources(eMIMICmkr_tests PRIVATE
     Source/Core/BatchRecorder.cpp
     Source/Core/Mci.cpp
     Source/Core/WavToMci.cpp
-    Source/Core/SoundPrint.cpp)
+    Source/Core/SoundPrint.cpp
+    Source/Core/MimicImage.cpp
+    Source/App/ScreenTools.cpp)
 target_compile_definitions(eMIMICmkr_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(eMIMICmkr_tests PRIVATE
     juce::juce_audio_devices

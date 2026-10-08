@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_data_structures/juce_data_structures.h>
+#include <map>
 
 namespace emk
 {
@@ -7,8 +8,8 @@ namespace emk
 struct KitZone
 {
     KitZone() = default;
-    KitZone (juce::String p, juce::String l, int n, int cc = -1, bool on = true, juce::String name = {})
-        : piece (std::move (p)), label (std::move (l)), note (n), cc4 (cc), enabled (on), pluginName (std::move (name)) {}
+    KitZone (juce::String p, juce::String l, int n, int cc = -1, bool on = true, juce::String nameInPlugin = {})
+        : piece (std::move (p)), label (std::move (l)), note (n), cc4 (cc), enabled (on), pluginName (std::move (nameInPlugin)) {}
 
     juce::String piece;      // Kick, Snare, Tom 1, Hi-Hat, Ride, Crash 1...
     juce::String label;      // folder/file zone label wav2mci reads: "RIDE1 BELL", "HATS BOW OPEN2"
@@ -18,6 +19,21 @@ struct KitZone
     juce::String pluginName; // the plugin's own name for this note, when it gives one
     int hits = 0;            // hits the user chose for this zone; 0 = share the piece's budget
     juce::String instrument; // the plugin's own ID for the drum, e.g. "SL-DRUMFACTORYARCADES/SD01_01"
+
+    // What the Mimic shows for the piece; every zone of a piece carries the same.
+    juce::String name;       // instrument name, e.g. "5x14 DW Timeless Timber Maple"; empty = from the piece
+    juce::String library;    // library name, e.g. "SD3 Drum Factory Arcades"; empty = the kit name
+    juce::MemoryBlock image; // 94x63 PNG
+
+    /** The library part of instrument: "SL-DRUMFACTORYARCADES". */
+    juce::String libraryId() const { return instrument.upToFirstOccurrenceOf ("/", false, false); }
+};
+
+/** What the user told the app about one drum, kept by the plugin's ID for it. */
+struct DrumInfo
+{
+    juce::String name;
+    juce::MemoryBlock image;
 };
 
 /** The note-to-zone map for one loaded kit. */
@@ -42,9 +58,16 @@ public:
         set, when the text isn't SD3's. */
     static KitMap fromSd3 (const juce::String& text, juce::String& error);
 
-    /** Names you gave drums, by their plugin ID: the piece of every zone whose instrument has
-        a name here takes that name. Two pieces never end up sharing one. */
-    void applyNames (const std::map<juce::String, juce::String>& namesById);
+    /** What you told the app about drums, by their plugin ID, and library names by the plugin's
+        library ID: every zone whose drum is known takes its name and image, and its library's
+        name. Two pieces never end up sharing one name. */
+    void applyNames (const std::map<juce::String, DrumInfo>& drums,
+                     const std::map<juce::String, juce::String>& libraries = {});
+
+    /** Sets name, library or image on every zone of zones[index]'s piece. */
+    void setPieceName (int index, const juce::String&);
+    void setPieceLibrary (int index, const juce::String&);
+    void setPieceImage (int index, const juce::MemoryBlock&);
 
     /** Finds SD3's kit text inside a plugin state or preset file, which may wrap it. */
     static juce::String sd3TextIn (const juce::MemoryBlock&);

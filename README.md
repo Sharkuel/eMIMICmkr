@@ -56,10 +56,22 @@ them as VST3 plugins the app can load.
      every instrument slot, its articulations and their notes (main zones ticked). Other VST3
      plugins fill the "Name in plugin" column from their note names. **Open map...** also opens
      an SD3 preset (.sd3p) the same way.
-     SD3 doesn't share its drums' brand and model names, so type them once in the Piece column:
-     the app remembers each name by SD3's ID for that drum and fills it in for every kit that uses it.
+   - **Name on the Mimic**, **Library** and **Image**: what the Mimic shows for each piece (the
+     Editor's "Displayed Instrument Name", "Displayed Library Name" and 94x63 PNG image). Empty
+     names and libraries show greyed what the Mimic gets instead (the kit name and piece; the kit
+     name). Double-click to type; a library name applies to every piece from the same plugin
+     library. Click an Image cell to choose, paste or capture a picture, or drop an image file on
+     it; any picture is resized to 94x63. With SD3, names and pictures are remembered by SD3's ID
+     for the drum and come back in every kit that uses it. Mimic kit presets find instruments by
+     name, so settle the names before saving kit presets on the Mimic.
+   - **Capture...**: takes a screenshot (with Spectacle, grim, gnome-screenshot, scrot, maim or
+     ImageMagick on Linux; built in on macOS and Windows) and shows it full screen. Drag a box
+     around a piece's picture or name in the plugin's window and choose **Picture of**, **Name
+     of** or **Library name**; names are read from the picture with
+     [Tesseract OCR](https://github.com/tesseract-ocr/tesseract), which must be installed. Esc
+     or right-click closes it.
    - **Save map...** / **Open map...**: keep a map per library as a .csv file
-     (`piece,zone,note,cc4,record`), which a spreadsheet can edit too.
+     (`piece,zone,note,cc4,record,hits,instrument,name,library,image`), which a spreadsheet can edit too.
    Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.
 4. Set **Most hits per zone** (default 127, spread from velocity 127 down to 1) and **Record kit**.
    With **Fit Mimic limits** on, each piece records only as many hits as the Mimic can hold
@@ -74,6 +86,9 @@ them as VST3 plugins the app can load.
 **Convert WAV folder...** builds Mimic instruments from one or several folders (or a .zip) of WAV hits in
 the layout below, such as a kit you recorded yourself or a WAV library, into a `Mimic`
 folder inside it. **Also make hi-hats as 3-zone rides** adds a ride-type copy of each hi-hat.
+A piece folder (the one holding its zone folders) may hold `mimic.txt` (`name: ...` and
+`library: ...` lines) and `mimic.png` (94x63); recordings get them from the table, and the
+converter puts them in the instrument.
 
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 24-bit WAVs under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in

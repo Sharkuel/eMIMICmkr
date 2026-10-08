@@ -214,13 +214,22 @@ std::pair<juce::String, juce::String> KitMap::guessFromName (const juce::String&
     return {};
 }
 
+namespace
+{
+// Commas split cells and double quotes would open a quoted cell: 14" is written 14''.
+juce::String csvText (const juce::String& s) { return s.replace (",", " ").replace ("\"", "''"); }
+juce::String fromCsvText (const juce::String& s) { return s.replace ("''", "\""); }
+} // namespace
+
 juce::String KitMap::toCsv() const
 {
-    juce::String out = "piece,zone,note,cc4,record,hits,instrument\n";
+    juce::String out = "piece,zone,note,cc4,record,hits,instrument,name,library,image\n";
     for (const auto& z : zones)
         out << z.piece.replace (",", " ") << "," << z.label.replace (",", " ") << "," << z.note << ","
             << (z.cc4 >= 0 ? juce::String (z.cc4) : juce::String()) << "," << (z.enabled ? "yes" : "no") << ","
-            << (z.hits > 0 ? juce::String (z.hits) : juce::String()) << "," << z.instrument.replace (",", " ") << "\n";
+            << (z.hits > 0 ? juce::String (z.hits) : juce::String()) << "," << z.instrument.replace (",", " ") << ","
+            << csvText (z.name) << "," << csvText (z.library) << ","
+            << (z.image.getSize() > 0 ? z.image.toBase64Encoding() : juce::String()) << "\n";
     return out;
 }
 
@@ -245,30 +254,70 @@ KitMap KitMap::fromCsv (const juce::String& text, juce::String& error)
         m.zones.add ({ cells[0], cells[1].toUpperCase(), cells[2].getIntValue(),
                        cells[3].isNotEmpty() ? juce::jlimit (0, 127, cells[3].getIntValue()) : -1, record });
         m.zones.getReference (m.zones.size() - 1).hits = juce::jmax (0, cells[5].getIntValue());
-        m.zones.getReference (m.zones.size() - 1).instrument = cells[6];
+        auto& z = m.zones.getReference (m.zones.size() - 1);
+        z.instrument = cells[6];
+        z.name = fromCsvText (cells[7]);
+        z.library = fromCsvText (cells[8]);
+        if (cells[9].isNotEmpty())
+            z.image.fromBase64Encoding (cells[9]);
     }
     if (m.zones.isEmpty())
         error = "No zones found.";
     return m;
 }
 
-void KitMap::applyNames (const std::map<juce::String, juce::String>& namesById)
+void KitMap::applyNames (const std::map<juce::String, DrumInfo>& drums,
+                         const std::map<juce::String, juce::String>& libraries)
 {
-    std::map<juce::String, juce::String> renamed;   // old piece -> new name
     juce::StringArray taken;
-    for (const auto& z : zones)
-        if (auto it = namesById.find (z.instrument); z.instrument.isNotEmpty() && it != namesById.end()
-                                                     && renamed.count (z.piece) == 0)
-        {
-            auto name = it->second;
-            for (int n = 2; taken.contains (name); ++n)
-                name = it->second + " " + juce::String (n);
-            taken.add (name);
-            renamed[z.piece] = name;
-        }
+    std::map<juce::String, juce::String> named;   // piece -> name given
     for (auto& z : zones)
-        if (auto it = renamed.find (z.piece); it != renamed.end())
-            z.piece = it->second;
+    {
+        if (z.instrument.isEmpty())
+            continue;
+        if (auto lib = libraries.find (z.libraryId()); lib != libraries.end() && lib->second.isNotEmpty())
+            z.library = lib->second;
+        const auto drum = drums.find (z.instrument);
+        if (drum == drums.end())
+            continue;
+        if (drum->second.image.getSize() > 0)
+            z.image = drum->second.image;
+        if (drum->second.name.isEmpty())
+            continue;
+        if (named.count (z.piece) == 0)
+        {
+            auto name = drum->second.name;
+            for (int n = 2; taken.contains (name); ++n)
+                name = drum->second.name + " " + juce::String (n);
+            taken.add (name);
+            named[z.piece] = name;
+        }
+        z.name = named[z.piece];
+    }
+}
+
+void KitMap::setPieceName (int index, const juce::String& name)
+{
+    const auto piece = zones[index].piece;
+    for (int i = 0; i < zones.size(); ++i)
+        if (i == index || (piece.isNotEmpty() && zones[i].piece == piece))
+            zones.getReference (i).name = name;
+}
+
+void KitMap::setPieceLibrary (int index, const juce::String& library)
+{
+    const auto piece = zones[index].piece;
+    for (int i = 0; i < zones.size(); ++i)
+        if (i == index || (piece.isNotEmpty() && zones[i].piece == piece))
+            zones.getReference (i).library = library;
+}
+
+void KitMap::setPieceImage (int index, const juce::MemoryBlock& image)
+{
+    const auto piece = zones[index].piece;
+    for (int i = 0; i < zones.size(); ++i)
+        if (i == index || (piece.isNotEmpty() && zones[i].piece == piece))
+            zones.getReference (i).image = image;
 }
 
 juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
@@ -447,7 +496,9 @@ juce::ValueTree KitMap::toValueTree() const
         tree.appendChild (juce::ValueTree ("Zone", { { "piece", z.piece }, { "label", z.label },
                                                      { "note", z.note }, { "cc4", z.cc4 },
                                                      { "enabled", z.enabled }, { "pluginName", z.pluginName },
-                                                     { "hits", z.hits }, { "instrument", z.instrument } }),
+                                                     { "hits", z.hits }, { "instrument", z.instrument },
+                                                     { "name", z.name }, { "library", z.library },
+                                                     { "image", z.image } }),
                           nullptr);
     return tree;
 }
@@ -464,6 +515,10 @@ KitMap KitMap::fromValueTree (const juce::ValueTree& tree)
     {
         m.zones.getReference (i).hits = (int) tree.getChild (i).getProperty ("hits", 0);
         m.zones.getReference (i).instrument = tree.getChild (i)["instrument"].toString();
+        m.zones.getReference (i).name = tree.getChild (i)["name"].toString();
+        m.zones.getReference (i).library = tree.getChild (i)["library"].toString();
+        if (const auto* image = tree.getChild (i)["image"].getBinaryData())
+            m.zones.getReference (i).image = *image;
     }
     return m;
 }

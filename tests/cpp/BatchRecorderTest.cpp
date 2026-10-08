@@ -4,6 +4,9 @@
 #include "../../Source/Core/BatchRecorder.h"
 #include "../../Source/App/LiveHost.h"
 #include "../../Source/Core/SoundPrint.h"
+#include "../../Source/Core/WavToMci.h"
+#include "../../Source/Core/MimicImage.h"
+#include "../../Source/App/ScreenTools.h"
 
 namespace
 {
@@ -153,18 +156,28 @@ bool sd3KitReads()
                     && noteOf ("Hi-Hat", "HATS FOOT SPLASH") == 23;
     // Names typed for drums come back by their SD3 ID, one piece each.
     auto named = map;
-    std::map<juce::String, juce::String> names { { "SL-DRUMFACTORYARCADES/SD01_01", "5x14 DW Timeless Timber Maple" },
-                                                 { "SL-DRUMFACTORYARCADES/SD01_02", "5x14 DW Timeless Timber Maple" } };
-    named.applyNames (names);
+    juce::MemoryBlock png ("\x89PNG\r\n\x1a\nfake", 12);
+    std::map<juce::String, emk::DrumInfo> drums { { "SL-DRUMFACTORYARCADES/SD01_01", { "5x14\" DW Timeless Timber Maple", png } },
+                                                  { "SL-DRUMFACTORYARCADES/SD01_02", { "5x14\" DW Timeless Timber Maple", {} } } };
+    named.applyNames (drums, { { "SL-DRUMFACTORYARCADES", "SD3 Drum Factory Arcades" } });
+    auto zoneCalled = [&named] (const juce::String& label) -> const emk::KitZone&
+    {
+        for (const auto& z : named.zones)
+            if (z.label == label)
+                return z;
+        return named.zones.getReference (0);
+    };
     juce::String csvError;
+    const auto back = emk::KitMap::fromCsv (named.toCsv(), csvError);
     const bool namesOk = noteOf ("Snare", "SNARE1 CENTER") == 38
-                         && [&named] { for (const auto& z : named.zones)
-                                           if (z.label == "SNARE1 CENTER") return z.piece == "5x14 DW Timeless Timber Maple";
-                                       return false; }()
-                         && [&named] { for (const auto& z : named.zones)
-                                           if (z.label == "SNARE2 CENTER") return z.piece == "5x14 DW Timeless Timber Maple 2";
-                                       return false; }()
-                         && emk::KitMap::fromCsv (named.toCsv(), csvError).toCsv() == named.toCsv();
+                         && zoneCalled ("SNARE1 CENTER").name == "5x14\" DW Timeless Timber Maple"
+                         && zoneCalled ("SNARE1 RIMSHOT").image == png
+                         && zoneCalled ("SNARE2 CENTER").name == "5x14\" DW Timeless Timber Maple 2"
+                         && zoneCalled ("SNARE1 CENTER").piece == "Snare"
+                         && zoneCalled ("TOM1 CENTER").library == "SD3 Drum Factory Arcades"
+                         && back.toCsv() == named.toCsv() && back.zones[1].name == named.zones[1].name
+                         && emk::KitMap::fromValueTree (juce::ValueTree::fromXml (*named.toValueTree().createXml())).toCsv()
+                                == named.toCsv();
     juce::String notSd3;
     emk::KitMap::fromSd3 ("piece,zone,note", notSd3);
     std::printf ("sd3 kit %s (%d zones, snare rimshot %d)\n", ok && notSd3.isNotEmpty() ? "ok" : "WRONG",
@@ -290,9 +303,67 @@ int main (int argc, char** argv)
     for (const auto& z : map.zones)
         enabled += z.enabled ? 1 : 0;
 
+    int snare = -1;
+    for (int i = 0; i < map.zones.size(); ++i)
+        if (map.zones[i].label == "SNARE1 CENTER")
+            snare = i;
+    const auto picture = emk::WavToMci::thumbnail (94, 63);
+    map.setPieceName (snare, "14\" Brass Snare");
+    map.setPieceLibrary (snare, "My Library");
+    map.setPieceImage (snare, picture);
+
     int calls = 0;
     const auto report = emk::BatchRecorder::record (plugin, map, settings, root, [&] (const auto&) { ++calls; return true; });
     std::printf ("%s\nprogress calls %d, CC4 messages %d\n", report.toRawUTF8(), calls, plugin.ccCount);
+
+    // The name, library and image given to a piece end up in its Mimic instrument.
+    const auto snareFolder = emk::BatchRecorder::fileFor (root, map.kitName, map.zones[snare], 1, 1)
+                                 .getParentDirectory().getParentDirectory();
+    const auto mimicDir = root.getChildFile ("mimic info test");
+    const auto built = emk::WavToMci::run (snareFolder, mimicDir, {}, [] (const juce::String&) {}, [] (double) { return true; });
+    bool infoOk = built.written.size() == 1 && built.written[0].endsWith ("14\" Brass Snare.mci");
+    if (infoOk)
+    {
+        const auto mci = emk::mci::readMci (juce::File (built.written[0]));
+        infoOk = mci.getString ("INST0insnam") == "14\" Brass Snare" && mci.getString ("INST0libnam") == "My Library"
+                 && mci.image == picture;
+    }
+    // Any picture becomes the Mimic's 94x63 PNG, whole and centred on black.
+    juce::Image wide (juce::Image::ARGB, 400, 100, true);
+    wide.clear (wide.getBounds(), juce::Colours::red);
+    const auto small = emk::MimicImage::load (emk::MimicImage::png (wide));
+    const bool imageOk = small.getWidth() == 94 && small.getHeight() == 63 && small.getPixelAt (47, 31).getRed() > 200
+                         && small.getPixelAt (47, 2).getRed() < 30;
+    infoOk = infoOk && imageOk;
+
+    // A name read off a plugin-style picture: light letters on a dark panel.
+    juce::Image plate (juce::Image::RGB, 260, 22, true);
+    {
+        juce::Graphics g (plate);
+        g.fillAll (juce::Colour (0xff2b2d33));
+        g.setColour (juce::Colour (0xffd8d8d8));
+        g.setFont (juce::FontOptions (15.0f));
+        g.drawText ("DW Timeless Timber Maple", plate.getBounds(), juce::Justification::centredLeft);
+    }
+    juce::String ocrError;
+    const auto read = ScreenTools::readText (plate, ocrError);
+    std::printf ("text read: \"%s\" %s\n", read.toRawUTF8(), ocrError.toRawUTF8());
+    if (ocrError.isEmpty())
+        infoOk = infoOk && read.contains ("Timeless Timber Maple");
+    if (const auto shot = juce::SystemStats::getEnvironmentVariable ("OCR_IMAGE", {}); shot.isNotEmpty())
+    {
+        // OCR_BOXES="x,y,w,h;x,y,w,h": read each box of a screenshot, to try real plugin windows.
+        const auto screenshot = juce::ImageFileFormat::loadFrom (juce::File (shot));
+        for (const auto& b : juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("OCR_BOXES", {}), ";", ""))
+        {
+            const auto v = juce::StringArray::fromTokens (b, ",", "");
+            const juce::Rectangle<int> r (v[0].getIntValue(), v[1].getIntValue(), v[2].getIntValue(), v[3].getIntValue());
+            juce::String e;
+            std::printf ("box %s: \"%s\" %s\n", b.toRawUTF8(), ScreenTools::readText (screenshot.getClippedImage (r).createCopy(), e).toRawUTF8(),
+                         e.toRawUTF8());
+        }
+    }
+    std::printf ("piece info %s, picture %s\n", infoOk ? "ok" : "WRONG", imageOk ? "ok" : "WRONG");
 
     // Only notes 20 to 70 make a sound.
     const auto sounding = emk::BatchRecorder::findSoundingNotes (plugin, settings.render, [] (int) { return true; });
@@ -355,7 +426,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads();
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

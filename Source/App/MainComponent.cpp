@@ -2,6 +2,7 @@
 #include "../Core/BatchRecorder.h"
 #include "../Core/WavToMci.h"
 #include "../Core/HitRenderer.h"
+#include "../Core/MimicImage.h"
 #include "PluginScanner.h"
 
 namespace
@@ -40,6 +41,34 @@ public:
     {
         if (onSelect) onSelect();   // clicking a cell picks its row, for "Listen to zone"
         Label::mouseDown (e);
+    }
+};
+
+/** A piece's picture in the table: click for a menu, or drop an image file on it. */
+class ImageCell : public juce::Component, public juce::FileDragAndDropTarget, public juce::SettableTooltipClient
+{
+public:
+    std::function<void()> onClick;
+    std::function<void (const juce::File&)> onFile;
+    juce::Image image;
+
+    void paint (juce::Graphics& g) override
+    {
+        if (image.isValid())
+        {
+            g.drawImageWithin (image, 2, 1, getWidth() - 4, getHeight() - 2, juce::RectanglePlacement::centred);
+            return;
+        }
+        g.setColour (findColour (juce::Label::textColourId).withAlpha (0.4f));
+        g.setFont (12.0f);
+        g.drawText ("add...", getLocalBounds(), juce::Justification::centred);
+    }
+    void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
+    bool isInterestedInFileDrag (const juce::StringArray&) override { return true; }
+    void filesDropped (const juce::StringArray& files, int, int) override
+    {
+        if (onFile && ! files.isEmpty())
+            onFile (juce::File (files[0]));
     }
 };
 
@@ -101,6 +130,10 @@ MainComponent::MainComponent()
     stateButton.setTooltip ("Saves what the plugin stores about its kit to a file. Send it to us to help teach "
                             "eMIMICmkr to read piece names (brand and model) from this plugin.");
     namesButton.onClick = [this] { readNoteNames(); };
+    addAndMakeVisible (captureButton);
+    captureButton.onClick = [this] { startCapture(); };
+    captureButton.setTooltip ("Takes a screenshot to pick the selected piece's picture and name (read from the "
+                              "picture's text) straight from the plugin's window.");
     audioDevices.addAudioCallback (&live);
     live.onPluginNote = [this] (int note)
     {
@@ -165,6 +198,9 @@ MainComponent::MainComponent()
     auto& header = table.getHeader();
     header.addColumn ("Record", colOn, 60);
     header.addColumn ("Piece", colPiece, 110);
+    header.addColumn ("Name on the Mimic", colMimicName, 200);
+    header.addColumn ("Library", colLibrary, 140);
+    header.addColumn ("Image", colImage, 60);
     header.addColumn ("Zone (file label)", colZone, 200);
     header.addColumn ("Note", colNote, 60);
     header.addColumn ("CC4", colCc4, 50);
@@ -177,10 +213,10 @@ MainComponent::MainComponent()
     else
         mapChoice.setSelectedId (1);
 
-    loadDrumNames();
+    loadDrums();
     refreshPluginChoices();
     setStatus ("Find your drum plugins to start.");
-    setSize (860, 720);
+    setSize (1180, 720);
 }
 
 MainComponent::~MainComponent()
@@ -237,7 +273,7 @@ void MainComponent::resized()
 
     area.removeFromTop (12);
     row = area.removeFromTop (28);
-    for (auto* b : { &learnButton, &findButton, &namesButton, &stateButton, &addButton, &removeButton })
+    for (auto* b : { &learnButton, &findButton, &namesButton, &captureButton, &stateButton, &addButton, &removeButton })
     {
         b->setBounds (row.removeFromLeft (92));
         row.removeFromLeft (6);
@@ -251,35 +287,261 @@ void MainComponent::resized()
     table.setBounds (area);
 }
 
-void MainComponent::loadDrumNames()
+void MainComponent::loadDrums()
 {
-    drumNames.clear();
+    drums.clear();
+    libraries.clear();
     if (auto xml = settings->getXmlValue ("drumNames"))
         for (auto* drum : xml->getChildIterator())
-            drumNames[drum->getStringAttribute ("id")] = drum->getStringAttribute ("name");
+        {
+            auto& info = drums[drum->getStringAttribute ("id")];
+            info.name = drum->getStringAttribute ("name");
+            info.image.fromBase64Encoding (drum->getStringAttribute ("image"));
+        }
+    if (auto xml = settings->getXmlValue ("libraryNames"))
+        for (auto* library : xml->getChildIterator())
+            libraries[library->getStringAttribute ("id")] = library->getStringAttribute ("name");
 }
 
-void MainComponent::rememberDrumName (const juce::String& piece)
+void MainComponent::saveDrums()
 {
-    // Typed once, a drum's name comes back in every kit that uses it.
-    bool changed = false;
-    for (const auto& z : kitMap.zones)
-        if (z.piece == piece && z.instrument.isNotEmpty() && piece.isNotEmpty() && drumNames[z.instrument] != piece)
-        {
-            drumNames[z.instrument] = piece;
-            changed = true;
-        }
-    if (! changed)
-        return;
     juce::XmlElement xml ("DrumNames");
-    for (const auto& [id, name] : drumNames)
-        if (name.isNotEmpty())
+    for (const auto& [id, info] : drums)
+        if (info.name.isNotEmpty() || info.image.getSize() > 0)
         {
             auto* drum = xml.createNewChildElement ("Drum");
             drum->setAttribute ("id", id);
-            drum->setAttribute ("name", name);
+            drum->setAttribute ("name", info.name);
+            if (info.image.getSize() > 0)
+                drum->setAttribute ("image", info.image.toBase64Encoding());
         }
     settings->setValue ("drumNames", &xml);
+    juce::XmlElement libs ("LibraryNames");
+    for (const auto& [id, name] : libraries)
+        if (name.isNotEmpty())
+        {
+            auto* library = libs.createNewChildElement ("Library");
+            library->setAttribute ("id", id);
+            library->setAttribute ("name", name);
+        }
+    settings->setValue ("libraryNames", &libs);
+}
+
+void MainComponent::rememberDrum (int row)
+{
+    // Named or pictured once, a drum comes back that way in every kit that uses it.
+    const auto& zone = kitMap.zones[row];
+    if (zone.instrument.isEmpty())
+        return;
+    drums[zone.instrument] = { zone.name, zone.image };
+    saveDrums();
+}
+
+void MainComponent::setLibrary (int row, const juce::String& name)
+{
+    // One library name for every piece from the same plugin library (all of them, for a kit
+    // with no library IDs), remembered for that library.
+    const auto id = kitMap.zones[row].libraryId();
+    for (auto& z : kitMap.zones)
+        if (z.libraryId() == id)
+            z.library = name;
+    if (id.isNotEmpty())
+    {
+        libraries[id] = name;
+        saveDrums();
+    }
+}
+
+void MainComponent::setImage (int row, const juce::Image& picture)
+{
+    if (! juce::isPositiveAndBelow (row, kitMap.zones.size()))
+        return setStatus ("Pick a piece in the table first.");
+    const auto png = emk::MimicImage::png (picture);
+    if (png.getSize() == 0)
+        return setStatus ("That isn't a picture eMIMICmkr can read (PNG, JPEG or GIF).");
+    kitMap.setPieceImage (row, png);
+    rememberDrum (row);
+    saveMap();
+    table.updateContent();
+    table.repaint();
+    setStatus (kitMap.zones[row].piece + " has a new picture (" + juce::String (emk::MimicImage::width) + "x"
+               + juce::String (emk::MimicImage::height) + ").");
+}
+
+void MainComponent::showImageMenu (int row)
+{
+    table.selectRow (row);
+    juce::PopupMenu menu;
+    menu.addItem (1, "Choose a picture...");
+    menu.addItem (2, "Paste a picture");
+    menu.addItem (3, "Capture from the screen...");
+    menu.addItem (4, "Remove the picture", kitMap.zones[row].image.getSize() > 0);
+    menu.showMenuAsync (juce::PopupMenu::Options(), [this, row] (int choice)
+    {
+        if (choice == 1)
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Picture for " + kitMap.zones[row].piece, juce::File(),
+                                                           "*.png;*.jpg;*.jpeg;*.gif");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [this, row] (const juce::FileChooser& fc)
+            {
+                if (fc.getResult() != juce::File())
+                    setImage (row, juce::ImageFileFormat::loadFrom (fc.getResult()));
+            });
+        }
+        if (choice == 2)
+        {
+            juce::String error;
+            const auto picture = ScreenTools::clipboardImage (error);
+            if (picture.isValid())
+                setImage (row, picture);
+            else
+                setStatus (error);
+        }
+        if (choice == 3)
+            startCapture();
+        if (choice == 4)
+        {
+            kitMap.setPieceImage (row, {});
+            rememberDrum (row);
+            saveMap();
+            table.updateContent();
+            table.repaint();
+        }
+    });
+}
+
+void MainComponent::startCapture()
+{
+    if (captureView != nullptr)
+        return;
+    // Out of the way while the screenshot is taken, so the plugin's window shows.
+    auto* window = getTopLevelComponent();
+    const auto& displays = juce::Desktop::getInstance().getDisplays();
+    const auto* display = displays.getDisplayForRect (pluginWindow != nullptr && pluginWindow->isVisible()
+                                                          ? pluginWindow->getScreenBounds() : window->getScreenBounds());
+    const auto area = display != nullptr ? display->totalArea : window->getScreenBounds();
+    window->setVisible (false);
+    setStatus ("Taking a screenshot...");
+    juce::Timer::callAfterDelay (600, [safe = juce::Component::SafePointer<MainComponent> (this), area]
+    {
+        if (safe == nullptr)
+            return;
+        juce::String error;
+        auto shot = ScreenTools::grabScreen (error);
+        safe->getTopLevelComponent()->setVisible (true);
+        if (! shot.isValid())
+            return safe->setStatus (error);
+        juce::Displays::Display where;
+        where.totalArea = area;
+        safe->captureView = std::make_unique<ScreenTools::CaptureView> (ScreenTools::displayPart (shot, where));
+        auto& view = *safe->captureView;
+        view.onBox = [safe] (const juce::Image& crop, juce::Point<int> at)
+        {
+            if (safe != nullptr)
+                safe->useCapture (crop, at);
+        };
+        view.onClose = [safe]
+        {
+            juce::MessageManager::callAsync ([safe]
+            {
+                if (safe == nullptr || safe->captureView == nullptr)
+                    return;
+                juce::Desktop::getInstance().setKioskModeComponent (nullptr, false);
+                safe->captureView = nullptr;
+                safe->getTopLevelComponent()->toFront (true);
+            });
+        };
+        view.setBounds (area);
+        view.addToDesktop (juce::ComponentPeer::windowAppearsOnTaskbar);
+        view.setVisible (true);
+        juce::Desktop::getInstance().setKioskModeComponent (&view, false);
+        view.toFront (true);
+        view.grabKeyboardFocus();
+        const int row = safe->table.getSelectedRow();
+        if (juce::isPositiveAndBelow (row, safe->kitMap.zones.size()))
+            view.setMessage ("Drag a box around " + safe->kitMap.zones[row].piece + "'s picture or name in the plugin, "
+                             "then choose what it is. Esc or right-click when done.");
+        safe->setStatus ({});
+    });
+}
+
+void MainComponent::useCapture (const juce::Image& crop, juce::Point<int> at)
+{
+    // The pieces, each with its first row.
+    juce::StringArray pieces;
+    juce::Array<int> rows;
+    for (int i = 0; i < kitMap.zones.size(); ++i)
+        if (! pieces.contains (kitMap.zones[i].piece))
+        {
+            pieces.add (kitMap.zones[i].piece);
+            rows.add (i);
+        }
+    const int selected = table.getSelectedRow();
+    const auto current = juce::isPositiveAndBelow (selected, kitMap.zones.size()) ? kitMap.zones[selected].piece : juce::String();
+
+    juce::PopupMenu menu, pictures, names;
+    for (int p = 0; p < pieces.size(); ++p)
+    {
+        pictures.addItem (1000 + p, pieces[p]);
+        names.addItem (2000 + p, pieces[p]);
+    }
+    if (current.isNotEmpty())
+    {
+        menu.addItem (1, "Picture of " + current);
+        menu.addItem (2, "Name of " + current + " (reads the text)");
+    }
+    menu.addSubMenu ("Picture of...", pictures);
+    menu.addSubMenu ("Name of...", names);
+    menu.addItem (3, "Library name for this kit (reads the text)");
+
+    auto* view = captureView.get();
+    menu.showMenuAsync (juce::PopupMenu::Options().withParentComponent (view)
+                                                  .withTargetScreenArea ({ at.x, at.y, 1, 1 }),
+                        [safe = juce::Component::SafePointer<MainComponent> (this), crop, rows, selected] (int choice)
+    {
+        if (safe == nullptr || choice == 0 || safe->captureView == nullptr)
+            return;
+        auto& self = *safe;
+        const int row = choice == 1 || choice == 2 || choice == 3 ? selected
+                      : choice >= 2000 ? rows[choice - 2000] : rows[choice - 1000];
+        if (! juce::isPositiveAndBelow (row, self.kitMap.zones.size()))
+            return;
+        const auto piece = self.kitMap.zones[row].piece;
+        if (choice == 1 || (choice >= 1000 && choice < 2000))
+        {
+            self.setImage (row, crop);
+            self.captureView->setMessage ("Picture of " + piece + " set. Drag another box, or Esc when done.");
+            return;
+        }
+        juce::String error;
+        const auto text = ScreenTools::readText (crop, error);
+        if (text.isEmpty())
+        {
+            self.captureView->setMessage (error.isNotEmpty() ? error : "No text found in that box. Try a box around just the name.");
+            return;
+        }
+        if (choice == 3)
+        {
+            juce::StringArray done;
+            for (int i = 0; i < self.kitMap.zones.size(); ++i)
+                if (! done.contains (self.kitMap.zones[i].libraryId()))
+                {
+                    done.add (self.kitMap.zones[i].libraryId());
+                    self.setLibrary (i, text);
+                }
+            self.captureView->setMessage ("Library name set to \"" + text + "\". Fix any misread letters in the table.");
+        }
+        else
+        {
+            self.kitMap.setPieceName (row, text);
+            self.rememberDrum (row);
+            self.captureView->setMessage ("Name of " + piece + " set to \"" + text + "\". Fix any misread letters in the table.");
+        }
+        self.saveMap();
+        self.table.updateContent();
+        self.table.repaint();
+    });
 }
 
 juce::File MainComponent::outputFolder() const
@@ -780,7 +1042,7 @@ void MainComponent::loadMapFile()
         const auto sd3 = emk::KitMap::sd3TextIn (data);
         auto map = sd3.isNotEmpty() ? emk::KitMap::fromSd3 (sd3, error) : emk::KitMap::fromCsv (file.loadFileAsString(), error);
         if (sd3.isNotEmpty() && error.isEmpty())
-            map.applyNames (drumNames);
+            map.applyNames (drums, libraries);
         if (sd3.isNotEmpty() && error.isEmpty())
             map.kitName = kitMap.kitName.isNotEmpty() ? kitMap.kitName
                                                       : file.getFileNameWithoutExtension().replaceCharacter ('_', ' ');
@@ -829,7 +1091,7 @@ void MainComponent::readNoteNames()
         auto map = emk::KitMap::fromSd3 (sd3, error);
         if (error.isEmpty())
         {
-            map.applyNames (drumNames);
+            map.applyNames (drums, libraries);
             map.kitName = kitMap.kitName;
             mapChoice.setSelectedId (0, juce::dontSendNotification);
             useMap (std::move (map));
@@ -1058,6 +1320,23 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         return toggle;
     }
 
+    if (column == colImage)
+    {
+        auto* picture = dynamic_cast<ImageCell*> (existing);
+        if (picture == nullptr)
+        {
+            delete existing;
+            picture = new ImageCell();
+        }
+        picture->image = emk::MimicImage::load (zone.image);
+        picture->repaint();
+        picture->setTooltip ("The picture the Mimic shows for " + zone.piece + ". Click to choose, paste or capture one, "
+                             "or drop an image file here; it's resized to 94x63.");
+        picture->onClick = [this, row] { showImageMenu (row); };
+        picture->onFile = [this, row] (const juce::File& f) { setImage (row, juce::ImageFileFormat::loadFrom (f)); };
+        return picture;
+    }
+
     auto* cell = dynamic_cast<EditableCell*> (existing);
     if (cell == nullptr)
     {
@@ -1065,7 +1344,16 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         cell = new EditableCell();
     }
     const int hits = ! zone.enabled ? 0 : kitMap.hitsFor (row, maxHits(), fitLimits.getToggleState());
+    // Empty name and library cells show, greyed, what the Mimic will get instead.
+    const auto shownName = zone.name.isNotEmpty() ? zone.name
+                                                  : emk::BatchRecorder::safeName (kitMap.kitName + " " + zone.piece);
+    const auto shownLibrary = zone.library.isNotEmpty() ? zone.library : kitMap.kitName;
+    const bool placeholder = (column == colMimicName && zone.name.isEmpty()) || (column == colLibrary && zone.library.isEmpty());
+    cell->setColour (juce::Label::textColourId,
+                     getLookAndFeel().findColour (juce::Label::textColourId).withAlpha (placeholder ? 0.45f : 1.0f));
     cell->setText (column == colPiece ? zone.piece
+                   : column == colMimicName ? shownName
+                   : column == colLibrary ? shownLibrary
                    : column == colZone ? zone.label
                    : column == colNote ? juce::String (zone.note)
                    : column == colHits ? (hits > 0 ? juce::String (hits) + (zone.hits > 0 ? " *" : "") : juce::String())
@@ -1073,6 +1361,14 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
                    : zone.cc4 >= 0 ? juce::String (zone.cc4) : juce::String(),
                    juce::dontSendNotification);
     cell->setEditable (false, column != colName, false);   // names come from the plugin
+    cell->setTooltip ({});
+    if (column == colMimicName)
+        cell->setTooltip ("The instrument name the Mimic shows. Double-click to type it, or use Capture... to read it "
+                          "from the plugin. Superior Drummer drums keep the name in every kit that uses them. "
+                          "Mimic kit presets find instruments by this name, so rename before saving presets.");
+    if (column == colLibrary)
+        cell->setTooltip ("The library name the Mimic shows; it changes every piece from the same plugin library. "
+                          "Empty = the kit name.");
     if (column == colHits)
         cell->setTooltip ("Double-click to set this zone's hits; * marks a count you set. "
                           "Clear it to go back to an even share of the piece's wave cells.");
@@ -1087,8 +1383,14 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
                 if (old.isNotEmpty() && old != "?" && other.piece == old)
                     other.piece = text.trim();
             z.piece = text.trim();
-            rememberDrumName (z.piece);
         }
+        if (column == colMimicName)
+        {
+            kitMap.setPieceName (row, text.trim());
+            rememberDrum (row);
+        }
+        if (column == colLibrary)
+            setLibrary (row, text.trim());
         if (column == colZone) z.label = text.trim().toUpperCase();
         if (column == colNote) z.note = juce::jlimit (0, 127, text.getIntValue());
         if (column == colCc4) z.cc4 = text.trim().isEmpty() ? -1 : juce::jlimit (0, 127, text.getIntValue());

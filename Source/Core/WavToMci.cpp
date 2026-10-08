@@ -257,6 +257,15 @@ juce::MemoryBlock WavToMci::Input::read (const juce::String& name) const
     return data;
 }
 
+bool WavToMci::Input::has (const juce::String& name) const
+{
+    if (entries.contains (name))
+        return true;
+    // Several folders given together leave out the folder holding them, where a piece's
+    // mimic.txt sits.
+    return zip == nullptr && root != juce::File() && root.getChildFile (name).existsAsFile();
+}
+
 juce::String WavToMci::Input::topFolder() const
 {
     juce::StringArray tops;
@@ -547,6 +556,60 @@ juce::MemoryBlock WavToMci::thumbnail (int width, int height)
     pngChunk (png, "IDAT", idat.getMemoryBlock());
     pngChunk (png, "IEND", {});
     return png.getMemoryBlock();
+}
+
+juce::String WavToMci::infoText (const PieceInfo& info)
+{
+    juce::String text;
+    if (info.name.isNotEmpty())
+        text << "name: " << info.name << "\n";
+    if (info.library.isNotEmpty())
+        text << "library: " << info.library << "\n";
+    return text;
+}
+
+WavToMci::PieceInfo WavToMci::pieceInfo (const Piece& piece, const Input& src)
+{
+    PieceInfo info;
+    juce::StringArray folders;
+    for (const auto& [zone, hits] : piece.zones)
+        if (! hits.empty())
+        {
+            const auto path = hits.front().path.replaceCharacter ('\\', '/');
+            const auto zoneFolder = path.upToLastOccurrenceOf ("/", false, false);
+            if (zoneFolder != path)
+            {
+                const auto pieceFolder = zoneFolder.upToLastOccurrenceOf ("/", false, false);
+                folders.addIfNotAlreadyThere (pieceFolder != zoneFolder ? pieceFolder + "/" : juce::String());
+                folders.addIfNotAlreadyThere (zoneFolder + "/");
+            }
+        }
+    auto find = [&] (const juce::String& file) -> juce::String
+    {
+        for (const auto& folder : folders)
+            for (const auto& name : { folder + file, (folder + file).replaceCharacter ('/', '\\') })
+                if (src.has (name))
+                    return name;
+        return {};
+    };
+    if (const auto txt = find (infoFile); txt.isNotEmpty())
+    {
+        const auto block = src.read (txt);
+        for (auto line : juce::StringArray::fromLines (juce::String::fromUTF8 ((const char*) block.getData(), (int) block.getSize())))
+        {
+            const auto key = line.upToFirstOccurrenceOf (":", false, false).trim().toLowerCase();
+            const auto value = line.fromFirstOccurrenceOf (":", false, false).trim();
+            if (key == "name") info.name = value;
+            if (key == "library") info.library = value;
+        }
+    }
+    if (const auto png = find (imageFile); png.isNotEmpty())
+    {
+        auto block = src.read (png);
+        if (block.getSize() > 8 && std::memcmp (block.getData(), "\x89PNG", 4) == 0)
+            info.image = std::move (block);
+    }
+    return info;
 }
 
 juce::String WavToMci::pieceTitle (const Piece& piece, const Input& src)
@@ -976,7 +1039,9 @@ WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juc
     for (size_t p = 0; p < pieces.size(); ++p)
     {
         const auto& piece = pieces[p];
-        const auto name = options.name.isNotEmpty() && pieces.size() == 1 ? options.name : pieceTitle (piece, src);
+        const auto info = pieceInfo (piece, src);
+        const auto name = options.name.isNotEmpty() && pieces.size() == 1 ? options.name
+                        : info.name.isNotEmpty() ? info.name : pieceTitle (piece, src);
         juce::StringArray counts;
         int hits = 0;
         for (const auto& [zone, zoneHits] : piece.zones)
@@ -1002,7 +1067,11 @@ WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juc
         {
             try
             {
-                const auto f = build (piece, src, title, options.choke, asRide, log, onWavRead);
+                auto f = build (piece, src, title, options.choke, asRide, log, onWavRead);
+                if (info.library.isNotEmpty())
+                    f.set ("INST0libnam", mci::Value::ofString (info.library));
+                if (info.image.getSize() > 0)
+                    f.image = info.image;
                 const auto file = dir.getChildFile (title.replaceCharacters ("/\\", "  ") + ".mci");
                 const auto result = mci::writeMciFile (f, file);
                 if (result.failed())

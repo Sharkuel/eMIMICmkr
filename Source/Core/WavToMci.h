@@ -84,6 +84,7 @@ public:
         const juce::StringArray& names() const { return entries; }   // in the order Python lists them
         const juce::StringArray& skipped() const { return skippedInputs; }   // "<input>: why"
         juce::MemoryBlock read (const juce::String& name) const;
+        bool has (const juce::String& name) const;
         juce::String topFolder() const;
 
     private:
@@ -135,6 +136,19 @@ public:
     static std::vector<int> minVelocities (const std::vector<Hits>& layers);
 
     static juce::MemoryBlock thumbnail (int width = 76, int height = 63);
+
+    /** What the Mimic shows for a piece, beyond its sound. */
+    struct PieceInfo
+    {
+        juce::String name, library;   // "Set Displayed Instrument Name / Library Name" in the Editor
+        juce::MemoryBlock image;      // PNG, 94x63
+    };
+    static constexpr const char* infoFile = "mimic.txt";    // "name: ..." and "library: ..." lines
+    static constexpr const char* imageFile = "mimic.png";
+    /** The piece's mimic.txt and mimic.png, from the folder holding its zone folders (where
+        BatchRecorder writes them) or from a zone folder. Empty when there are none. */
+    static PieceInfo pieceInfo (const Piece&, const Input&);
+    static juce::String infoText (const PieceInfo&);
     static juce::String pieceTitle (const Piece&, const Input&);
 
     /** Mono samples on the 24-bit scale. Stereo is averaged; 16-bit lands on the Editor's grid.

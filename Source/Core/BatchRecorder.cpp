@@ -1,4 +1,6 @@
 #include "BatchRecorder.h"
+#include "WavToMci.h"
+#include <set>
 
 namespace emk
 {
@@ -108,6 +110,32 @@ juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const Kit
         if (silentHits == vels.size())
             silent.add (zone.piece + " " + zone.label + " (note " + juce::String (zone.note) + ")");
     }
+
+    // What the Mimic shows for each piece, next to its zone folders for the converter.
+    std::set<juce::String> described;
+    for (const auto& zone : zones)
+        if (described.insert (zone.piece).second)
+        {
+            WavToMci::PieceInfo info;
+            for (const auto& z : zones)
+                if (z.piece == zone.piece)
+                {
+                    if (info.name.isEmpty()) info.name = z.name.trim();
+                    if (info.library.isEmpty()) info.library = z.library.trim();
+                    if (info.image.getSize() == 0) info.image = z.image;
+                }
+            if (info.library.isEmpty())
+                info.library = map.kitName.trim();
+            const auto folder = fileFor (root, map.kitName, zone, 1, 1).getParentDirectory().getParentDirectory();
+            if (! folder.isDirectory())
+                continue;
+            folder.getChildFile (WavToMci::infoFile).replaceWithText (WavToMci::infoText (info));
+            const auto png = folder.getChildFile (WavToMci::imageFile);
+            if (info.image.getSize() > 0)
+                png.replaceWithData (info.image.getData(), info.image.getSize());
+            else
+                png.deleteFile();
+        }
 
     juce::String report = "Recorded " + juce::String (written) + " hits to "
                           + root.getChildFile (safeName (map.kitName)).getFullPathName() + ".";
