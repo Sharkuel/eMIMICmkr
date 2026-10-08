@@ -4,3 +4,4 @@ __pycache__/
 *.mci
 *.wav
 .claude/worktrees/
+result

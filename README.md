@@ -36,7 +36,11 @@ Linux comes in four forms, all built for x86-64 on Ubuntu 22.04 (glibc 2.35 or n
 | `eMIMICmkr-Linux-x86_64.tar.gz` | The bare program, with `eMIMICmkr.desktop` and `eMIMICmkr.png` for a menu entry |
 
 On Arch, `packaging/aur/PKGBUILD` builds `emimicmkr-git` from the latest source (`makepkg -si`
-in that folder); it is ready to publish on the AUR once the repository is public. There is no
+in that folder); it is ready to publish on the AUR once the repository is public. On Nix and NixOS, the
+flake at the repository root builds it: `nix run github:Sharkuel/eMIMICmkr` to try it, or add
+`inputs.emimicmkr.url = "github:Sharkuel/eMIMICmkr";` to your system flake and
+`emimicmkr.packages.${pkgs.system}.default` to `environment.systemPackages` (yabridge is in
+nixpkgs too). There is no
 Flatpak: its sandbox can't reach plugins installed on the system or run yabridge's Wine.
 
 ## Building the app
