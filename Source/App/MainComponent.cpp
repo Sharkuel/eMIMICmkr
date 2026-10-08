@@ -996,7 +996,8 @@ bool MainComponent::runJob (const juce::String& title,
             b->setEnabled (true);
         done (report);
         // The job can't delete itself from inside its own callback.
-        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+        juce::Component::SafePointer<MainComponent> self (this);
+        juce::MessageManager::callAsync ([safe = self]
         {
             if (safe != nullptr)
                 safe->job = nullptr;
