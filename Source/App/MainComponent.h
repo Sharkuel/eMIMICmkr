@@ -84,7 +84,8 @@ private:
     void saveDrums();
     void rememberDrum (int row);
     void setLibrary (int row, const juce::String&);
-    void setImage (int row, const juce::Image&);
+    void setImage (int row, const juce::Image&, const juce::File& source = {});
+    void offerNameFrom (int row, const juce::File& picture);
     void showImageMenu (int row);
     void startCapture();
     void useCapture (const juce::Image& crop, juce::Point<int> at);

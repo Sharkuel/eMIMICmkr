@@ -102,8 +102,13 @@ juce::Image grabScreen (juce::String& error)
    #elif JUCE_MAC
     tries.push_back ({ "screencapture", "-x", path });
    #else
+    const auto desktop = juce::SystemStats::getEnvironmentVariable ("XDG_CURRENT_DESKTOP", {}).toLowerCase();
+    const bool wayland = juce::SystemStats::getEnvironmentVariable ("WAYLAND_DISPLAY", {}).isNotEmpty();
+    if (wayland && ! desktop.contains ("kde"))   // Hyprland, Sway and other wlroots desktops
+        tries.push_back ({ "grim", path });
     tries.push_back ({ "spectacle", "--background", "--nonotify", "--fullscreen", "--output", path });
-    tries.push_back ({ "grim", path });
+    if (! wayland || desktop.contains ("kde"))
+        tries.push_back ({ "grim", path });
     tries.push_back ({ "gnome-screenshot", "-f", path });
     tries.push_back ({ "scrot", path });
     tries.push_back ({ "maim", path });
@@ -120,14 +125,50 @@ juce::Image grabScreen (juce::String& error)
         if (auto image = loadFile (file); image.isValid())
             return image;
     }
-    error = tried.isEmpty() ? juce::String ("No screenshot tool found. Install Spectacle, grim, gnome-screenshot, scrot, maim "
-                                            "or ImageMagick.")
+    error = tried.isEmpty() ? juce::String ("No screenshot tool found. Install grim (Hyprland, Sway), Spectacle (KDE), "
+                                            "gnome-screenshot, scrot, maim or ImageMagick.")
                             : "Taking a screenshot with " + tried.joinIntoString (", ") + " didn't work.";
     return {};
 }
 
-juce::Image clipboardImage (juce::String& error)
+namespace
 {
+/** An image file whose path or file:// URL is on the clipboard, as a file manager puts it there. */
+juce::File copiedImageFile()
+{
+    juce::StringArray texts;
+   #if JUCE_LINUX
+    for (const auto& args : { juce::StringArray { "wl-paste", "--no-newline", "--type", "text/uri-list" },
+                              juce::StringArray { "xclip", "-selection", "clipboard", "-t", "text/uri-list", "-o" } })
+    {
+        bool ok = false;
+        const auto data = runForOutput (args, 3000, &ok);
+        if (ok && data.getSize() > 0)
+            texts.add (juce::String::fromUTF8 ((const char*) data.getData(), (int) data.getSize()));
+    }
+   #endif
+    texts.add (juce::SystemClipboard::getTextFromClipboard());
+    for (const auto& text : texts)
+        for (auto line : juce::StringArray::fromLines (text))
+        {
+            line = line.trim();
+            const auto f = line.startsWith ("file://") ? juce::URL (line).getLocalFile()
+                         : juce::File::isAbsolutePath (line) ? juce::File (line) : juce::File();
+            if (loadFile (f).isValid())
+                return f;
+        }
+    return {};
+}
+} // namespace
+
+juce::Image clipboardImage (juce::String& error, juce::File* source)
+{
+    if (const auto f = copiedImageFile(); f != juce::File())
+    {
+        if (source != nullptr)
+            *source = f;
+        return loadFile (f);
+    }
     const juce::TemporaryFile temp (".png");
     const auto file = temp.getFile();
    #if JUCE_WINDOWS
@@ -153,15 +194,6 @@ juce::Image clipboardImage (juce::String& error)
                 return image;
     }
    #endif
-    // A copied image file: its path, or its file:// URL from a file manager.
-    for (auto line : juce::StringArray::fromLines (juce::SystemClipboard::getTextFromClipboard()))
-    {
-        line = line.trim();
-        const auto f = line.startsWith ("file://") ? juce::URL (line).getLocalFile()
-                     : juce::File::isAbsolutePath (line) ? juce::File (line) : juce::File();
-        if (auto image = loadFile (f); image.isValid())
-            return image;
-    }
     error = "There's no picture on the clipboard.";
    #if JUCE_LINUX
     if (findProgram ("wl-paste") == juce::File() && findProgram ("xclip") == juce::File())

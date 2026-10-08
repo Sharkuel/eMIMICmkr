@@ -352,7 +352,7 @@ void MainComponent::setLibrary (int row, const juce::String& name)
     }
 }
 
-void MainComponent::setImage (int row, const juce::Image& picture)
+void MainComponent::setImage (int row, const juce::Image& picture, const juce::File& source)
 {
     if (! juce::isPositiveAndBelow (row, kitMap.zones.size()))
         return setStatus ("Pick a piece in the table first.");
@@ -366,6 +366,54 @@ void MainComponent::setImage (int row, const juce::Image& picture)
     table.repaint();
     setStatus (kitMap.zones[row].piece + " has a new picture (" + juce::String (emk::MimicImage::width) + "x"
                + juce::String (emk::MimicImage::height) + ").");
+    if (source != juce::File())
+        offerNameFrom (row, source);
+}
+
+void MainComponent::offerNameFrom (int row, const juce::File& picture)
+{
+    // "5x14_DW_Timeless_Timber_Maple.png" -> "5x14 DW Timeless Timber Maple"; not "Screenshot_20261008".
+    auto name = picture.getFileNameWithoutExtension().replaceCharacter ('_', ' ').trim();
+    while (name.contains ("  "))
+        name = name.replace ("  ", " ");
+    const auto lower = name.toLowerCase();
+    if (! name.containsAnyOf ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        || lower.startsWith ("image") || lower.startsWith ("img") || lower.startsWith ("screenshot")
+        || lower.startsWith ("unnamed") || lower.startsWith ("pasted") || name == kitMap.zones[row].name)
+        return;
+
+    auto apply = [this, row, name]
+    {
+        if (! juce::isPositiveAndBelow (row, kitMap.zones.size()))
+            return;
+        kitMap.setPieceName (row, name);
+        rememberDrum (row);
+        saveMap();
+        table.updateContent();
+        table.repaint();
+        setStatus (kitMap.zones[row].piece + " is now \"" + name + "\" on the Mimic.");
+    };
+    const auto mode = settings->getValue ("nameFromPicture", "ask");
+    if (mode == "always")
+        return apply();
+    if (mode == "never")
+        return;
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                      .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                      .withTitle ("Name it after the picture?")
+                                      .withMessage ("Call " + kitMap.zones[row].piece + " \"" + name
+                                                    + "\" on the Mimic, from the picture's file name?")
+                                      .withButton ("Use the name")
+                                      .withButton ("Always")
+                                      .withButton ("No")
+                                      .withAssociatedComponent (this),
+                                  [this, apply] (int button)
+    {
+        if (button == 2)
+            settings->setValue ("nameFromPicture", "always");
+        if (button == 1 || button == 2)
+            apply();
+    });
 }
 
 void MainComponent::showImageMenu (int row)
@@ -376,6 +424,8 @@ void MainComponent::showImageMenu (int row)
     menu.addItem (2, "Paste a picture");
     menu.addItem (3, "Capture from the screen...");
     menu.addItem (4, "Remove the picture", kitMap.zones[row].image.getSize() > 0);
+    menu.addSeparator();
+    menu.addItem (5, "Name pieces after their picture files", true, settings->getValue ("nameFromPicture") == "always");
     menu.showMenuAsync (juce::PopupMenu::Options(), [this, row] (int choice)
     {
         if (choice == 1)
@@ -386,20 +436,23 @@ void MainComponent::showImageMenu (int row)
                                   [this, row] (const juce::FileChooser& fc)
             {
                 if (fc.getResult() != juce::File())
-                    setImage (row, juce::ImageFileFormat::loadFrom (fc.getResult()));
+                    setImage (row, juce::ImageFileFormat::loadFrom (fc.getResult()), fc.getResult());
             });
         }
         if (choice == 2)
         {
             juce::String error;
-            const auto picture = ScreenTools::clipboardImage (error);
+            juce::File source;
+            const auto picture = ScreenTools::clipboardImage (error, &source);
             if (picture.isValid())
-                setImage (row, picture);
+                setImage (row, picture, source);
             else
                 setStatus (error);
         }
         if (choice == 3)
             startCapture();
+        if (choice == 5)
+            settings->setValue ("nameFromPicture", settings->getValue ("nameFromPicture") == "always" ? "ask" : "always");
         if (choice == 4)
         {
             kitMap.setPieceImage (row, {});
@@ -1333,7 +1386,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         picture->setTooltip ("The picture the Mimic shows for " + zone.piece + ". Click to choose, paste or capture one, "
                              "or drop an image file here; it's resized to 94x63.");
         picture->onClick = [this, row] { showImageMenu (row); };
-        picture->onFile = [this, row] (const juce::File& f) { setImage (row, juce::ImageFileFormat::loadFrom (f)); };
+        picture->onFile = [this, row] (const juce::File& f) { setImage (row, juce::ImageFileFormat::loadFrom (f), f); };
         return picture;
     }
 

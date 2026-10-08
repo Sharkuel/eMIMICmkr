@@ -61,11 +61,13 @@ them as VST3 plugins the app can load.
      names and libraries show greyed what the Mimic gets instead (the kit name and piece; the kit
      name). Double-click to type; a library name applies to every piece from the same plugin
      library. Click an Image cell to choose, paste or capture a picture, or drop an image file on
-     it; any picture is resized to 94x63. With SD3, names and pictures are remembered by SD3's ID
+     it; any picture is resized to 94x63. A picture from a file (chosen, dropped, or copied in a
+     file manager and pasted) can also name the piece: "5x14_DW_Timeless_Timber_Maple.png" offers
+     "5x14 DW Timeless Timber Maple" (the Image menu's last item does it without asking). With SD3, names and pictures are remembered by SD3's ID
      for the drum and come back in every kit that uses it. Mimic kit presets find instruments by
      name, so settle the names before saving kit presets on the Mimic.
-   - **Capture...**: takes a screenshot (with Spectacle, grim, gnome-screenshot, scrot, maim or
-     ImageMagick on Linux; built in on macOS and Windows) and shows it full screen. Drag a box
+   - **Capture...**: takes a screenshot (with grim on Hyprland and Sway, Spectacle on KDE, or
+     gnome-screenshot, scrot, maim or ImageMagick on Linux; built in on macOS and Windows) and shows it full screen. Drag a box
      around a piece's picture or name in the plugin's window and choose **Picture of**, **Name
      of** or **Library name**; names are read from the picture with
      [Tesseract OCR](https://github.com/tesseract-ocr/tesseract), which must be installed. Esc

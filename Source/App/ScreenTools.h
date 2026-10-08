@@ -10,8 +10,9 @@ namespace ScreenTools
 /** Every screen, as one picture. Blocks while the tool runs. */
 juce::Image grabScreen (juce::String& error);
 
-/** A picture copied to the clipboard, or an image file whose path or URL was copied. */
-juce::Image clipboardImage (juce::String& error);
+/** A picture copied to the clipboard, or an image file whose path or URL was copied (then
+    source, when given, gets that file). */
+juce::Image clipboardImage (juce::String& error, juce::File* source = nullptr);
 
 /** The text in a picture, on one line. error says what's missing when Tesseract isn't installed. */
 juce::String readText (const juce::Image&, juce::String& error);
