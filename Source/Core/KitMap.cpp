@@ -296,6 +296,30 @@ void KitMap::applyNames (const std::map<juce::String, DrumInfo>& drums,
     }
 }
 
+bool KitMap::sharesPiece (const juce::String& piece)
+{
+    return piece.isNotEmpty() && piece != "?";   // "?" rows are notes still to sort out, not one piece
+}
+
+void KitMap::movePiece (int index, const juce::String& piece)
+{
+    // A row moved into another piece takes on that piece's drum; into a new one, it starts afresh.
+    auto& zone = zones.getReference (index);
+    zone.piece = piece;
+    for (int i = 0; i < zones.size(); ++i)
+        if (i != index && sharesPiece (piece) && zones[i].piece == piece)
+        {
+            zone.name = zones[i].name;
+            zone.library = zones[i].library;
+            zone.image = zones[i].image;
+            zone.instrument = zones[i].instrument;
+            return;
+        }
+    zone.name = {};
+    zone.image = {};
+    zone.instrument = {};
+}
+
 juce::String KitMap::nameFromFileName (const juce::String& fileName)
 {
     const auto stem = fileName.upToLastOccurrenceOf (".", false, false).isNotEmpty()
@@ -326,7 +350,7 @@ void KitMap::setPieceName (int index, const juce::String& name)
 {
     const auto piece = zones[index].piece;
     for (int i = 0; i < zones.size(); ++i)
-        if (i == index || (piece.isNotEmpty() && zones[i].piece == piece))
+        if (i == index || (sharesPiece (piece) && zones[i].piece == piece))
             zones.getReference (i).name = name;
 }
 
@@ -334,7 +358,7 @@ void KitMap::setPieceLibrary (int index, const juce::String& library)
 {
     const auto piece = zones[index].piece;
     for (int i = 0; i < zones.size(); ++i)
-        if (i == index || (piece.isNotEmpty() && zones[i].piece == piece))
+        if (i == index || (sharesPiece (piece) && zones[i].piece == piece))
             zones.getReference (i).library = library;
 }
 
@@ -342,7 +366,7 @@ void KitMap::setPieceImage (int index, const juce::MemoryBlock& image)
 {
     const auto piece = zones[index].piece;
     for (int i = 0; i < zones.size(); ++i)
-        if (i == index || (piece.isNotEmpty() && zones[i].piece == piece))
+        if (i == index || (sharesPiece (piece) && zones[i].piece == piece))
             zones.getReference (i).image = image;
 }
 
@@ -445,13 +469,24 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
                           : pos.startsWith ("china") ? "china" : "";
         if (juce::String (family).isEmpty())
         {
-            for (const auto& [pad, notes] : slot.pads)   // percussion and the like: listen and name them
-                m.zones.add ({ slot.pos, "NOTE " + juce::String (notes[0]), notes[0], -1, false, slot.pos + ": " + pad });
+            // Octobans, cowbells, chimes...: a Mimic percussion instrument, whose four zones take
+            // the slot's first four pads. Main is ticked; listen to the others before ticking them.
+            static const char* percZones[] = { "MAIN", "SECONDARY", "ADD1", "ADD2" };
+            const auto head = "PERC " + slot.pos.toUpperCase().retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+            int zone = 0;
+            for (const auto& [pad, notes] : slot.pads)
+            {
+                if (pad.contains ("Trig") || pad.contains ("Ctrl"))
+                    continue;
+                const auto label = zone < 4 ? head + " " + percZones[zone] : "NOTE " + juce::String (notes[0]);
+                m.zones.add ({ zone < 4 ? slot.pos : juce::String ("?"), label, notes[0], -1, zone == 0, slot.pos + ": " + pad });
+                ++zone;
+            }
             continue;
         }
         const int n = ++counts[family];
         const juce::String num (n), upper = juce::String (family).toUpperCase();
-        const juce::String piece = juce::String (family) == "kick" ? "Kick"
+        const juce::String piece = juce::String (family) == "kick" ? (n == 1 ? "Kick" : "Kick " + num)
                                  : juce::String (family) == "hats" ? "Hi-Hat"
                                  : juce::String (family) == "snare" ? (n == 1 ? "Snare" : "Snare " + num)
                                  : juce::String (family).substring (0, 1).toUpperCase() + juce::String (family).substring (1) + " " + num;
@@ -494,7 +529,7 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
             { "crash", { { "", "EDGE", true }, { "RT", "BOW", true }, { "BL", "BELL", false }, { "M", "CHOKE", false } } },
         };
         const auto& table = codes.count (family) ? codes.at (family) : codes.at ("crash");   // splash, china
-        const juce::String labelHead = juce::String (family) == "kick" ? juce::String ("KICK1") : upper + num;
+        const juce::String labelHead = upper + num;
         std::set<juce::String> used;
         for (const auto& c : table)
             if (const int note = noteOf (c.code); note >= 0)

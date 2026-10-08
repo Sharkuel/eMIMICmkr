@@ -391,6 +391,19 @@ std::pair<juce::String, juce::String> WavToMci::classify (const juce::String& zo
     const auto& head = words[0];
     if (head == "KICK" || head == "BD" || head == "BASSDRUM")
         return { "kick", "kick" };
+    static const juce::StringArray percWords { "PERC", "PERCUSSION", "OCTOBAN", "COWBELL", "TAMBOURINE", "SHAKER", "CLAP",
+                                               "BLOCK", "WOODBLOCK", "CONGA", "BONGO", "TIMBALE", "TRIANGLE", "CHIMES", "AUX" };
+    if (percWords.contains (head))
+    {
+        // Main, Secondary, Additional 1 and 2 when the label says which; otherwise the label
+        // itself, and the zones fill the four in label order ("PERC 1 HEAD", "PERC 2 HEAD").
+        const auto squashed = upper.removeCharacters (" _");
+        if (squashed.endsWith ("ADD2") || squashed.endsWith ("ADDITIONAL2")) return { "perc", "add2" };
+        if (squashed.endsWith ("ADD1") || squashed.endsWith ("ADDITIONAL1")) return { "perc", "add1" };
+        if (words.contains ("SECONDARY")) return { "perc", "secondary" };
+        if (words.contains ("MAIN")) return { "perc", "main" };
+        return { "perc", "z:" + upper };
+    }
     static const juce::StringArray cymbalWords { "RIDE", "CRASH", "SPLASH", "CHINA", "STACK", "CYMBAL", "BELL" };
     const juce::String family = cymbalWords.contains (head)                                    ? "cymbal"
                               : (head == "SNARE" || head == "SD")                              ? "snare"
@@ -839,6 +852,49 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         const auto hat = mci::hatArticulations (std::move (tip), std::move (shank), std::move (edge),
                                                 std::move (pedal), std::move (splash));
         return mci::buildInstrument (name, "Hat", hat.articulations, thumbnail(), {}, "Hi-Hat", 0.52, hat.controllerZones);
+    }
+
+    if (piece.family == "perc")
+    {
+        // Up to four zones; those not named Main, Secondary, Add1 or Add2 fill the gaps in label order.
+        static const char* slots[] = { "main", "secondary", "add1", "add2" };
+        static const char* zoneTypes[] = { "perc main", "perc secondary", "perc additional 1", "perc additional 2" };
+        static const char* names[] = { "Main", "Secondary", "Additional 1", "Additional 2" };
+        std::map<juce::String, juce::String> keyFor;   // slot -> zone key
+        juce::StringArray loose;
+        for (const auto& [key, hits] : piece.zones)
+            if (key.startsWith ("z:"))
+                loose.add (key);
+            else
+                keyFor[key] = key;
+        loose.sort (true);
+        for (const auto* slot : slots)
+            if (keyFor.count (slot) == 0 && ! loose.isEmpty())
+            {
+                keyFor[slot] = loose[0];
+                loose.remove (0);
+            }
+        for (const auto& extra : loose)
+            log ("  " + name + ": the Mimic's percussion has four zones; leaving out " + extra.substring (2));
+        Shares available;
+        for (const auto* slot : slots)
+            if (keyFor.count (slot) > 0)
+                available.emplace_back (slot, (int) hitsOf (keyFor[slot]).size());
+        const auto shares = shareCells (cellLimit ("Perc"), available);
+        std::vector<mci::Articulation> arts;
+        for (int i = 0; i < 4; ++i)
+        {
+            if (keyFor.count (slots[i]) == 0)
+                continue;
+            auto z = zone (keyFor[slots[i]], maxLayers, shareOf (shares, slots[i]), roundRobins ("perc", slots[i]));
+            mci::Articulation a;
+            a.name = names[i];
+            a.zoneType = mci::zoneType (zoneTypes[i]);
+            a.layers = std::move (z.audio);
+            a.minVelocities = z.velocities;
+            arts.push_back (std::move (a));
+        }
+        return mci::buildInstrument (name, "Perc", arts, thumbnail(), {}, "Perc");
     }
 
     if (piece.family == "kick")

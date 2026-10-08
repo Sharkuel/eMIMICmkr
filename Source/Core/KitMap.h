@@ -68,7 +68,14 @@ public:
         "5x14 DW Timeless Timber Maple". Empty for names that say nothing, like "Screenshot_2026". */
     static juce::String nameFromFileName (const juce::String& fileName);
 
-    /** Sets name, library or image on every zone of zones[index]'s piece. */
+    /** Moves zones[index] into piece: it takes that piece's name, library, image and drum, or,
+        for a piece no other row has, drops its old ones. Only this row moves. */
+    void movePiece (int index, const juce::String& piece);
+
+    /** Whether the rows of piece go together; "?" rows (notes found but not sorted out) don't. */
+    static bool sharesPiece (const juce::String& piece);
+
+    /** Sets name, library or image on every zone of zones[index]'s piece ("?" rows: that row only). */
     void setPieceName (int index, const juce::String&);
     void setPieceLibrary (int index, const juce::String&);
     void setPieceImage (int index, const juce::MemoryBlock&);

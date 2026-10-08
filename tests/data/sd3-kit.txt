@@ -134,3 +134,14 @@ pos "Splash2"
 drum "SP01_02"  "Sticks" 1
 alias splash2M 95
 alias splash2 96 93 99
+instbox 90 {
+xpad 0 SL-DRUMFACTORYDARKROOM {
+pos "KickL"
+drum "KD01_02"  "Felt" 1
+alias kick2R 35
+instbox 91 {
+xpad 0 SL-DRUMFACTORYDARKROOM {
+pos "Octoban1"
+drum "OC01_01"  "Sticks" 1
+alias oct1R 69
+alias oct1FX 4

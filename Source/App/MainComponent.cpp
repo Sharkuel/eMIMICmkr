@@ -166,6 +166,15 @@ MainComponent::MainComponent()
     loadMapButton.onClick = [this] { loadMapFile(); };
     saveMapButton.onClick = [this] { saveMapFile(); };
     learnButton.setClickingTogglesState (true);
+    // Red while on, so it isn't left learning by mistake.
+    learnButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffc62828));
+    learnButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    learnButton.onStateChange = [this]
+    {
+        const auto text = learnButton.getToggleState() ? "Learning..." : "Learn notes";
+        if (learnButton.getButtonText() != text)
+            learnButton.setButtonText (text);
+    };
     learnButton.onClick = [this]
     {
         if (! learnButton.getToggleState())
@@ -1409,6 +1418,9 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
                    juce::dontSendNotification);
     cell->setEditable (false, column != colName, false);   // names come from the plugin
     cell->setTooltip ({});
+    if (column == colPiece)
+        cell->setTooltip ("Which instrument this row belongs to. Typing changes this row only: type another "
+                          "piece's name to move the row into it, or a new name to make it a piece of its own.");
     if (column == colMimicName)
         cell->setTooltip ("The instrument name the Mimic shows. Double-click to type it, or use Capture... to read it "
                           "from the plugin. Superior Drummer drums keep the name in every kit that uses them. "
@@ -1422,15 +1434,8 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
     cell->onEdit = [this, row, column] (const juce::String& text)
     {
         auto& z = kitMap.zones.getReference (row);
-        if (column == colPiece)
-        {
-            // A piece is all its zones: renaming one row (to "14\" Brass Snare", say) renames them all.
-            const auto old = z.piece;
-            for (auto& other : kitMap.zones)
-                if (old.isNotEmpty() && old != "?" && other.piece == old)
-                    other.piece = text.trim();
-            z.piece = text.trim();
-        }
+        if (column == colPiece)   // only this row: give it another piece's name to move it there
+            kitMap.movePiece (row, text.trim());
         if (column == colMimicName)
         {
             kitMap.setPieceName (row, text.trim());

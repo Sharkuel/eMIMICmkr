@@ -153,7 +153,8 @@ bool sd3KitReads()
                     && noteOf ("Ride 1", "RIDE1 EDGE") == 59 && noteOf ("Crash 2", "CRASH2 EDGE") == 57
                     && noteOf ("Splash 1", "SPLASH1 EDGE") == 55 && noteOf ("Hi-Hat", "HATS EDGE OPEN2") == 7
                     && noteOf ("Hi-Hat", "HATS BOW CLOSED") == 8 && noteOf ("Hi-Hat", "HATS PEDAL CLOSED") == 21
-                    && noteOf ("Hi-Hat", "HATS FOOT SPLASH") == 23;
+                    && noteOf ("Hi-Hat", "HATS FOOT SPLASH") == 23 && noteOf ("Kick 2", "KICK2") == 35
+                    && noteOf ("Octoban1", "PERC OCTOBAN1 MAIN") == 69 && noteOf ("Octoban1", "PERC OCTOBAN1 SECONDARY") == 4;
     // Names typed for drums come back by their SD3 ID, one piece each.
     auto named = map;
     juce::MemoryBlock png ("\x89PNG\r\n\x1a\nfake", 12);
@@ -328,6 +329,27 @@ int main (int argc, char** argv)
         infoOk = mci.getString ("INST0insnam") == "14\" Brass Snare" && mci.getString ("INST0libnam") == "My Library"
                  && mci.image == picture;
     }
+    // Percussion: zones named in the label take those places, the rest fill in by label order.
+    {
+        emk::KitMap perc;
+        perc.kitName = "Perc Kit";
+        perc.zones.add ({ "Octobans", "PERC 2 HEAD", 31 });
+        perc.zones.add ({ "Octobans", "PERC 1 HEAD", 30 });
+        perc.zones.add ({ "Octobans", "PERC OCTOBAN4 ADD2", 33 });
+        emk::BatchRecorder::record (plugin, perc, settings, root, [] (const auto&) { return true; });
+        const auto made = emk::WavToMci::run (root.getChildFile ("Perc Kit"), root.getChildFile ("perc mimic"), {},
+                                              [] (const juce::String&) {}, [] (double) { return true; });
+        bool percOk = made.written.size() == 1;
+        if (percOk)
+        {
+            const auto mci = emk::mci::readMci (juce::File (made.written[0]));
+            percOk = mci.getString ("INST0instyp") == "Perc" && mci.getInt ("INST0numart") == 3
+                     && mci.getString ("INST0artic0artn") == "Main" && mci.getString ("INST0artic2artn") == "Additional 2";
+        }
+        std::printf ("percussion %s (%s)\n", percOk ? "ok" : "WRONG", made.toString().toRawUTF8());
+        infoOk = infoOk && percOk;
+    }
+
     // Any picture becomes the Mimic's 94x63 PNG, whole and centred on black.
     juce::Image wide (juce::Image::ARGB, 400, 100, true);
     wide.clear (wide.getBounds(), juce::Colours::red);
