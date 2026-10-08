@@ -516,7 +516,7 @@ void MainComponent::recordKit()
 
     player.setSource (nullptr);
     const auto map = kitMap;
-    runJob ("Recording " + map.kitName, [this, map, s, hats = hatAsRide.getToggleState(), root = outputFolder()] (juce::ThreadWithProgressWindow& w)
+    runJob ("Recording " + map.kitName, [this, map, s, root = outputFolder()] (juce::ThreadWithProgressWindow& w)
     {
         auto report = emk::BatchRecorder::record (*plugin, map, s, root, [&w] (const auto& p)
         {
@@ -524,14 +524,42 @@ void MainComponent::recordKit()
             w.setStatusMessage (p.current + "  (" + juce::String (p.done + 1) + " of " + juce::String (p.total) + ")");
             return ! w.threadShouldExit();
         });
-        if (w.threadShouldExit())
-            return report;
-
-        // Straight on to the Mimic instruments, next to the recordings.
-        const auto kitFolder = root.getChildFile (emk::BatchRecorder::safeName (map.kitName));
-        return report + "\n" + buildMimicFiles ({ kitFolder }, kitFolder.getChildFile ("Mimic"), hats, w);
+        return report;
     },
-    [this] (const juce::String& report) { setStatus (report); });
+    [this, kitFolder = outputFolder().getChildFile (emk::BatchRecorder::safeName (map.kitName)), kitName = map.kitName]
+    (const juce::String& report)
+    {
+        setStatus (report);
+        if (! kitFolder.isDirectory())
+            return;
+        // Offer the Mimic instruments now, next to the recordings; they can always be made later
+        // with "Convert WAV folder...".
+        const auto mimic = kitFolder.getChildFile ("Mimic");
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                          .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                          .withTitle ("Make the Mimic files?")
+                                          .withMessage ("The WAV files of " + kitName + " are in\n" + kitFolder.getFullPathName()
+                                                        + "\n\nConvert them to .mci files now? They will go in\n"
+                                                        + mimic.getFullPathName())
+                                          .withButton ("Convert")
+                                          .withButton ("Not now")
+                                          .withAssociatedComponent (this),
+                                      [this, report, kitFolder, mimic, kitName] (int button)
+        {
+            if (button != 1)
+                return;
+            runJob ("Converting " + kitName, [this, kitFolder, mimic, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+            {
+                return buildMimicFiles ({ kitFolder }, mimic, hats, w);
+            },
+            [this, report, mimic] (const juce::String& built)
+            {
+                setStatus (report + "\n" + built);
+                if (mimic.isDirectory())
+                    mimic.revealToUser();
+            });
+        });
+    });
 }
 
 juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides,

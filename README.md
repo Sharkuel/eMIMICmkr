@@ -66,8 +66,9 @@ them as VST3 plugins the app can load.
    (kick 64, snare 300, toms 200, 2-zone cymbals 200, rides 300, shared across the piece's
    zones); the **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
    count yourself (marked *); the piece's other ticked zones share what is left.
-5. When the recording ends, the app builds the Mimic instruments straight away, into
-   `<Save to folder>/<kit name>/Mimic/`.
+5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
+   **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;
+   **Not now** leaves the WAV files for **Convert WAV folder...** later.
 
 **Convert WAV folder...** builds Mimic instruments from one or several folders (or a .zip) of WAV hits in
 the layout below, such as a kit you recorded yourself or a WAV library, into a `Mimic`
