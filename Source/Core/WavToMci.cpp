@@ -1128,7 +1128,9 @@ WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juc
                     f.set ("INST0libnam", mci::Value::ofString (info.library));
                 if (info.image.getSize() > 0)
                     f.image = info.image;
-                const auto file = dir.getChildFile (title.replaceCharacters ("/\\", "  ") + ".mci");
+                // The name inside keeps any quote marks; the file name can't on Windows (14" Snare).
+                const auto file = dir.getChildFile (title.replaceCharacters ("/\\:", "   ").removeCharacters ("\"*?<>|")
+                                                         .trim() + ".mci");
                 const auto result = mci::writeMciFile (f, file);
                 if (result.failed())
                     throw Error (result.getErrorMessage().toStdString());

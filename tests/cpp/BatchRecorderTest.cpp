@@ -322,7 +322,7 @@ int main (int argc, char** argv)
                                  .getParentDirectory().getParentDirectory();
     const auto mimicDir = root.getChildFile ("mimic info test");
     const auto built = emk::WavToMci::run (snareFolder, mimicDir, {}, [] (const juce::String&) {}, [] (double) { return true; });
-    bool infoOk = built.written.size() == 1 && built.written[0].endsWith ("14\" Brass Snare.mci");
+    bool infoOk = built.written.size() == 1 && built.written[0].endsWith ("14 Brass Snare.mci");
     if (infoOk)
     {
         const auto mci = emk::mci::readMci (juce::File (built.written[0]));
