@@ -539,24 +539,43 @@ void MainComponent::recordKit()
                                           .withIconType (juce::MessageBoxIconType::QuestionIcon)
                                           .withTitle ("Make the Mimic files?")
                                           .withMessage ("The WAV files of " + kitName + " are in\n" + kitFolder.getFullPathName()
-                                                        + "\n\nConvert them to .mci files now? They will go in\n"
-                                                        + mimic.getFullPathName())
+                                                        + "\n\nConvert them to .mci files now? Convert puts them in\n"
+                                                        + mimic.getFullPathName()
+                                                        + "\nor choose another folder, such as a USB stick for the Mimic.")
                                           .withButton ("Convert")
+                                          .withButton ("Choose folder...")
                                           .withButton ("Not now")
                                           .withAssociatedComponent (this),
                                       [this, report, kitFolder, mimic, kitName] (int button)
         {
-            if (button != 1)
+            auto convert = [this, report, kitFolder, kitName] (const juce::File& outDir)
+            {
+                runJob ("Converting " + kitName, [this, kitFolder, outDir, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+                {
+                    return buildMimicFiles ({ kitFolder }, outDir, hats, w);
+                },
+                [this, report, outDir] (const juce::String& built)
+                {
+                    setStatus (report + "\n" + built);
+                    if (outDir.isDirectory())
+                        outDir.revealToUser();
+                });
+            };
+            if (button == 1)
+                return convert (mimic);
+            if (button != 2)
                 return;
-            runJob ("Converting " + kitName, [this, kitFolder, mimic, hats = hatAsRide.getToggleState()] (juce::ThreadWithProgressWindow& w)
+            const auto last = settings->getValue ("mimicFolder");
+            chooser = std::make_unique<juce::FileChooser> ("Where should the Mimic files for " + kitName + " go?",
+                                                           last.isNotEmpty() && juce::File (last).isDirectory() ? juce::File (last) : kitFolder);
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                                  [this, convert] (const juce::FileChooser& fc)
             {
-                return buildMimicFiles ({ kitFolder }, mimic, hats, w);
-            },
-            [this, report, mimic] (const juce::String& built)
-            {
-                setStatus (report + "\n" + built);
-                if (mimic.isDirectory())
-                    mimic.revealToUser();
+                const auto folder = fc.getResult();
+                if (folder == juce::File())
+                    return;
+                settings->setValue ("mimicFolder", folder.getFullPathName());
+                convert (folder);
             });
         });
     });

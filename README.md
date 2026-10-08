@@ -68,6 +68,7 @@ them as VST3 plugins the app can load.
    count yourself (marked *); the piece's other ticked zones share what is left.
 5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
    **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;
+   **Choose folder...** builds them anywhere else, such as a USB stick for the Mimic (remembered for next time);
    **Not now** leaves the WAV files for **Convert WAV folder...** later.
 
 **Convert WAV folder...** builds Mimic instruments from one or several folders (or a .zip) of WAV hits in
