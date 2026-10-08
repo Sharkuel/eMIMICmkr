@@ -36,9 +36,9 @@ def test_two_zone_crash_becomes_a_cymbal(tmp_path):
     f = mci.read_mci(str(tmp_path / "14 Test Crash.mci"))
     assert f.get("INST0instyp") == "Cymbal"
     assert [f.get(f"INST0artic{a}artn") for a in range(3)] == ["Edge", "Bow", "Choke Ring"]
-    assert f.get("INST0artic0numlay") == 20
-    vel = [f.get(f"INST0artic0veloLay{l}minvel") for l in range(20)]
-    assert vel[0] == 0 and vel == sorted(vel) and len(set(vel)) == 20
+    assert f.get("INST0artic0numlay") == 11          # 43 hits, about 4 round robins each
+    vel = [f.get(f"INST0artic0veloLay{l}minvel") for l in range(11)]
+    assert vel[0] == 0 and vel == sorted(vel) and len(set(vel)) == 11
     assert f.get("INST0artic2numlay") == 1          # generated choke
 
 
@@ -49,8 +49,9 @@ def test_bell_makes_a_three_zone_ride_and_keeps_24_bit(tmp_path):
     assert f.get("INST0instyp") == "Ride"
     assert [f.get(f"INST0zoneType{a}") for a in range(4)] == [40, 42, 43, 41]
     assert f.get("INST0artic3numlay") == 0
+    assert f.get("INST0artic0numlay") == 1           # 4 hits: one layer of 4 round robins
     want = write_hit(tmp_path / "check.wav", 127)
-    idx = f.get("INST0artic0veloLay3smpidx")[0]
+    idx = f.get("INST0artic0veloLay0smpidx")[3]
     assert mci.sample(f, idx) == want
 
 
@@ -59,6 +60,24 @@ def test_split_layers_spreads_hits():
     layers = wav2mci.split_layers(hits)
     assert len(layers) == 20 and all(len(layer) == 5 for layer in layers)
     assert wav2mci.min_velocities(layers)[:3] == [0, 6, 11]
+
+
+def test_round_robins_per_layer():
+    def layers(n, family, zone):
+        hits = [wav2mci.Hit(1 + i * 126 // max(1, n - 1), str(i)) for i in range(n)]
+        return [len(layer) for layer in wav2mci.round_robin_layers(hits, wav2mci.round_robins(family, zone))]
+    assert layers(64, "kick", "kick") == [4] * 16
+    assert len(layers(100, "snare", "center")) == 17 and max(layers(100, "snare", "center")) == 6
+    assert layers(300, "cymbal", "edge") == [6] * 20          # 120 of the 300 kept
+    assert layers(3, "snare", "sidestick") == [3]
+    assert layers(1, "kick", "kick") == [1]
+    assert [wav2mci.round_robins(f, z) for f, z in [("snare", "rimshot"), ("tom", "center"), ("tom", "rimshot"),
+                                                      ("tom", "rimclick"), ("snare", "rimclick"), ("cymbal", "bell")]] \
+        == [6, 5, 5, 4, 4, 4]
+    # the thinning keeps the softest and the hardest hit
+    hits = [wav2mci.Hit(v, "") for v in range(1, 128)] * 3
+    kept = [h for layer in wav2mci.round_robin_layers(hits, 4) for h in layer]
+    assert len(kept) == 120 and kept[0].velocity == 1 and kept[-1].velocity == 127
 
 
 HAT_FOLDERS = ["BELL CLOSED", "BELL OPEN1", "BELL OPEN2", "BELL OPEN4", "BELL OPEN5", "BELL OPEN6",
@@ -84,3 +103,12 @@ def test_openness_steps_run_closed_to_open():
     assert wav2mci.pick_openness(["tight", "closed2", "open1", "open2", "open3", "open4", "open5", "open6"]) \
         == ["closed2", "open2", "open3", "open4", "open6"]
     assert wav2mci.pick_openness(["closed", "open1"]) == ["closed", "open1", "open1", "open1", "open1"]
+
+
+def test_share_cells():
+    assert wav2mci.share_cells(199, {"edge": 127, "bow": 127}) == {"edge": 100, "bow": 99}
+    assert wav2mci.share_cells(300, {"center": 127, "rimshot": 127, "sidestick": 40}) == \
+        {"sidestick": 40, "center": 127, "rimshot": 127}
+    assert wav2mci.share_cells(300, {"center": 200, "rimshot": 200, "sidestick": 40}) == \
+        {"sidestick": 40, "center": 130, "rimshot": 130}
+    assert wav2mci.share_cells(64, {"kick": 20}) == {"kick": 20}

@@ -5,7 +5,8 @@ reverse-engineered from Editor files: a kick, a tom, a rototom, a snare, a ride,
 crashes saved in the ride layout, and a kick we built that the Editor opened and resaved.
 
 The reference implementation in `tools/mci/mci.py` reads all of them and writes them
-back byte for byte. It also decodes every sample bit-exactly. Anything below marked
+back byte for byte. It also decodes every sample bit-exactly. The app's C++ port
+(`Source/Core/Mci.cpp`) writes the same bytes; `tests/test_cpp_converter.py` checks it. Anything below marked
 **unknown** has not been confirmed on a Mimic yet.
 
 All integers are little-endian.
@@ -125,10 +126,11 @@ described below.
 
 ### Choke samples
 
-A Choke Ring sample can be made from the hardest edge hit, following a template from
-Alexandre: keep the first 0.519 s, boost by ×1.386 (+2.8 dB) for the first 44.6 ms,
-then fade in dB down to ×0.252 (−12 dB) at 0.468 s. `make_choke()` in `mci.py` does
-this. It matches the exported template WAV to within 8% of its peak.
+The Mimic plays one Choke Ring sample and scales it to how hard the pad is hit, so the
+sample should hold only the cymbal's ringing (Alexandre, 2026-10-07). `make_choke()` in
+`mci.py` makes one from the hardest edge hit: it cuts the attack where a 5 ms envelope,
+at least 20 ms after its peak, first falls 6 dB below the peak, then keeps up to 3 s of
+ring with a 5 ms fade in and a 1 s fade out.
 
 ### Hi-hats (factory instruments)
 
