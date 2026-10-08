@@ -129,11 +129,26 @@ bool sd3KitReads()
                     && noteOf ("Splash 1", "SPLASH1 EDGE") == 55 && noteOf ("Hi-Hat", "HATS EDGE OPEN2") == 7
                     && noteOf ("Hi-Hat", "HATS BOW CLOSED") == 8 && noteOf ("Hi-Hat", "HATS PEDAL CLOSED") == 21
                     && noteOf ("Hi-Hat", "HATS FOOT SPLASH") == 23;
+    // Names typed for drums come back by their SD3 ID, one piece each.
+    auto named = map;
+    std::map<juce::String, juce::String> names { { "SL-DRUMFACTORYARCADES/SD01_01", "5x14 DW Timeless Timber Maple" },
+                                                 { "SL-DRUMFACTORYARCADES/SD01_02", "5x14 DW Timeless Timber Maple" } };
+    named.applyNames (names);
+    juce::String csvError;
+    const bool namesOk = noteOf ("Snare", "SNARE1 CENTER") == 38
+                         && [&named] { for (const auto& z : named.zones)
+                                           if (z.label == "SNARE1 CENTER") return z.piece == "5x14 DW Timeless Timber Maple";
+                                       return false; }()
+                         && [&named] { for (const auto& z : named.zones)
+                                           if (z.label == "SNARE2 CENTER") return z.piece == "5x14 DW Timeless Timber Maple 2";
+                                       return false; }()
+                         && emk::KitMap::fromCsv (named.toCsv(), csvError).toCsv() == named.toCsv();
     juce::String notSd3;
     emk::KitMap::fromSd3 ("piece,zone,note", notSd3);
     std::printf ("sd3 kit %s (%d zones, snare rimshot %d)\n", ok && notSd3.isNotEmpty() ? "ok" : "WRONG",
                  map.zones.size(), noteOf ("Snare", "SNARE1 RIMSHOT"));
-    return ok && notSd3.isNotEmpty();
+    std::printf ("drum names %s\n", namesOk ? "ok" : "WRONG");
+    return ok && notSd3.isNotEmpty() && namesOk;
 }
 
 /** Drum-like test sounds: a low thud, a short noisy crack, a long bright ring. */

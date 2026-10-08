@@ -56,6 +56,8 @@ them as VST3 plugins the app can load.
      every instrument slot, its articulations and their notes (main zones ticked). Other VST3
      plugins fill the "Name in plugin" column from their note names. **Open map...** also opens
      an SD3 preset (.sd3p) the same way.
+     SD3 doesn't share its drums' brand and model names, so type them once in the Piece column:
+     the app remembers each name by SD3's ID for that drum and fills it in for every kit that uses it.
    - **Save map...** / **Open map...**: keep a map per library as a .csv file
      (`piece,zone,note,cc4,record`), which a spreadsheet can edit too.
    Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.

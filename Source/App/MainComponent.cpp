@@ -177,6 +177,7 @@ MainComponent::MainComponent()
     else
         mapChoice.setSelectedId (1);
 
+    loadDrumNames();
     refreshPluginChoices();
     setStatus ("Find your drum plugins to start.");
     setSize (860, 720);
@@ -248,6 +249,37 @@ void MainComponent::resized()
     area.removeFromTop (8);
     area.removeFromBottom (8);
     table.setBounds (area);
+}
+
+void MainComponent::loadDrumNames()
+{
+    drumNames.clear();
+    if (auto xml = settings->getXmlValue ("drumNames"))
+        for (auto* drum : xml->getChildIterator())
+            drumNames[drum->getStringAttribute ("id")] = drum->getStringAttribute ("name");
+}
+
+void MainComponent::rememberDrumName (const juce::String& piece)
+{
+    // Typed once, a drum's name comes back in every kit that uses it.
+    bool changed = false;
+    for (const auto& z : kitMap.zones)
+        if (z.piece == piece && z.instrument.isNotEmpty() && piece.isNotEmpty() && drumNames[z.instrument] != piece)
+        {
+            drumNames[z.instrument] = piece;
+            changed = true;
+        }
+    if (! changed)
+        return;
+    juce::XmlElement xml ("DrumNames");
+    for (const auto& [id, name] : drumNames)
+        if (name.isNotEmpty())
+        {
+            auto* drum = xml.createNewChildElement ("Drum");
+            drum->setAttribute ("id", id);
+            drum->setAttribute ("name", name);
+        }
+    settings->setValue ("drumNames", &xml);
 }
 
 juce::File MainComponent::outputFolder() const
@@ -701,6 +733,8 @@ void MainComponent::loadMapFile()
         const auto sd3 = emk::KitMap::sd3TextIn (data);
         auto map = sd3.isNotEmpty() ? emk::KitMap::fromSd3 (sd3, error) : emk::KitMap::fromCsv (file.loadFileAsString(), error);
         if (sd3.isNotEmpty() && error.isEmpty())
+            map.applyNames (drumNames);
+        if (sd3.isNotEmpty() && error.isEmpty())
             map.kitName = kitMap.kitName.isNotEmpty() ? kitMap.kitName
                                                       : file.getFileNameWithoutExtension().replaceCharacter ('_', ' ');
         if (error.isNotEmpty())
@@ -748,6 +782,7 @@ void MainComponent::readNoteNames()
         auto map = emk::KitMap::fromSd3 (sd3, error);
         if (error.isEmpty())
         {
+            map.applyNames (drumNames);
             map.kitName = kitMap.kitName;
             mapChoice.setSelectedId (0, juce::dontSendNotification);
             useMap (std::move (map));
@@ -1005,6 +1040,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
                 if (old.isNotEmpty() && old != "?" && other.piece == old)
                     other.piece = text.trim();
             z.piece = text.trim();
+            rememberDrumName (z.piece);
         }
         if (column == colZone) z.label = text.trim().toUpperCase();
         if (column == colNote) z.note = juce::jlimit (0, 127, text.getIntValue());

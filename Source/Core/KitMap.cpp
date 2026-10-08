@@ -215,11 +215,11 @@ std::pair<juce::String, juce::String> KitMap::guessFromName (const juce::String&
 
 juce::String KitMap::toCsv() const
 {
-    juce::String out = "piece,zone,note,cc4,record,hits\n";
+    juce::String out = "piece,zone,note,cc4,record,hits,instrument\n";
     for (const auto& z : zones)
         out << z.piece.replace (",", " ") << "," << z.label.replace (",", " ") << "," << z.note << ","
             << (z.cc4 >= 0 ? juce::String (z.cc4) : juce::String()) << "," << (z.enabled ? "yes" : "no") << ","
-            << (z.hits > 0 ? juce::String (z.hits) : juce::String()) << "\n";
+            << (z.hits > 0 ? juce::String (z.hits) : juce::String()) << "," << z.instrument.replace (",", " ") << "\n";
     return out;
 }
 
@@ -244,10 +244,30 @@ KitMap KitMap::fromCsv (const juce::String& text, juce::String& error)
         m.zones.add ({ cells[0], cells[1].toUpperCase(), cells[2].getIntValue(),
                        cells[3].isNotEmpty() ? juce::jlimit (0, 127, cells[3].getIntValue()) : -1, record });
         m.zones.getReference (m.zones.size() - 1).hits = juce::jmax (0, cells[5].getIntValue());
+        m.zones.getReference (m.zones.size() - 1).instrument = cells[6];
     }
     if (m.zones.isEmpty())
         error = "No zones found.";
     return m;
+}
+
+void KitMap::applyNames (const std::map<juce::String, juce::String>& namesById)
+{
+    std::map<juce::String, juce::String> renamed;   // old piece -> new name
+    juce::StringArray taken;
+    for (const auto& z : zones)
+        if (auto it = namesById.find (z.instrument); z.instrument.isNotEmpty() && it != namesById.end()
+                                                     && renamed.count (z.piece) == 0)
+        {
+            auto name = it->second;
+            for (int n = 2; taken.contains (name); ++n)
+                name = it->second + " " + juce::String (n);
+            taken.add (name);
+            renamed[z.piece] = name;
+        }
+    for (auto& z : zones)
+        if (auto it = renamed.find (z.piece); it != renamed.end())
+            z.piece = it->second;
 }
 
 juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
@@ -279,15 +299,21 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
 {
     struct Slot
     {
-        juce::String pos;
+        juce::String pos, instrument;
         std::vector<std::pair<juce::String, juce::Array<int>>> pads;   // in the order SD3 lists them
     };
     std::vector<Slot> slots;
+    juce::String library;
     for (auto line : juce::StringArray::fromLines (text))
     {
         line = line.trim();
-        if (line.startsWith ("pos \""))
-            slots.push_back ({ line.fromFirstOccurrenceOf ("\"", false, false).upToLastOccurrenceOf ("\"", false, false), {} });
+        if (line.startsWith ("xpad "))   // xpad 0 SL-DRUMFACTORYARCADES {
+            library = juce::StringArray::fromTokens (line, " ", "")[2];
+        else if (line.startsWith ("pos \""))
+            slots.push_back ({ line.fromFirstOccurrenceOf ("\"", false, false).upToLastOccurrenceOf ("\"", false, false), {}, {} });
+        else if (line.startsWith ("drum \"") && ! slots.empty())
+            slots.back().instrument = library + "/" + line.fromFirstOccurrenceOf ("\"", false, false)
+                                                            .upToFirstOccurrenceOf ("\"", false, false);
         else if (line.startsWith ("alias ") && ! slots.empty())
         {
             auto words = juce::StringArray::fromTokens (line, " ", "");
@@ -310,6 +336,12 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
     std::map<juce::String, int> counts;   // the how-manyth tom, crash... so far
     for (const auto& slot : slots)
     {
+        const int firstZone = m.zones.size();
+        struct TagZones   // every zone added for this slot carries the drum's ID
+        {
+            KitMap& map; int from; juce::String id;
+            ~TagZones() { for (int z = from; z < map.zones.size(); ++z) map.zones.getReference (z).instrument = id; }
+        } tag { m, firstZone, slot.instrument };
         const auto pos = slot.pos.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz");
         const auto family = pos.startsWith ("kick") ? "kick"
                           : pos.startsWith ("hat") ? "hats"
@@ -397,7 +429,7 @@ juce::ValueTree KitMap::toValueTree() const
         tree.appendChild (juce::ValueTree ("Zone", { { "piece", z.piece }, { "label", z.label },
                                                      { "note", z.note }, { "cc4", z.cc4 },
                                                      { "enabled", z.enabled }, { "pluginName", z.pluginName },
-                                                     { "hits", z.hits } }),
+                                                     { "hits", z.hits }, { "instrument", z.instrument } }),
                           nullptr);
     return tree;
 }
@@ -411,7 +443,10 @@ KitMap KitMap::fromValueTree (const juce::ValueTree& tree)
                        (int) z.getProperty ("cc4", -1), (bool) z.getProperty ("enabled", true),
                        z["pluginName"].toString() });
     for (int i = 0; i < m.zones.size(); ++i)
+    {
         m.zones.getReference (i).hits = (int) tree.getChild (i).getProperty ("hits", 0);
+        m.zones.getReference (i).instrument = tree.getChild (i)["instrument"].toString();
+    }
     return m;
 }
 } // namespace emk

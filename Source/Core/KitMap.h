@@ -17,6 +17,7 @@ struct KitZone
     bool enabled = true;
     juce::String pluginName; // the plugin's own name for this note, when it gives one
     int hits = 0;            // hits the user chose for this zone; 0 = share the piece's budget
+    juce::String instrument; // the plugin's own ID for the drum, e.g. "SL-DRUMFACTORYARCADES/SD01_01"
 };
 
 /** The note-to-zone map for one loaded kit. */
@@ -40,6 +41,10 @@ public:
         they're on. The main zones are ticked; the rest are added unticked. Empty, with error
         set, when the text isn't SD3's. */
     static KitMap fromSd3 (const juce::String& text, juce::String& error);
+
+    /** Names you gave drums, by their plugin ID: the piece of every zone whose instrument has
+        a name here takes that name. Two pieces never end up sharing one. */
+    void applyNames (const std::map<juce::String, juce::String>& namesById);
 
     /** Finds SD3's kit text inside a plugin state or preset file, which may wrap it. */
     static juce::String sd3TextIn (const juce::MemoryBlock&);

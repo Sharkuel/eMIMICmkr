@@ -77,6 +77,9 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     std::map<int, emk::SoundPrint> notePrints;   // what each note sounds like, to learn clicks in the plugin window
     juce::uint32 lastPluginNoteMs = 0;
+    std::map<juce::String, juce::String> drumNames;   // names you gave drums, by the plugin's ID for them
+    void loadDrumNames();
+    void rememberDrumName (const juce::String& piece);
     std::set<int> soundingNotes;   // from the last "Find notes", to flag rows that play nothing
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" },
