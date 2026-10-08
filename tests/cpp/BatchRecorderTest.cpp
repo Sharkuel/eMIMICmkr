@@ -117,8 +117,30 @@ bool sd3KitReads()
             }
         return -1;
     };
+    // The same kit as a VST3 plugin's state reaches the app: XML, the plugin's data in base64.
+    juce::MemoryBlock inner;
+    inner.append ("VstW\0\0\0\x08", 8);
+    inner.append (wrapped.getData(), wrapped.getSize());
+    const auto xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <VST3PluginState><IComponent>"
+                     + inner.toBase64Encoding() + "</IComponent></VST3PluginState>";
+    juce::MemoryBlock vst3;
+    vst3.append ("VC2!", 4);
+    const auto xmlSize = juce::ByteOrder::swapIfBigEndian ((juce::uint32) xml.getNumBytesAsUTF8());
+    vst3.append (&xmlSize, 4);
+    vst3.append (xml.toRawUTF8(), xml.getNumBytesAsUTF8() + 1);
+    const bool vst3Ok = emk::KitMap::sd3TextIn (vst3) == emk::KitMap::sd3TextIn (wrapped);
+    if (const auto real = juce::SystemStats::getEnvironmentVariable ("SD3_STATE", {}); real.isNotEmpty())
+    {
+        juce::MemoryBlock data;
+        juce::File (real).loadFileAsData (data);
+        juce::String realError;
+        const auto realMap = emk::KitMap::fromSd3 (emk::KitMap::sd3TextIn (data), realError);
+        std::cout << "real state: " << realMap.zones.size() << " zones " << realError << "\n";
+        for (const auto& z : realMap.zones)
+            std::cout << "  " << z.piece << " | " << z.label << " | " << z.note << " | " << (z.enabled ? "on" : "off") << " | " << z.instrument << "\n";
+    }
     bool rimclickOn = true;
-    const bool ok = error.isEmpty()
+    const bool ok = error.isEmpty() && vst3Ok
                     && noteOf ("Kick", "KICK1") == 36 && noteOf ("Snare", "SNARE1 CENTER") == 38
                     && noteOf ("Snare", "SNARE1 SIDESTICK") == 37 && noteOf ("Snare", "SNARE1 RIMSHOT") == 76
                     && noteOf ("Snare 2", "SNARE2 CENTER") == 67 && noteOf ("Tom 1", "TOM1 CENTER") == 48

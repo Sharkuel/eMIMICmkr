@@ -1,4 +1,5 @@
 #include "KitMap.h"
+#include <cstring>
 #include <algorithm>
 #include <map>
 #include <set>
@@ -285,6 +286,22 @@ juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
     };
     if (auto text = find (data); text.isNotEmpty())
         return text;
+    // A VST3 plugin's state as JUCE hosts hand it over: "VC2!", a size, then XML holding the plugin's
+    // own data in base64 under IComponent.
+    if (data.getSize() > 8 && std::memcmp (data.getData(), "VC2!", 4) == 0)
+    {
+        const auto* bytes = static_cast<const char*> (data.getData());
+        const auto size = (size_t) juce::ByteOrder::littleEndianInt (bytes + 4);
+        if (size <= data.getSize() - 8)
+            if (auto xml = juce::parseXML (juce::String::fromUTF8 (bytes + 8, (int) size)))
+                if (auto* component = xml->getChildByName ("IComponent"))
+                {
+                    juce::MemoryBlock inner;
+                    if (inner.fromBase64Encoding (component->getAllSubText().trim()))
+                        if (auto text = sd3TextIn (inner); text.isNotEmpty())
+                            return text;
+                }
+    }
     // Some hosts and plugins compress their state.
     juce::MemoryInputStream raw (data, false);
     juce::GZIPDecompressorInputStream unzipped (raw);
@@ -415,7 +432,8 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
         {
             const auto code = pad.trimCharactersAtStart ("abcdefghijklmnopqrstuvwxyz0123456789");
             if (used.count (code) == 0 && ! code.contains ("Trig") && ! code.contains ("Ctrl"))
-                m.zones.add ({ piece, labelHead + " " + code.toUpperCase(), notes[0], -1, false, slot.pos + ": " + code });
+                m.zones.add ({ piece, labelHead + " " + (code.isEmpty() ? pad : code).toUpperCase(), notes[0], -1, false,
+                               slot.pos + ": " + (code.isEmpty() ? pad : code) });
         }
     }
     return m;
