@@ -93,3 +93,38 @@ target_link_libraries(eMIMICmkr_mci_tests PRIVATE
     juce::juce_cryptography
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
+
+# Linux install and packages: `cmake --install build --component eMIMICmkr` (JUCE adds its own
+# install rules, which the packages leave out), and `cpack` in the build folder for .deb and .rpm.
+if(UNIX AND NOT APPLE)
+    include(GNUInstallDirs)
+    install(TARGETS eMIMICmkr RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT eMIMICmkr)
+    install(FILES packaging/linux/eMIMICmkr.desktop
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT eMIMICmkr)
+    install(FILES assets/logo.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
+            RENAME eMIMICmkr.png COMPONENT eMIMICmkr)
+
+    set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};eMIMICmkr;eMIMICmkr;/")
+    set(CPACK_GENERATOR "DEB;RPM")
+    set(CPACK_PACKAGE_NAME emimicmkr)
+    set(CPACK_PACKAGE_VENDOR "eMIMICmkr")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Record drum plugin kits and build Pearl Mimic instruments")
+    set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Sharkuel/eMIMICmkr")
+    set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Sharkuel <https://github.com/Sharkuel/eMIMICmkr>")
+    set(CPACK_DEBIAN_PACKAGE_SECTION sound)
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    # JUCE opens the X11 libraries at run time, so no tool finds them in the binary.
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libx11-6, libxext6, libxrandr2, libxinerama1, libxcursor1")
+    set(CPACK_DEBIAN_PACKAGE_SUGGESTS "tesseract-ocr, grim, wl-clipboard, xclip")
+    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+    set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
+    set(CPACK_RPM_PACKAGE_LICENSE "AGPL-3.0-only")
+    set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
+    set(CPACK_RPM_PACKAGE_REQUIRES "libX11, libXext, libXrandr, libXinerama, libXcursor")
+    set(CPACK_RPM_PACKAGE_SUGGESTS "tesseract, grim, wl-clipboard, xclip")
+    set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION
+        /usr/share/applications /usr/share/icons /usr/share/icons/hicolor
+        /usr/share/icons/hicolor/512x512 /usr/share/icons/hicolor/512x512/apps)
+    include(CPack)
+endif()

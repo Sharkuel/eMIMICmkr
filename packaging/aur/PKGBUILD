@@ -1,0 +1,38 @@
+# eMIMICmkr from the latest source on GitHub. For the AUR package emimicmkr-git.
+pkgname=emimicmkr-git
+_name=eMIMICmkr
+pkgver=r0
+pkgrel=1
+pkgdesc="Record drum plugin kits and build Pearl Mimic instruments"
+arch=('x86_64')
+url="https://github.com/Sharkuel/eMIMICmkr"
+license=('AGPL-3.0-only')
+depends=('alsa-lib' 'freetype2' 'fontconfig' 'libx11' 'libxext' 'libxrandr' 'libxinerama' 'libxcursor')
+makedepends=('git' 'cmake' 'ninja')
+optdepends=('tesseract: read names in Capture...'
+            'tesseract-data-eng: English text for tesseract'
+            'grim: screenshots on Hyprland and Sway'
+            'spectacle: screenshots on KDE'
+            'wl-clipboard: paste pictures on Wayland'
+            'xclip: paste pictures on X11'
+            'yabridge: Windows drum plugins such as Superior Drummer 3')
+provides=('emimicmkr')
+conflicts=('emimicmkr')
+source=("$_name::git+$url.git"
+        "JUCE::git+https://github.com/juce-framework/JUCE.git#tag=8.0.10")
+sha256sums=('SKIP' 'SKIP')
+
+pkgver() {
+  cd "$_name"
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cmake -B build -S "$_name" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+    -DFETCHCONTENT_SOURCE_DIR_JUCE="$srcdir/JUCE"
+  cmake --build build --target eMIMICmkr
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build --component eMIMICmkr
+}
