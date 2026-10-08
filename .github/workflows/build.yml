@@ -4,7 +4,7 @@ name: Build
 # also publishes them as a GitHub release.
 on:
   push:
-    branches: [main, batch-recording]
+    branches: [main]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
