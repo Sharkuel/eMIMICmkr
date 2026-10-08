@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include <BinaryData.h>
 #include "PluginScanner.h"
 
 class EMimicApplication : public juce::JUCEApplication
@@ -28,6 +29,7 @@ private:
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
+            setIcon (juce::ImageCache::getFromMemory (BinaryData::logo_png, BinaryData::logo_pngSize));
             setContentOwned (new MainComponent(), true);
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());

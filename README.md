@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" width="200" alt="eMIMICmkr logo"></p>
+
 # eMIMICmkr
 Tool to record samples from your VST libraries, and convert them into the Pearl Mimic.
 
@@ -23,6 +25,9 @@ sorted by how hard each hit was played.
 Every push builds the app for Linux, Windows and macOS on GitHub (Actions tab, "Build",
 artifacts at the bottom of a run); a version tag such as `v0.2.0` publishes them under
 Releases. The macOS build is unsigned: right-click it and choose Open the first time.
+On Linux, the archive also holds `eMIMICmkr.desktop` and `eMIMICmkr.png`: to get a menu entry
+with the icon, copy the desktop file to `~/.local/share/applications/` (with `Exec=` set to
+where you put the app) and the picture to `~/.local/share/icons/hicolor/512x512/apps/`.
 
 ## Building the app
 

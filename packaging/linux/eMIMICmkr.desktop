@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=eMIMICmkr
+Comment=Record drum plugin kits and build Pearl Mimic instruments
+Exec=eMIMICmkr
+Icon=eMIMICmkr
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+StartupWMClass=eMIMICmkr

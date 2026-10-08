@@ -20,7 +20,11 @@ FetchContent_MakeAvailable(JUCE)
 
 juce_add_gui_app(eMIMICmkr
     PRODUCT_NAME "eMIMICmkr"
-    COMPANY_NAME "eMIMICmkr")
+    COMPANY_NAME "eMIMICmkr"
+    ICON_BIG assets/logo.png)
+
+# The logo, for the window icon (macOS and Windows also take it from ICON_BIG).
+juce_add_binary_data(eMIMICmkr_assets SOURCES assets/logo.png)
 
 target_sources(eMIMICmkr PRIVATE
     Source/App/Main.cpp
@@ -45,6 +49,7 @@ target_compile_definitions(eMIMICmkr PRIVATE
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:eMIMICmkr,JUCE_VERSION>")
 
 target_link_libraries(eMIMICmkr PRIVATE
+    eMIMICmkr_assets
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_audio_processors

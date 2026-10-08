@@ -73,7 +73,9 @@ jobs:
           mkdir -p dist
           app=build/eMIMICmkr_artefacts/Release
           case "$RUNNER_OS" in
-            Linux)   tar -C "$app" -czf dist/eMIMICmkr-Linux-x86_64.tar.gz eMIMICmkr ;;
+            Linux)   cp assets/logo.png "$app/eMIMICmkr.png"
+                     cp packaging/linux/eMIMICmkr.desktop "$app/"
+                     tar -C "$app" -czf dist/eMIMICmkr-Linux-x86_64.tar.gz eMIMICmkr eMIMICmkr.png eMIMICmkr.desktop ;;
             Windows) 7z a dist/eMIMICmkr-Windows-x64.zip "./$app/eMIMICmkr.exe" ;;
             macOS)   ditto -c -k --keepParent "$app/eMIMICmkr.app" dist/eMIMICmkr-macOS.zip ;;
           esac
