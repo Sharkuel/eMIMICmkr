@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.png" width="200" alt="eMIMICmkr logo"></p>
+<p align="center"><img src="assets/banner.png" alt="eMIMICmkr: Record, Convert, Play!"></p>
 
 # eMIMICmkr
 Tool to record samples from your VST libraries, and convert them into the Pearl Mimic.
@@ -174,6 +174,10 @@ identical: metadata, RAM heads and compressed audio (so far byte for byte). Set
 minutes per zip).
 
 ## Licensing
+
+eMIMICmkr is an independent project, not made or endorsed by Pearl or Slate Digital. Pearl, Mimic
+and Mimic Pro are their owners' trademarks.
+
 
 eMIMICmkr is GPLv3. JUCE 8's open-source licence is AGPLv3, so the app as a whole is
 distributed under AGPLv3 terms unless a JUCE commercial licence is used.

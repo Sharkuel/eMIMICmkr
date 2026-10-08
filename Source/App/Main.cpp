@@ -15,6 +15,14 @@ public:
         if (OutOfProcessScanner::runChildScanIfRequested (commandLine))
             return;
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
+
+        // The banner, for a moment at start-up (a click closes it sooner). It deletes itself.
+        const auto banner = juce::ImageCache::getFromMemory (BinaryData::banner_png, BinaryData::banner_pngSize);
+        auto* splash = new juce::SplashScreen (getApplicationName(),
+                                               banner.rescaled (banner.getWidth() / 2, banner.getHeight() / 2,
+                                                                juce::Graphics::highResamplingQuality),
+                                               true);
+        splash->deleteAfterDelay (juce::RelativeTime::seconds (2.5), true);
     }
     void shutdown() override { mainWindow = nullptr; }
     void systemRequestedQuit() override { quit(); }

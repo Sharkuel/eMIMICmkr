@@ -23,8 +23,8 @@ juce_add_gui_app(eMIMICmkr
     COMPANY_NAME "eMIMICmkr"
     ICON_BIG assets/logo.png)
 
-# The logo, for the window icon (macOS and Windows also take it from ICON_BIG).
-juce_add_binary_data(eMIMICmkr_assets SOURCES assets/logo.png)
+# The logo for the window icon (macOS and Windows also take it from ICON_BIG), and the start-up banner.
+juce_add_binary_data(eMIMICmkr_assets SOURCES assets/logo.png assets/banner.png)
 
 target_sources(eMIMICmkr PRIVATE
     Source/App/Main.cpp
