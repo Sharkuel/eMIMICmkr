@@ -18,6 +18,12 @@ sorted by how hard each hit was played.
 | Multi-velocity recording | Batch recording of a whole kit, hi-hat openness on CC4; awaiting a Superior Drummer 3 test |
 | .mci export | In the app (`Source/Core/Mci`, `WavToMci`): every instrument type, plus the WAV-folder converter. `tools/mci` holds the Python reference implementation |
 
+## Downloads
+
+Every push builds the app for Linux, Windows and macOS on GitHub (Actions tab, "Build",
+artifacts at the bottom of a run); a version tag such as `v0.2.0` publishes them under
+Releases. The macOS build is unsigned: right-click it and choose Open the first time.
+
 ## Building the app
 
 You need CMake 3.22+ and a C++17 compiler. JUCE 8 is downloaded automatically.
@@ -56,6 +62,12 @@ them as VST3 plugins the app can load.
      every instrument slot, its articulations and their notes (main zones ticked). Other VST3
      plugins fill the "Name in plugin" column from their note names. **Open map...** also opens
      an SD3 preset (.sd3p) the same way.
+   - **Piece** groups rows into one Mimic instrument. Typing a piece name changes that row only:
+     another piece's name moves the row into it, a new name makes a new piece.
+   - Pieces whose labels start with PERC (or OCTOBAN, COWBELL, SHAKER...) become Mimic percussion
+     instruments with up to four zones: labels ending MAIN, SECONDARY, ADD1 and ADD2 take those
+     zones, other labels fill them in order. SD3 slots that aren't drums or cymbals (octobans,
+     chimes) are read this way.
    - **Name on the Mimic**, **Library** and **Image**: what the Mimic shows for each piece (the
      Editor's "Displayed Instrument Name", "Displayed Library Name" and 94x63 PNG image). Empty
      names and libraries show greyed what the Mimic gets instead (the kit name and piece; the kit
