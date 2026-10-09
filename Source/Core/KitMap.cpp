@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <functional>
 
 namespace emk
 {
@@ -370,23 +371,15 @@ void KitMap::setPieceImage (int index, const juce::MemoryBlock& image)
             zones.getReference (i).image = image;
 }
 
-juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
+namespace
 {
-    auto find = [] (const juce::MemoryBlock& block) -> juce::String
-    {
-        const auto* bytes = static_cast<const char*> (block.getData());
-        const auto size = block.getSize();
-        static const std::string marker = "PlugVersion";
-        const auto at = std::search (bytes, bytes + size, marker.begin(), marker.end());
-        if (at == bytes + size)
-            return {};
-        const auto end = std::find (at, bytes + size, '\0');
-        return juce::String::fromUTF8 (at, (int) (end - at));
-    };
-    if (auto text = find (data); text.isNotEmpty())
+/** Runs find over a plugin state or preset file and, when it finds nothing there, over what the
+    file may wrap: a VST3 state as JUCE hosts hand it over ("VC2!", a size, then XML holding the
+    plugin's own data in base64 under IComponent), or gzip. */
+juce::String findInState (const juce::MemoryBlock& data, const std::function<juce::String (const char*, size_t)>& find)
+{
+    if (auto text = find (static_cast<const char*> (data.getData()), data.getSize()); text.isNotEmpty())
         return text;
-    // A VST3 plugin's state as JUCE hosts hand it over: "VC2!", a size, then XML holding the plugin's
-    // own data in base64 under IComponent.
     if (data.getSize() > 8 && std::memcmp (data.getData(), "VC2!", 4) == 0)
     {
         const auto* bytes = static_cast<const char*> (data.getData());
@@ -397,7 +390,7 @@ juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
                 {
                     juce::MemoryBlock inner;
                     if (inner.fromBase64Encoding (component->getAllSubText().trim()))
-                        if (auto text = sd3TextIn (inner); text.isNotEmpty())
+                        if (auto text = findInState (inner, find); text.isNotEmpty())
                             return text;
                 }
     }
@@ -408,7 +401,39 @@ juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
     juce::MemoryOutputStream out (inflated, false);
     out.writeFromInputStream (unzipped, 64 * 1024 * 1024);
     out.flush();
-    return find (inflated);
+    return find (static_cast<const char*> (inflated.getData()), inflated.getSize());
+}
+} // namespace
+
+juce::String KitMap::sd3TextIn (const juce::MemoryBlock& data)
+{
+    return findInState (data, [] (const char* bytes, size_t size) -> juce::String
+    {
+        static const std::string marker = "PlugVersion";
+        const auto at = std::search (bytes, bytes + size, marker.begin(), marker.end());
+        if (at == bytes + size)
+            return {};
+        const auto end = std::find (at, bytes + size, '\0');
+        return juce::String::fromUTF8 (at, (int) (end - at));
+    });
+}
+
+juce::String KitMap::bfd3TextIn (const juce::MemoryBlock& data)
+{
+    return findInState (data, [] (const char* bytes, size_t size) -> juce::String
+    {
+        // BFD3 keeps its kit, mixer and MIDI map as one XML document; its kit presets (.bfd3kit)
+        // are the kit part of it.
+        static const std::string open = "<root", close = "</root>", slot = "kit_slot_";
+        const auto at = std::search (bytes, bytes + size, open.begin(), open.end());
+        if (at == bytes + size)
+            return {};
+        auto end = std::search (at, bytes + size, close.begin(), close.end());
+        end = end == bytes + size ? end : end + close.size();
+        if (std::search (at, end, slot.begin(), slot.end()) == end)
+            return {};
+        return juce::String::fromUTF8 (at, (int) (end - at));
+    });
 }
 
 KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
@@ -544,6 +569,201 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
             if (used.count (code) == 0 && ! code.contains ("Trig") && ! code.contains ("Ctrl"))
                 m.zones.add ({ piece, labelHead + " " + (code.isEmpty() ? pad : code).toUpperCase(), notes[0], -1, false,
                                slot.pos + ": " + (code.isEmpty() ? pad : code) });
+        }
+    }
+    return m;
+}
+
+namespace
+{
+// BFD3's own "BFD 3.0" MIDI map as { note, slot, articulation }, for kit presets, which leave
+// the map out. A plugin state carries the map actually in use.
+const int bfd3DefaultMap[][3] {
+    { 18, 2, 11 }, { 20, 2, 12 }, { 22, 2, 20 }, { 24, 0, 0 }, { 25, 1, 4 }, { 26, 1, 0 }, { 27, 1, 1 }, { 28, 1, 5 },
+    { 29, 1, 3 }, { 30, 2, 8 }, { 31, 3, 0 }, { 32, 2, 10 }, { 33, 12, 0 }, { 34, 2, 0 }, { 35, 4, 0 }, { 36, 13, 0 },
+    { 37, 2, 9 }, { 38, 5, 0 }, { 39, 2, 1 }, { 40, 14, 0 }, { 41, 6, 2 }, { 42, 2, 6 }, { 43, 15, 2 }, { 44, 2, 7 },
+    { 45, 7, 2 }, { 46, 2, 4 }, { 47, 16, 2 }, { 48, 50, 2 }, { 49, 2, 5 }, { 50, 8, 2 }, { 51, 2, 2 }, { 52, 6, 3 },
+    { 53, 15, 3 }, { 54, 2, 3 }, { 55, 7, 3 }, { 56, 2, 13 }, { 57, 16, 3 }, { 58, 2, 14 }, { 59, 50, 3 }, { 60, 8, 3 },
+    { 61, 3, 2 }, { 62, 6, 1 }, { 63, 12, 2 }, { 64, 15, 1 }, { 65, 7, 1 }, { 66, 4, 2 }, { 67, 16, 1 }, { 68, 13, 2 },
+    { 69, 50, 1 }, { 70, 5, 2 }, { 71, 8, 1 }, { 72, 6, 0 }, { 73, 14, 2 }, { 74, 15, 0 }, { 75, 6, 8000 }, { 76, 7, 0 },
+    { 77, 16, 0 }, { 78, 15, 8000 }, { 79, 50, 0 }, { 80, 7, 8000 }, { 81, 8, 0 }, { 82, 16, 8000 }, { 83, 9, 0 },
+    { 84, 0, 1 }, { 85, 50, 8000 }, { 86, 1, 2 }, { 87, 8, 8000 }, { 88, 1, 7 }, { 89, 3, 3 }, { 90, 12, 3 },
+    { 91, 4, 3 }, { 92, 13, 3 }, { 93, 5, 3 }, { 94, 14, 3 }, { 95, 18, 0 },
+};
+constexpr int bfd3Choke = 8000;   // the articulation BFD3's map uses for grabbing a cymbal
+
+void forEachElement (const juce::XmlElement& e, const std::function<void (const juce::XmlElement&)>& f)
+{
+    f (e);
+    for (auto* child : e.getChildIterator())
+        forEachElement (*child, f);
+}
+} // namespace
+
+KitMap KitMap::fromBfd3 (const juce::String& text, juce::String& error)
+{
+    auto xml = juce::parseXML (text);
+    std::map<int, juce::String> items;                     // slot -> "Crush Drums/Kick No Reso Slam Pad"
+    std::map<int, std::map<int, juce::String>> artics;     // slot -> articulation -> "Rim Click"
+    std::map<std::pair<int, int>, int> notes;              // (slot, articulation) -> lowest note
+    juce::String kitName;
+    if (xml != nullptr)
+        forEachElement (*xml, [&] (const juce::XmlElement& e)
+        {
+            const auto name = e.getStringAttribute ("name");
+            if (e.hasTagName ("VString") && name.startsWith ("kit_slot_"))
+                items[name.getTrailingIntValue()] = e.getAllSubText().trim();
+            else if (e.hasTagName ("BFD2KitInfo") && ! e.getStringAttribute ("info_name").startsWith ("temp_"))
+                kitName = e.getStringAttribute ("info_name");
+            else if (e.hasTagName ("BFD2KitPiece") && name.startsWith ("kp_slot_"))
+                forEachElement (e, [&] (const juce::XmlElement& a)
+                {
+                    if (a.hasTagName ("BFD2Artic") && a.getStringAttribute ("name").startsWith ("artic_"))
+                        artics[name.getTrailingIntValue()][a.getStringAttribute ("name").fromFirstOccurrenceOf ("_", false, false).getIntValue()]
+                            = a.getStringAttribute ("artic_name");
+                });
+            else if (e.hasTagName ("MIDIMapElement"))
+                if (auto* req = e.getChildByName ("RequestedArticulationID"))
+                    notes.insert ({ { req->getIntAttribute ("slot"), req->getIntAttribute ("artic") }, e.getIntAttribute ("note") });
+        });
+    items.erase (-1);
+    for (auto it = items.begin(); it != items.end();)
+        it = it->second.isEmpty() ? items.erase (it) : std::next (it);
+    if (items.empty())
+    {
+        error = xml == nullptr ? "This isn't a BFD3 kit." : "The BFD3 kit is empty: load drums into it first.";
+        return {};
+    }
+    if (notes.empty())
+        for (const auto& [note, slot, artic] : bfd3DefaultMap)
+            notes.insert ({ { slot, artic }, note });
+
+    // What each slot holds, from the drum's name, or else from where BFD3's default kit puts it.
+    auto familyOf = [] (int slot, const juce::String& item)
+    {
+        const auto n = item.fromLastOccurrenceOf ("/", false, false).toLowerCase();
+        if (n.contains ("kick")) return "kick";
+        if (n.contains ("snare")) return "snare";
+        if (n.contains ("hihat") || n.contains ("hi-hat") || n.contains ("hat")) return "hats";
+        if (n.contains ("tom")) return "tom";
+        if (n.contains ("ride")) return "ride";
+        if (n.contains ("splash")) return "splash";
+        if (n.contains ("china")) return "china";
+        if (n.contains ("crash") || n.contains ("cymbal")) return "crash";
+        switch (slot)
+        {
+            case 0: return "kick";
+            case 1: return "snare";
+            case 2: return "hats";
+            case 3: case 4: case 5: case 12: case 13: case 14: return "tom";
+            case 8: return "ride";
+            case 6: case 7: case 15: case 16: case 47: case 50: return "crash";
+            default: return "";
+        }
+    };
+    // Kick, snare and hi-hat, then the toms high to low as BFD3's default kit places them (High Tom 1
+    // and 2, Mid Tom 1 and 2, Floor Tom 1 and 2), then the rest.
+    auto order = [] (int slot)
+    {
+        static const int toms[] { 14, 5, 13, 4, 3, 12 };
+        const auto at = std::find (std::begin (toms), std::end (toms), slot);
+        return at != std::end (toms) ? 10 + (int) (at - std::begin (toms)) : slot <= 2 ? slot : 100 + slot;
+    };
+    std::vector<int> slots;
+    for (const auto& item : items)
+        slots.push_back (item.first);
+    std::stable_sort (slots.begin(), slots.end(), [&] (int a, int b) { return order (a) < order (b); });
+
+    KitMap m;
+    m.kitName = kitName;
+    std::map<juce::String, int> counts;
+    juce::StringArray names;
+    for (const int slot : slots)
+    {
+        const auto& item = items[slot];
+        const juce::String family = familyOf (slot, item);
+        const auto drum = item.fromLastOccurrenceOf ("/", false, false);
+        auto name = drum;
+        for (int n = 2; names.contains (name); ++n)
+            name = drum + " " + juce::String (n);
+        names.add (name);
+        const int firstZone = m.zones.size();
+        auto add = [&] (const juce::String& piece, const juce::String& label, int artic, bool on)
+        {
+            if (auto it = notes.find ({ slot, artic }); it != notes.end())
+                m.zones.add ({ piece, label, it->second, -1, on,
+                               drum + ": " + (artic == bfd3Choke ? juce::String ("Choke") : artics[slot][artic]) });
+        };
+
+        if (family.isEmpty())
+        {
+            // Percussion: a Mimic percussion instrument takes the first four articulations.
+            static const char* percZones[] = { "MAIN", "SECONDARY", "ADD1", "ADD2" };
+            const auto head = "PERC " + drum.toUpperCase().retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+            int zone = 0;
+            for (const auto& [artic, artName] : artics[slot])
+                if (zone < 4)
+                {
+                    add (drum, head + " " + percZones[zone], artic, zone == 0);
+                    ++zone;
+                }
+        }
+        else if (family == "hats")
+        {
+            // BFD3 plays each openness from its own note: Tip (bow) and Shank (edge), Closed to Open.
+            static const std::pair<const char*, const char*> steps[] {
+                { "Closed", "CLOSED" }, { "Quarter", "OPEN1" }, { "Half", "OPEN2" }, { "Threeq", "OPEN3" }, { "Open", "OPEN4" },
+            };
+            for (const auto& [area, label] : { std::pair { "T", "BOW" }, std::pair { "S", "EDGE" } })
+                for (const auto& [bfd, step] : steps)
+                    for (const auto& [artic, artName] : artics[slot])
+                        if (artName == juce::String (bfd) + area)
+                            add ("Hi-Hat", juce::String ("HATS ") + label + " " + step, artic, true);
+            for (const auto& [artic, artName] : artics[slot])
+                if (artName == "Pedal")
+                    add ("Hi-Hat", "HATS PEDAL CLOSED", artic, true);
+                else if (artName == "Splash")
+                    add ("Hi-Hat", "HATS FOOT SPLASH", artic, true);
+        }
+        else
+        {
+            const int n = ++counts[family];
+            const juce::String num (n);
+            const juce::String piece = family == "kick" ? (n == 1 ? juce::String ("Kick") : "Kick " + num)
+                                     : family == "snare" ? (n == 1 ? juce::String ("Snare") : "Snare " + num)
+                                     : family.substring (0, 1).toUpperCase() + family.substring (1) + " " + num;
+            const auto head = family.toUpperCase() + num;
+            // BFD3's articulation names -> the Mimic's zones, and which are ticked to start with.
+            struct Zone { const char* bfd; const char* zone; bool on; };
+            static const std::map<juce::String, std::vector<Zone>> zonesOf {
+                { "kick", { { "Hit", "", true } } },
+                { "snare", { { "Hit", "CENTER", true }, { "Rim", "RIMSHOT", true }, { "SS", "SIDESTICK", true },
+                             { "Rim Click", "RIMCLICK", false }, { "HalfEdge", "EDGE", false } } },
+                { "tom", { { "Hit", "CENTER", true }, { "Rim", "RIMSHOT", true }, { "Rim Click", "RIMCLICK", true } } },
+                { "ride", { { "Bow", "BOW", true }, { "Bell", "BELL", true }, { "Edge", "EDGE", true } } },
+                { "crash", { { "Edge", "EDGE", true }, { "Bow", "BOW", true }, { "Bell", "BELL", false } } },
+            };
+            const auto& table = zonesOf.count (family) ? zonesOf.at (family) : zonesOf.at ("crash");
+            std::set<int> used;
+            for (const auto& z : table)
+                for (const auto& [artic, artName] : artics[slot])
+                    if (artName == z.bfd)
+                    {
+                        add (piece, juce::String (z.zone).isEmpty() ? head : head + " " + z.zone, artic, z.on);
+                        used.insert (artic);
+                    }
+            for (const auto& [artic, artName] : artics[slot])   // anything else: there to listen to and tick
+                if (used.count (artic) == 0)
+                    add (piece, head + " " + artName.toUpperCase().retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "), artic, false);
+            if (family != "kick" && family != "snare" && family != "tom")
+                add (piece, head + " CHOKE", bfd3Choke, false);
+        }
+        for (int z = firstZone; z < m.zones.size(); ++z)
+        {
+            auto& zone = m.zones.getReference (z);
+            zone.instrument = item;
+            zone.name = name;
+            zone.library = item.upToFirstOccurrenceOf ("/", false, false);
         }
     }
     return m;

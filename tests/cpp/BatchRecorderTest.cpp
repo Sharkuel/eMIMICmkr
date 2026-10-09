@@ -187,6 +187,74 @@ bool sd3KitReads()
     return ok && notSd3.isNotEmpty() && namesOk;
 }
 
+/** A BFD3 kit (from a real state, trimmed) read from a VST3 state, and from a kit preset with no MIDI map. */
+bool bfd3KitReads()
+{
+    const auto xml = juce::File (__FILE__).getParentDirectory().getParentDirectory().getChildFile ("data/bfd3-kit.xml").loadFileAsString();
+    // As the plugin's state reaches the app: BFD3's own header, then the XML, in base64 inside JUCE's VST3 wrapper.
+    juce::MemoryBlock inner;
+    inner.append ("BFDstate\x0c\0\0\0\0\0\0\0\x01\0\0\0", 16);
+    inner.append (xml.toRawUTF8(), xml.getNumBytesAsUTF8());
+    const auto wrapper = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <VST3PluginState><IComponent>"
+                         + inner.toBase64Encoding() + "</IComponent></VST3PluginState>";
+    juce::MemoryBlock vst3;
+    vst3.append ("VC2!", 4);
+    const auto size = juce::ByteOrder::swapIfBigEndian ((juce::uint32) wrapper.getNumBytesAsUTF8());
+    vst3.append (&size, 4);
+    vst3.append (wrapper.toRawUTF8(), wrapper.getNumBytesAsUTF8() + 1);
+
+    juce::String error, presetError, sd3Error;
+    const auto map = emk::KitMap::fromBfd3 (emk::KitMap::bfd3TextIn (vst3), error);
+    const auto preset = xml.upToFirstOccurrenceOf ("<BFD2MidiMap", false, false) + "</root>";   // a .bfd3kit has no map
+    const auto presetMap = emk::KitMap::fromBfd3 (emk::KitMap::bfd3TextIn (juce::MemoryBlock (preset.toRawUTF8(), preset.getNumBytesAsUTF8())), presetError);
+    auto find = [] (const emk::KitMap& m, const juce::String& piece, const juce::String& label) -> const emk::KitZone*
+    {
+        for (const auto& z : m.zones)
+            if (z.piece == piece && z.label == label)
+                return &z;
+        return nullptr;
+    };
+    auto noteOf = [&] (const emk::KitMap& m, const juce::String& piece, const juce::String& label, bool on = true)
+    {
+        const auto* z = find (m, piece, label);
+        return z != nullptr && z->enabled == on ? z->note : -1;
+    };
+    bool ok = error.isEmpty() && presetError.isEmpty() && map.zones.size() == presetMap.zones.size()
+              && emk::KitMap::sd3TextIn (vst3).isEmpty() && emk::KitMap::bfd3TextIn (juce::MemoryBlock ("PlugVersion 3", 13)).isEmpty()
+              && map.kitName == "BFD Crush - I Want It All";
+    for (const auto* m : { &map, &presetMap })
+        ok = ok && noteOf (*m, "Kick", "KICK1") == 24 && noteOf (*m, "Snare", "SNARE1 CENTER") == 26
+             && noteOf (*m, "Snare", "SNARE1 RIMSHOT") == 29 && noteOf (*m, "Snare", "SNARE1 SIDESTICK") == 25
+             && noteOf (*m, "Snare", "SNARE1 RIMCLICK", false) == 88 && noteOf (*m, "Snare", "SNARE1 DRAG", false) == 27
+             && noteOf (*m, "Tom 1", "TOM1 CENTER") == 40 && noteOf (*m, "Tom 1", "TOM1 RIMSHOT") == 73
+             && noteOf (*m, "Tom 1", "TOM1 RIMCLICK") == 94 && noteOf (*m, "Tom 6", "TOM6 CENTER") == 33
+             && noteOf (*m, "Hi-Hat", "HATS BOW CLOSED") == 30 && noteOf (*m, "Hi-Hat", "HATS EDGE OPEN4") == 39
+             && noteOf (*m, "Hi-Hat", "HATS BOW OPEN2") == 46 && noteOf (*m, "Hi-Hat", "HATS PEDAL CLOSED") == 32
+             && noteOf (*m, "Hi-Hat", "HATS FOOT SPLASH") == 56
+             && noteOf (*m, "Ride 1", "RIDE1 BOW") == 60 && noteOf (*m, "Ride 1", "RIDE1 BELL") == 71
+             && noteOf (*m, "Ride 1", "RIDE1 EDGE") == 50 && noteOf (*m, "Ride 1", "RIDE1 CHOKE", false) == 87
+             && noteOf (*m, "Crash 1", "CRASH1 EDGE") == 41 && noteOf (*m, "Crash 1", "CRASH1 BOW") == 52
+             && noteOf (*m, "Crash 1", "CRASH1 BELL", false) == 62 && noteOf (*m, "China 1", "CHINA1 EDGE") == 45
+             && noteOf (*m, "Splash 1", "SPLASH1 EDGE") == 48;
+    const auto* snare = find (map, "Snare", "SNARE1 CENTER");
+    ok = ok && snare != nullptr && snare->name == "Snare AXM Open High" && snare->library == "Crush Drums"
+         && snare->instrument == "Crush Drums/Snare AXM Open High";
+    if (const auto real = juce::SystemStats::getEnvironmentVariable ("BFD3_STATE", {}); real.isNotEmpty())
+    {
+        juce::MemoryBlock data;
+        juce::File (real).loadFileAsData (data);
+        juce::String realError;
+        const auto realMap = emk::KitMap::fromBfd3 (emk::KitMap::bfd3TextIn (data), realError);
+        std::cout << "real state: " << realMap.zones.size() << " zones " << realError << "\n";
+        for (const auto& z : realMap.zones)
+            std::cout << "  " << z.piece << " | " << z.label << " | " << z.note << " | " << (z.enabled ? "on" : "off") << " | " << z.pluginName << "\n";
+    }
+    juce::String empty;
+    emk::KitMap::fromBfd3 ("<root><BFD2KitInfo/></root>", empty);
+    std::printf ("bfd3 kit %s (%d zones)\n", ok && empty.isNotEmpty() ? "ok" : "WRONG", map.zones.size());
+    return ok && empty.isNotEmpty();
+}
+
 /** Drum-like test sounds: a low thud, a short noisy crack, a long bright ring. */
 juce::AudioBuffer<float> testHit (int kind, double rate, float gain, int seed)
 {
@@ -456,7 +524,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

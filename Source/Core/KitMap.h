@@ -58,6 +58,12 @@ public:
         set, when the text isn't SD3's. */
     static KitMap fromSd3 (const juce::String& text, juce::String& error);
 
+    /** The map a BFD3 kit uses, from its plugin state or a kit preset (.bfd3kit): each slot's
+        drum, named as BFD3 names it ("Crush Drums/Snare AXM Open High"), its articulations and
+        the notes they're on. A kit preset has no MIDI map, so BFD3's default "BFD 3.0" map is
+        used for it. Empty, with error set, when the text isn't BFD3's or the kit is empty. */
+    static KitMap fromBfd3 (const juce::String& text, juce::String& error);
+
     /** What you told the app about drums, by their plugin ID, and library names by the plugin's
         library ID: every zone whose drum is known takes its name and image, and its library's
         name. Two pieces never end up sharing one name. */
@@ -82,6 +88,9 @@ public:
 
     /** Finds SD3's kit text inside a plugin state or preset file, which may wrap it. */
     static juce::String sd3TextIn (const juce::MemoryBlock&);
+
+    /** Finds BFD3's kit XML inside a plugin state or kit preset file. */
+    static juce::String bfd3TextIn (const juce::MemoryBlock&);
 
     /** How many hits to record for zones[index] so the piece fits the Mimic's wave-cell limit
         for its instrument type (kick 64, snare 300, tom 200, cymbal 200, ride 300, percussion 200,
