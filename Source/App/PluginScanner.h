@@ -13,6 +13,8 @@ public:
         Returns true when the command line asked for a scan (which then ends the process). */
     static bool runChildScanIfRequested (const juce::String& commandLine);
 
-    static constexpr int timeoutSeconds = 60;   // a plugin still opening after this is skipped
+    // A plugin still opening after this is skipped. Generous: a Windows plugin through yabridge
+    // can take minutes the first time Wine starts its prefix (the Skip window can end it sooner).
+    static constexpr int timeoutSeconds = 300;
     static constexpr int skipOfferSeconds = 5;  // after this, a small window offers "Skip"
 };

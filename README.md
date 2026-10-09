@@ -65,6 +65,11 @@ them as VST3 plugins the app can load.
 ## Recording a kit
 
 1. **Find plugins**, pick your drum plugin and **Load plugin**. Load a kit in the plugin window.
+   Type in **Search plugins** to narrow a long list (any part of the name or maker). Drum plugins
+   are listed first, other plugins below them. With yabridge, run `yabridgectl sync` after adding
+   a plugin folder, then **Find plugins** again: the bridged copies land in `~/.vst3/yabridge`.
+   A plugin that failed or took over 5 minutes to open is skipped; remove it from the Find plugins
+   list and scan again to retry it.
 2. Pick the note map. **e-drum (Roland TD, hi-hat on CC4)** is the default: set the plugin's
    MIDI input map to its Roland TD preset (Superior Drummer 3: Settings > MIDI In/E-Drums) so
    the notes match and the hi-hat opens and closes with CC4. Every cell of the table can be
