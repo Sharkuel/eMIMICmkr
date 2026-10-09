@@ -90,6 +90,19 @@ private:
     std::function<void (const juce::String&)> done;
     juce::String report;
 };
+
+/** A drum plugin's own kit map, from its state or a preset file: Superior Drummer 3 or BFD3.
+    found is false when the data is neither's. */
+emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& error, bool& found)
+{
+    found = true;
+    if (const auto sd3 = emk::KitMap::sd3TextIn (data); sd3.isNotEmpty())
+        return emk::KitMap::fromSd3 (sd3, error);
+    if (const auto bfd3 = emk::KitMap::bfd3TextIn (data); bfd3.isNotEmpty())
+        return emk::KitMap::fromBfd3 (bfd3, error);
+    found = false;
+    return {};
+}
 } // namespace
 
 MainComponent::MainComponent()
@@ -1085,8 +1098,8 @@ void MainComponent::removeZone()
 
 void MainComponent::loadMapFile()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Open a note map, or a Superior Drummer 3 preset", outputFolder(),
-                                                   "*.csv;*.sd3p");
+    chooser = std::make_unique<juce::FileChooser> ("Open a note map, a Superior Drummer 3 preset or a BFD3 kit", outputFolder(),
+                                                   "*.csv;*.sd3p;*.bfd3kit");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
     {
@@ -1096,13 +1109,17 @@ void MainComponent::loadMapFile()
         juce::String error;
         juce::MemoryBlock data;
         file.loadFileAsData (data);
-        const auto sd3 = emk::KitMap::sd3TextIn (data);
-        auto map = sd3.isNotEmpty() ? emk::KitMap::fromSd3 (sd3, error) : emk::KitMap::fromCsv (file.loadFileAsString(), error);
-        if (sd3.isNotEmpty() && error.isEmpty())
+        bool pluginKit = false;
+        auto map = kitFromPluginData (data, error, pluginKit);
+        if (! pluginKit)
+            map = emk::KitMap::fromCsv (file.loadFileAsString(), error);
+        if (pluginKit && error.isEmpty())
+        {
             map.applyNames (drums, libraries);
-        if (sd3.isNotEmpty() && error.isEmpty())
-            map.kitName = kitMap.kitName.isNotEmpty() ? kitMap.kitName
-                                                      : file.getFileNameWithoutExtension().replaceCharacter ('_', ' ');
+            if (map.kitName.isEmpty())
+                map.kitName = kitMap.kitName.isNotEmpty() ? kitMap.kitName
+                                                          : file.getFileNameWithoutExtension().replaceCharacter ('_', ' ');
+        }
         if (error.isNotEmpty())
             return setStatus ("Could not read " + file.getFileName() + ". " + error);
         mapChoice.setSelectedId (0, juce::dontSendNotification);
@@ -1138,22 +1155,22 @@ void MainComponent::readNoteNames()
     if (plugin == nullptr)
         return setStatus ("Load a plugin first.");
 
-    // Superior Drummer 3 keeps its whole kit (slots, articulations, their notes) in its state.
+    // Superior Drummer 3 and BFD3 keep their whole kit (slots, articulations, their notes) in their state.
     juce::MemoryBlock state;
     plugin->getStateInformation (state);
     juce::String sd3Note;
-    if (const auto sd3 = emk::KitMap::sd3TextIn (state); sd3.isNotEmpty())
+    juce::String error;
+    bool pluginKit = false;
+    if (auto map = kitFromPluginData (state, error, pluginKit); pluginKit)
     {
-        juce::String error;
-        auto map = emk::KitMap::fromSd3 (sd3, error);
-        if (error.isEmpty())
-        {
-            map.applyNames (drums, libraries);
+        if (error.isNotEmpty())
+            return setStatus (error);
+        map.applyNames (drums, libraries);
+        if (map.kitName.isEmpty())
             map.kitName = kitMap.kitName;
-            mapChoice.setSelectedId (0, juce::dontSendNotification);
-            useMap (std::move (map));
-            sd3Note = "Read the kit's map from " + plugin->getName() + ": each instrument and the notes it plays. ";
-        }
+        mapChoice.setSelectedId (0, juce::dontSendNotification);
+        useMap (std::move (map));
+        sd3Note = "Read the kit's map from " + plugin->getName() + ": each instrument and the notes it plays. ";
     }
 
     // VST3 plugins can name their notes (Cubase shows them in its drum editor); not all do.

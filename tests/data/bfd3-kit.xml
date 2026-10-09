@@ -1,0 +1,215 @@
+<root SourceEngine="BFD3">
+    <BFD2KitInfo name="kit_info" info_name="BFD Crush - I Want It All" SourceEngine="BFD3">
+        <VString name="kit_slot_0">Crush Drums/Kick No Reso Slam Pad</VString>
+        <VString name="kit_slot_1">Crush Drums/Snare AXM Open High</VString>
+        <VString name="kit_slot_2">Meinl Cymbals/Hihat</VString>
+        <VString name="kit_slot_3">Crush Drums/Floor Tom 1</VString>
+        <VString name="kit_slot_4">Crush Drums/Mid Tom 2</VString>
+        <VString name="kit_slot_5">Crush Drums/High Tom 2</VString>
+        <VString name="kit_slot_6">Meinl Cymbals/14 Thin Crash</VString>
+        <VString name="kit_slot_7">Meinl Cymbals/14 Crash China Stack</VString>
+        <VString name="kit_slot_8">Meinl Cymbals/Ride</VString>
+        <VString name="kit_slot_12">Crush Drums/Floor Tom 2</VString>
+        <VString name="kit_slot_13">Crush Drums/Mid Tom 1</VString>
+        <VString name="kit_slot_14">Crush Drums/High Tom 1</VString>
+        <VString name="kit_slot_15">Meinl Cymbals/16 Dry Crash</VString>
+        <VString name="kit_slot_16">Meinl Cymbals/16 Crash China Stack</VString>
+        <VString name="kit_slot_47">Meinl Cymbals/18 Thin Crash</VString>
+        <VString name="kit_slot_50">Meinl Cymbals/Splash China Stack</VString>
+    </BFD2KitInfo>
+    <BFD2Kit name="kit_meta_info" SourceEngine="BFD3">
+        <BFD2KitPiece name="kp_slot_0">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_1">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+                <BFD2Artic name="artic_1_Drag" artic_name="Drag"/>
+                <BFD2Artic name="artic_3_Rim" artic_name="Rim"/>
+                <BFD2Artic name="artic_4_SS" artic_name="SS"/>
+                <BFD2Artic name="artic_5_HalfEdge" artic_name="HalfEdge"/>
+                <BFD2Artic name="artic_7_Rim Click" artic_name="Rim Click"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_2">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_OpenT" artic_name="OpenT"/>
+                <BFD2Artic name="artic_1_OpenS" artic_name="OpenS"/>
+                <BFD2Artic name="artic_2_ThreeqT" artic_name="ThreeqT"/>
+                <BFD2Artic name="artic_3_ThreeqS" artic_name="ThreeqS"/>
+                <BFD2Artic name="artic_4_HalfT" artic_name="HalfT"/>
+                <BFD2Artic name="artic_5_HalfS" artic_name="HalfS"/>
+                <BFD2Artic name="artic_6_QuarterT" artic_name="QuarterT"/>
+                <BFD2Artic name="artic_7_QuarterS" artic_name="QuarterS"/>
+                <BFD2Artic name="artic_8_ClosedT" artic_name="ClosedT"/>
+                <BFD2Artic name="artic_9_ClosedS" artic_name="ClosedS"/>
+                <BFD2Artic name="artic_10_Pedal" artic_name="Pedal"/>
+                <BFD2Artic name="artic_13_Splash" artic_name="Splash"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_3">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+                <BFD2Artic name="artic_2_Rim" artic_name="Rim"/>
+                <BFD2Artic name="artic_3_Rim Click" artic_name="Rim Click"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_4">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+                <BFD2Artic name="artic_2_Rim" artic_name="Rim"/>
+                <BFD2Artic name="artic_3_Rim Click" artic_name="Rim Click"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_5">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+                <BFD2Artic name="artic_2_Rim" artic_name="Rim"/>
+                <BFD2Artic name="artic_3_Rim Click" artic_name="Rim Click"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_6">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_1_Bell" artic_name="Bell"/>
+                <BFD2Artic name="artic_2_Edge" artic_name="Edge"/>
+                <BFD2Artic name="artic_3_Bow" artic_name="Bow"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_7">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_2_Edge" artic_name="Edge"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_8">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_1_Bell" artic_name="Bell"/>
+                <BFD2Artic name="artic_2_Edge" artic_name="Edge"/>
+                <BFD2Artic name="artic_3_Bow" artic_name="Bow"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_12">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+                <BFD2Artic name="artic_2_Rim" artic_name="Rim"/>
+                <BFD2Artic name="artic_3_Rim Click" artic_name="Rim Click"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_13">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+                <BFD2Artic name="artic_2_Rim" artic_name="Rim"/>
+                <BFD2Artic name="artic_3_Rim Click" artic_name="Rim Click"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_14">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_0_Hit" artic_name="Hit"/>
+                <BFD2Artic name="artic_2_Rim" artic_name="Rim"/>
+                <BFD2Artic name="artic_3_Rim Click" artic_name="Rim Click"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_15">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_1_Bell" artic_name="Bell"/>
+                <BFD2Artic name="artic_2_Edge" artic_name="Edge"/>
+                <BFD2Artic name="artic_3_Bow" artic_name="Bow"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_16">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_2_Edge" artic_name="Edge"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_47">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_1_Bell" artic_name="Bell"/>
+                <BFD2Artic name="artic_2_Edge" artic_name="Edge"/>
+                <BFD2Artic name="artic_3_Bow" artic_name="Bow"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+        <BFD2KitPiece name="kp_slot_50">
+            <VObjectArray name="artics">
+                <BFD2Artic name="artic_2_Edge" artic_name="Edge"/>
+            </VObjectArray>
+        </BFD2KitPiece>
+    </BFD2Kit>
+    <BFD2MidiMap name="bfd2_midi_map" info_name="BFD 3.0">
+        <MIDIMapElement note="18"><RequestedArticulationID name="req_artic" slot="2" artic="11"/></MIDIMapElement>
+        <MIDIMapElement note="20"><RequestedArticulationID name="req_artic" slot="2" artic="12"/></MIDIMapElement>
+        <MIDIMapElement note="22"><RequestedArticulationID name="req_artic" slot="2" artic="20"/></MIDIMapElement>
+        <MIDIMapElement note="24"><RequestedArticulationID name="req_artic" slot="0" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="25"><RequestedArticulationID name="req_artic" slot="1" artic="4"/></MIDIMapElement>
+        <MIDIMapElement note="26"><RequestedArticulationID name="req_artic" slot="1" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="27"><RequestedArticulationID name="req_artic" slot="1" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="28"><RequestedArticulationID name="req_artic" slot="1" artic="5"/></MIDIMapElement>
+        <MIDIMapElement note="29"><RequestedArticulationID name="req_artic" slot="1" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="30"><RequestedArticulationID name="req_artic" slot="2" artic="8"/></MIDIMapElement>
+        <MIDIMapElement note="31"><RequestedArticulationID name="req_artic" slot="3" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="32"><RequestedArticulationID name="req_artic" slot="2" artic="10"/></MIDIMapElement>
+        <MIDIMapElement note="33"><RequestedArticulationID name="req_artic" slot="12" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="34"><RequestedArticulationID name="req_artic" slot="2" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="35"><RequestedArticulationID name="req_artic" slot="4" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="36"><RequestedArticulationID name="req_artic" slot="13" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="37"><RequestedArticulationID name="req_artic" slot="2" artic="9"/></MIDIMapElement>
+        <MIDIMapElement note="38"><RequestedArticulationID name="req_artic" slot="5" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="39"><RequestedArticulationID name="req_artic" slot="2" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="40"><RequestedArticulationID name="req_artic" slot="14" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="41"><RequestedArticulationID name="req_artic" slot="6" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="42"><RequestedArticulationID name="req_artic" slot="2" artic="6"/></MIDIMapElement>
+        <MIDIMapElement note="43"><RequestedArticulationID name="req_artic" slot="15" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="44"><RequestedArticulationID name="req_artic" slot="2" artic="7"/></MIDIMapElement>
+        <MIDIMapElement note="45"><RequestedArticulationID name="req_artic" slot="7" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="46"><RequestedArticulationID name="req_artic" slot="2" artic="4"/></MIDIMapElement>
+        <MIDIMapElement note="47"><RequestedArticulationID name="req_artic" slot="16" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="48"><RequestedArticulationID name="req_artic" slot="50" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="49"><RequestedArticulationID name="req_artic" slot="2" artic="5"/></MIDIMapElement>
+        <MIDIMapElement note="50"><RequestedArticulationID name="req_artic" slot="8" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="51"><RequestedArticulationID name="req_artic" slot="2" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="52"><RequestedArticulationID name="req_artic" slot="6" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="53"><RequestedArticulationID name="req_artic" slot="15" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="54"><RequestedArticulationID name="req_artic" slot="2" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="55"><RequestedArticulationID name="req_artic" slot="7" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="56"><RequestedArticulationID name="req_artic" slot="2" artic="13"/></MIDIMapElement>
+        <MIDIMapElement note="57"><RequestedArticulationID name="req_artic" slot="16" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="58"><RequestedArticulationID name="req_artic" slot="2" artic="14"/></MIDIMapElement>
+        <MIDIMapElement note="59"><RequestedArticulationID name="req_artic" slot="50" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="60"><RequestedArticulationID name="req_artic" slot="8" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="61"><RequestedArticulationID name="req_artic" slot="3" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="62"><RequestedArticulationID name="req_artic" slot="6" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="63"><RequestedArticulationID name="req_artic" slot="12" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="64"><RequestedArticulationID name="req_artic" slot="15" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="65"><RequestedArticulationID name="req_artic" slot="7" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="66"><RequestedArticulationID name="req_artic" slot="4" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="67"><RequestedArticulationID name="req_artic" slot="16" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="68"><RequestedArticulationID name="req_artic" slot="13" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="69"><RequestedArticulationID name="req_artic" slot="50" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="70"><RequestedArticulationID name="req_artic" slot="5" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="71"><RequestedArticulationID name="req_artic" slot="8" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="72"><RequestedArticulationID name="req_artic" slot="6" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="73"><RequestedArticulationID name="req_artic" slot="14" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="74"><RequestedArticulationID name="req_artic" slot="15" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="75"><RequestedArticulationID name="req_artic" slot="6" artic="8000"/></MIDIMapElement>
+        <MIDIMapElement note="76"><RequestedArticulationID name="req_artic" slot="7" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="77"><RequestedArticulationID name="req_artic" slot="16" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="78"><RequestedArticulationID name="req_artic" slot="15" artic="8000"/></MIDIMapElement>
+        <MIDIMapElement note="79"><RequestedArticulationID name="req_artic" slot="50" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="80"><RequestedArticulationID name="req_artic" slot="7" artic="8000"/></MIDIMapElement>
+        <MIDIMapElement note="81"><RequestedArticulationID name="req_artic" slot="8" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="82"><RequestedArticulationID name="req_artic" slot="16" artic="8000"/></MIDIMapElement>
+        <MIDIMapElement note="83"><RequestedArticulationID name="req_artic" slot="9" artic="0"/></MIDIMapElement>
+        <MIDIMapElement note="84"><RequestedArticulationID name="req_artic" slot="0" artic="1"/></MIDIMapElement>
+        <MIDIMapElement note="85"><RequestedArticulationID name="req_artic" slot="50" artic="8000"/></MIDIMapElement>
+        <MIDIMapElement note="86"><RequestedArticulationID name="req_artic" slot="1" artic="2"/></MIDIMapElement>
+        <MIDIMapElement note="87"><RequestedArticulationID name="req_artic" slot="8" artic="8000"/></MIDIMapElement>
+        <MIDIMapElement note="88"><RequestedArticulationID name="req_artic" slot="1" artic="7"/></MIDIMapElement>
+        <MIDIMapElement note="89"><RequestedArticulationID name="req_artic" slot="3" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="90"><RequestedArticulationID name="req_artic" slot="12" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="91"><RequestedArticulationID name="req_artic" slot="4" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="92"><RequestedArticulationID name="req_artic" slot="13" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="93"><RequestedArticulationID name="req_artic" slot="5" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="94"><RequestedArticulationID name="req_artic" slot="14" artic="3"/></MIDIMapElement>
+        <MIDIMapElement note="95"><RequestedArticulationID name="req_artic" slot="18" artic="0"/></MIDIMapElement>
+    </BFD2MidiMap>
+</root>
