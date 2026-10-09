@@ -162,13 +162,19 @@ MainComponent::MainComponent()
         table.updateContent();
         table.repaint();
     };
-    for (juce::Component* c : { (juce::Component*) &pluginChoice, (juce::Component*) &mapChoice,
+    for (juce::Component* c : { (juce::Component*) &pluginChoice, (juce::Component*) &pluginSearch,
+                                (juce::Component*) &mapChoice,
                                 (juce::Component*) &kitLabel, (juce::Component*) &kitName,
                                 (juce::Component*) &hitsLabel, (juce::Component*) &hitsPerZone,
                                 (juce::Component*) &table, (juce::Component*) &status })
         addAndMakeVisible (c);
 
     scanButton.onClick = [this] { scanPlugins(); };
+    pluginSearch.setTextToShowWhenEmpty ("Search plugins", juce::Colours::grey);
+    pluginSearch.setJustification (juce::Justification::centredLeft);
+    pluginSearch.setTooltip ("Type part of a plugin's name or maker to narrow the list.");
+    pluginSearch.onTextChange = [this] { refreshPluginChoices(); };
+    pluginSearch.onReturnKey = [this] { pluginChoice.showPopup(); };
     loadButton.onClick = [this] { loadSelectedPlugin(); };
     showButton.onClick = [this] { showPluginWindow(); };
     auditionButton.onClick = [this] { auditionSelectedZone(); };
@@ -264,6 +270,8 @@ void MainComponent::resized()
     row.removeFromRight (8);
     showButton.setBounds (row.removeFromRight (110));
     row.removeFromRight (8);
+    pluginSearch.setBounds (row.removeFromLeft (180));
+    row.removeFromLeft (8);
     pluginChoice.setBounds (row);
 
     area.removeFromTop (12);
@@ -688,21 +696,54 @@ void MainComponent::saveMap()
 
 void MainComponent::refreshPluginChoices()
 {
-    // Rebuilt after every scan step, so keep the user's pick (or the last plugin loaded) selected.
+    // Rebuilt after every scan step and search keystroke, so keep the user's pick (or the last
+    // plugin loaded) selected. Drum plugins come first; anything else is listed below them, in
+    // case a plugin doesn't call itself an instrument.
     auto keep = pluginChoice.getText();
     if (keep.isEmpty())
         keep = settings->getValue ("lastPlugin");
+    const auto words = juce::StringArray::fromTokens (pluginSearch.getText().toLowerCase(), true);
+    auto matches = [&words] (const juce::PluginDescription& d)
+    {
+        const auto text = (d.name + " " + d.manufacturerName + " " + d.pluginFormatName).toLowerCase();
+        for (const auto& w : words)
+            if (w.isNotEmpty() && ! text.contains (w))
+                return false;
+        return true;
+    };
+
     pluginChoice.clear (juce::dontSendNotification);
-    int id = 1;
-    for (auto& d : knownPlugins.getTypes())
-        if (d.isInstrument)
-        {
-            const auto name = d.name + " (" + d.pluginFormatName + ")";
-            pluginChoice.addItem (name, id);
-            if (name == keep)
-                pluginChoice.setSelectedId (id, juce::dontSendNotification);
-            ++id;
-        }
+    int id = 1, shown = 0, lastId = 0;
+    const auto types = knownPlugins.getTypes();
+    for (const bool instruments : { true, false })
+    {
+        bool headed = instruments;
+        for (const auto& d : types)
+            if (d.isInstrument == instruments && matches (d))
+            {
+                if (! headed)
+                {
+                    pluginChoice.addSectionHeading ("Other plugins");
+                    headed = true;
+                }
+                const auto name = pluginLabel (d);
+                pluginChoice.addItem (name, id);
+                if (name == keep)
+                    pluginChoice.setSelectedId (id, juce::dontSendNotification);
+                lastId = id++;
+                ++shown;
+            }
+    }
+    if (shown == 1)
+        pluginChoice.setSelectedId (lastId, juce::dontSendNotification);
+    pluginChoice.setTextWhenNothingSelected (types.isEmpty() ? "Find plugins first"
+                                             : shown == 0  ? "No plugin matches the search"
+                                                           : juce::String (shown) + " plugins");
+}
+
+juce::String MainComponent::pluginLabel (const juce::PluginDescription& d)
+{
+    return d.name + " (" + d.pluginFormatName + ")";
 }
 
 juce::File MainComponent::scanCrashFile() const
@@ -742,7 +783,7 @@ void MainComponent::loadSelectedPlugin()
     juce::PluginDescription desc;
     bool found = false;
     for (const auto& d : knownPlugins.getTypes())   // getTypes() returns a copy: keep our own
-        if (d.isInstrument && d.name + " (" + d.pluginFormatName + ")" == chosen)
+        if (pluginLabel (d) == chosen)
         {
             desc = d;
             found = true;

@@ -24,6 +24,7 @@ private:
 
     void scanPlugins();
     void refreshPluginChoices();
+    static juce::String pluginLabel (const juce::PluginDescription&);
     void loadSelectedPlugin();
     void showPluginWindow();
     void useMap (emk::KitMap);
@@ -102,7 +103,7 @@ private:
     juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
-    juce::TextEditor kitName, hitsPerZone;
+    juce::TextEditor kitName, hitsPerZone, pluginSearch;
     juce::TableListBox table { {}, this };
     juce::Label status;
     juce::TooltipWindow tooltips { this };
