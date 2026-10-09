@@ -55,8 +55,19 @@ target_link_libraries(eMIMICmkr PRIVATE
     juce::juce_audio_processors
     juce::juce_cryptography
     juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
+
+# Link-time optimisation makes a smaller, faster app, but GCC 16 crashes doing it on JUCE's
+# HarfBuzz ("internal compiler error ... cfgcleanup.cc"), so it is off there by default.
+# cmake -B build -DEMIMICMKR_LTO=OFF turns it off anywhere else a compiler trips on it.
+set(lto_default ON)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 16)
+    set(lto_default OFF)
+endif()
+option(EMIMICMKR_LTO "Build the app with link-time optimisation" ${lto_default})
+if(EMIMICMKR_LTO)
+    target_link_libraries(eMIMICmkr PRIVATE juce::juce_recommended_lto_flags)
+endif()
 
 # A console check of the batch recorder against a stand-in plugin (tests/test_batch_recording.py runs it).
 juce_add_console_app(eMIMICmkr_tests PRODUCT_NAME "eMIMICmkr_tests")
