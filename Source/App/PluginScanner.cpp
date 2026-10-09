@@ -28,6 +28,9 @@ public:
         setAlwaysOnTop (true);
         centreWithSize (380, 110);
         setVisible (true);
+        // The scan's progress dialog is modal and swallows clicks on any other window, so this
+        // one goes modal on top of it while shown; deleting it hands input back to the dialog.
+        enterModalState (true);
     }
 
 private:
