@@ -264,6 +264,48 @@ The heads are stored in round-robin order: the first round robin of every layer 
 every articulation comes first, then the second, and so on. `dedo` records where each
 head landed.
 
+## Kit presets (.kit)
+
+A kit preset is the same container holding only metadata: the 22-byte header
+(`mimic_storage\0`, u32 version 3, u32 metadata length), then the metadata as one zlib
+stream (level 1) with an empty image, and nothing after it: no audio and no `MMKCSM`
+trailer. The kit's name is its file name (`[U] <name>.kit`, inside `<name>.mdp`).
+
+It has 26 fixed slots, named by `insstCS<slot>isltn` (0-25): Kick, Kick Layer, Snare,
+Snare Layer, Hi-Hat, Ride 1, Ride 2, Tom 1-4, Crash 1-2, Aux 1-5, Xtra 1-8. Slot names hold
+spaces and some are prefixes of others ("Kick", "Kick Layer"), so keys are matched as the
+exact slot name followed by a known suffix.
+
+| `insstCS<slot>` key | Meaning |
+| --- | --- |
+| `isltn` | slot number |
+| `nm`, `tnm` | slot name; `tnm` is usually the slot name when loaded and empty when not |
+| `itp` | type of the instrument in it (Kick, Snare, Tom, Hat, Ride, Cymbal, Perc, Wave) |
+| `artc`, `artn<i>`, `azt` | articulation count, names and zone types, fixed per type (below) |
+| `lsin`, `lsln` | the instrument's `INST0insnam` and `INST0libnam`: how the Mimic finds it |
+| `isld`, `enb` | loaded, enabled (u8). Ride 2 is disabled in every kit Pearl ships |
+| `mdir`, `moh`, `mrm` | output routing (16/22/23; the Kick slot has `mdir` 5) |
+
+| `itp` | `artn` | `azt` |
+| --- | --- | --- |
+| Kick, Wave | Center | 1 |
+| Snare | Center, Side, Rim Click, Side Stick, Rim Shot, Rim Shot Side | 1, 6, 2, 4, 3, 5 |
+| Tom | Center, Rim Click, Rim Shot | 1, 2, 3 |
+| Hat | Bow Single Zone, Bow Dual Zone, Edge Dual Zone, Chick, Foot Splash | 80-84 |
+| Ride | Bow, Bell, Crash, Mute | 40, 42, 43, 41 |
+| Cymbal | Bow, Crash, Mute | 40, 43, 41 |
+| Perc | Main, Secondary, Additional 1, Additional 2 | 200-203 |
+
+A loaded slot has a mixer channel, `CME<slot>` + `cb cv dov iv mal nm sd sv sva sw tn vr`,
+`cmp<0-7>...` (compressors), `eq<0-7>e5v1[en]` (EQs) and one `mi<n>...` group per mic
+(`nm` is the mic count), which copies the instrument's `INST0micinf<n>...` with the kit's
+own level (`micv`) and pan (`micp`, 0.5 = centre). An empty slot has no `CME<slot>` keys.
+Bus channels (`CMEKicks...`, `CMESnares...`, `CMERoom...`, `CMEOH...`, `CMEMaster...`),
+the master (`mK...`, `mRev...`, `KitVol`) and pad settings (`TPAD...`) are kit-wide.
+
+`emk::MimicKit` builds a kit from a user's kit as template; `eMIMICmkr_mci_tests
+--rewrite-kit IN OUT` rewrites a kit byte for byte, and `--kit TEMPLATE OUT MCI...` builds one.
+
 ## Open questions for a device test
 
 - Does the Mimic itself load files written by `tools/mci/mci.py`? The Editor already

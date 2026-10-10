@@ -3,6 +3,7 @@
 #include "../Core/WavToMci.h"
 #include "../Core/HitRenderer.h"
 #include "../Core/MimicImage.h"
+#include "../Core/MimicKit.h"
 #include "PluginScanner.h"
 
 namespace
@@ -128,13 +129,16 @@ MainComponent::MainComponent()
     audioDevices.addAudioCallback (&player);
 
     for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
-                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &convertButton })
+                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &convertButton, &kitButton })
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
     addAndMakeVisible (hatAsRide);
     hatAsRide.setToggleState (settings->getBoolValue ("hatAsRide", false), juce::dontSendNotification);
     hatAsRide.onClick = [this] { settings->setValue ("hatAsRide", hatAsRide.getToggleState()); };
     convertButton.onClick = [this] { convertWavFolder(); };
+    kitButton.onClick = [this] { buildMimicKit(); };
+    kitButton.setTooltip ("Makes a Mimic kit preset (.kit) from .mci files, starting from one of your own kits "
+                          "so its pad settings carry over.");
     for (juce::Component* c : { (juce::Component*) &saveToButton, (juce::Component*) &saveToLabel,
                                 (juce::Component*) &saveToPath, (juce::Component*) &stateButton })
         addAndMakeVisible (c);
@@ -300,6 +304,8 @@ void MainComponent::resized()
     saveToPath.setBounds (row.removeFromRight (200));
     saveToLabel.setBounds (row.removeFromRight (60));
     convertButton.setBounds (row.removeFromLeft (160));
+    row.removeFromLeft (6);
+    kitButton.setBounds (row.removeFromLeft (140));
     row.removeFromLeft (12);
     hatAsRide.setBounds (row.removeFromLeft (250));
 
@@ -1041,6 +1047,106 @@ void MainComponent::convertWavFolder()
             });
         });
     });
+}
+
+void MainComponent::buildMimicKit()
+{
+    const auto last = settings->getValue ("mimicFolder");
+    chooser = std::make_unique<juce::FileChooser> ("Pick the .mci files for the kit, or the folder holding them",
+                                                   last.isNotEmpty() && juce::File (last).isDirectory() ? juce::File (last) : outputFolder(),
+                                                   "*.mci");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::canSelectDirectories | juce::FileBrowserComponent::canSelectMultipleItems,
+                          [this] (const juce::FileChooser& fc)
+    {
+        juce::Array<juce::File> instruments;
+        for (const auto& f : fc.getResults())
+        {
+            if (f.isDirectory())
+                instruments.addArray (f.findChildFiles (juce::File::findFiles, false, "*.mci;*.MCI"));
+            else if (f.existsAsFile())
+                instruments.add (f);
+        }
+        if (instruments.isEmpty())
+        {
+            if (fc.getResults().size() > 0)
+                setStatus ("No .mci files there.");
+            return;
+        }
+        settings->setValue ("mimicFolder", instruments[0].getParentDirectory().getFullPathName());
+
+        const juce::File remembered (settings->getValue ("kitTemplate"));
+        if (remembered.existsAsFile())
+            return buildMimicKitWith (instruments, remembered);
+
+        chooser = std::make_unique<juce::FileChooser> ("Pick one of your Mimic kits (.kit) to start from: its pad settings carry over",
+                                                       instruments[0].getParentDirectory(), "*.kit;*.KIT");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                              [this, instruments] (const juce::FileChooser& t)
+        {
+            if (! t.getResult().existsAsFile())
+                return;
+            settings->setValue ("kitTemplate", t.getResult().getFullPathName());
+            buildMimicKitWith (instruments, t.getResult());
+        });
+    });
+}
+
+void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instruments, const juce::File& templateKit)
+{
+    // The kit is named after the folder of instruments ("Mimic" is the one Convert makes, inside the kit's folder).
+    auto folder = instruments[0].getParentDirectory();
+    auto name = folder.getFileName() == "Mimic" ? folder.getParentDirectory().getFileName() : folder.getFileName();
+
+    kitDialog = std::make_unique<juce::AlertWindow> ("Build Mimic kit",
+                                                     juce::String (instruments.size()) + " instruments, starting from the kit\n"
+                                                         + templateKit.getFileName() + "\n\nThe kit goes in " + folder.getFullPathName(),
+                                                     juce::MessageBoxIconType::NoIcon, this);
+    kitDialog->addTextEditor ("name", name, "Kit name");
+    kitDialog->addButton ("Build", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    kitDialog->addButton ("Other kit to start from...", 2);
+    kitDialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    kitDialog->enterModalState (true, juce::ModalCallbackFunction::create ([this, instruments, templateKit, folder] (int button)
+    {
+        const auto kitName = kitDialog->getTextEditorContents ("name").trim();
+        juce::MessageManager::callAsync ([this] { kitDialog = nullptr; });
+        if (button == 2)
+        {
+            settings->removeValue ("kitTemplate");
+            chooser = std::make_unique<juce::FileChooser> ("Pick one of your Mimic kits (.kit) to start from: its pad settings carry over",
+                                                           templateKit.getParentDirectory(), "*.kit;*.KIT");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [this, instruments] (const juce::FileChooser& t)
+            {
+                if (! t.getResult().existsAsFile())
+                    return;
+                settings->setValue ("kitTemplate", t.getResult().getFullPathName());
+                buildMimicKitWith (instruments, t.getResult());
+            });
+            return;
+        }
+        if (button != 1 || kitName.isEmpty())
+            return;
+
+        const auto out = emk::MimicKit::kitFile (folder, kitName);
+        try
+        {
+            const auto report = emk::MimicKit::buildFile (instruments, templateKit, out);
+            juce::String text = "Built the kit " + out.getFullPathName() + ":";
+            for (const auto& [slot, instrument] : report.placed)
+                text << " " << slot << " = " << instrument << ";";
+            if (! report.leftOut.isEmpty())
+                text << "\nNo slot for: " << report.leftOut.joinIntoString (", ") << ".";
+            for (const auto& note : report.notes)
+                text << "\n" << note;
+            setStatus (text);
+            out.revealToUser();
+        }
+        catch (const std::exception& e)
+        {
+            setStatus ("Could not build the kit: " + juce::String (e.what()));
+        }
+    }));
 }
 
 bool MainComponent::runJob (const juce::String& title,

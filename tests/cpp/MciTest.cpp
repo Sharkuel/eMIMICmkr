@@ -5,8 +5,12 @@
 //                                            convert a folder or .zip of rendered WAVs, or
 //                                            several folders read as one
 //   eMIMICmkr_mci_tests --rewrite IN OUT     read a .mci and write it back (reader/writer check)
+//   eMIMICmkr_mci_tests --rewrite-kit IN OUT read a .kit and write it back
+//   eMIMICmkr_mci_tests --kit TEMPLATE OUT MCI...
+//                                            build a kit preset from instruments
 //
 // tests/test_cpp_converter.py compares --convert with tools/mci/wav2mci.py.
+#include "../../Source/Core/MimicKit.h"
 #include "../../Source/Core/WavToMci.h"
 #include <cstdio>
 #include <random>
@@ -150,6 +154,154 @@ void checkContainer()
     check (threw, "a damaged file fails its MD5 check");
 }
 
+/** A made-up kit in the Mimic's layout: Kick and Kick Layer loaded, everything else empty. */
+mci::MciFile templateKit()
+{
+    using mci::Value;
+    const juce::StringArray slots { "Kick", "Kick Layer", "Snare", "Snare Layer", "Hi-Hat", "Ride 1", "Ride 2",
+                                    "Tom 1", "Tom 2", "Tom 3", "Tom 4", "Crash 1", "Crash 2", "Aux 1", "Aux 2",
+                                    "Aux 3", "Aux 4", "Aux 5", "Xtra 1", "Xtra 2", "Xtra 3", "Xtra 4", "Xtra 5",
+                                    "Xtra 6", "Xtra 7", "Xtra 8" };
+    mci::MciFile kit;
+    kit.set ("KitVol", Value::ofFloat (1.0));
+    kit.set ("TPADKICKKICKfprn", Value::ofString ("R-KD-120"));
+    kit.set ("CMEKickscb", Value::ofFloat (0.7));   // the Kicks bus, not the Kick slot
+    kit.set ("CMEKicksvr", Value::ofFloat (1.0));
+    for (int n = 0; n < slots.size(); ++n)
+    {
+        const auto P = "insstCS" + slots[n].toStdString();
+        const bool full = n < 2;
+        kit.set (P + "isltn", Value::ofInt (n));
+        kit.set (P + "itp", Value::ofString (full ? "Kick" : "Wave"));
+        kit.set (P + "artc", Value::ofInt (1));
+        kit.set (P + "artn0", Value::ofString ("Center"));
+        kit.set (P + "azt", Value::ofInts ({ 1 }));
+        kit.set (P + "enb", Value::ofU8 (slots[n] == "Ride 2" ? 0 : 1));
+        kit.set (P + "isld", Value::ofU8 (full ? 1 : 0));
+        kit.set (P + "lsin", Value::ofString (full ? "Factory Kick" : ""));
+        kit.set (P + "lsln", Value::ofString (full ? "SSD 5" : ""));
+        kit.set (P + "nm", Value::ofString (slots[n]));
+        kit.set (P + "tnm", Value::ofString (full ? slots[n] : ""));
+        kit.set (P + "mdir", Value::ofInt (16));
+        if (! full)
+            continue;
+        const auto C = "CME" + slots[n].toStdString();
+        kit.set (C + "cv", Value::ofFloat (1.0));
+        kit.set (C + "nm", Value::ofInt (2));
+        kit.set (C + "cmp0en", Value::ofU8 (1));
+        kit.set (C + "eq0e5v1en", Value::ofU8 (1));
+        for (int m = 0; m < 2; ++m)
+        {
+            const auto M = C + "mi" + std::to_string (m);
+            kit.set (M + "micn", Value::ofString (m == 0 ? "Kick In" : "OH"));
+            kit.set (M + "micp", Value::ofFloat (m == 0 ? 0.5 : 0.2));
+            kit.set (M + "micv", Value::ofFloat (m == 0 ? 0.8 : 0.4));
+        }
+    }
+    return kit;
+}
+
+void checkKits()
+{
+    const auto bytes = mci::writeKit (templateKit());
+    const auto read = mci::readSettings (bytes.getData(), bytes.getSize());
+    check (mci::writeKit (read) == bytes && read.meta.size() == templateKit().meta.size(), "kit round trip");
+    check (MimicKit::slotsOf (read).size() == 26 && MimicKit::slotsOf (read)[4] == "Hi-Hat", "kit slots in order");
+
+    juce::TemporaryFile dir;
+    dir.getFile().createDirectory();
+    mci::Samples s (3000, 1 << 16);
+    const auto image = WavToMci::thumbnail();
+    juce::Array<juce::File> files;
+    auto add = [&] (const juce::String& name, const juce::String& type, std::vector<mci::Articulation> arts)
+    {
+        const auto file = dir.getFile().getChildFile (name + ".mci");
+        check (mci::writeMciFile (mci::buildInstrument (name, type, arts, image), file).wasOk(), "write instrument");
+        files.add (file);
+    };
+    const mci::Layers one { { s } };
+    const auto drum = [&] { mci::Articulation a; a.name = "Center"; a.zoneType = 1; a.layers = one; return std::vector<mci::Articulation> { a }; };
+    add ("22 Kick", "Kick", drum());
+    add ("14 Snare", "Snare", drum());
+    add ("12 Tom", "Tom", drum());
+    add ("10 Tom", "Tom", drum());
+    add ("16 Floor Tom", "Tom", drum());
+    add ("20 Ride", "Ride", mci::rideArticulations (one, one, one));
+    add ("16 Crash 3-zone", "Ride", mci::rideArticulations (one, one, one));
+    add ("18 Crash", "Cymbal", mci::cymbalArticulations (one, one));
+    add ("10 Splash", "Cymbal", mci::cymbalArticulations (one, one));
+
+    const auto templateFile = dir.getFile().getChildFile ("template.kit");
+    check (mci::writeKitFile (templateKit(), templateFile).wasOk(), "write template");
+    const auto out = MimicKit::kitFile (dir.getFile(), "My Kit");
+    check (out.getFileName() == "[U] My Kit.kit" && out.getParentDirectory().getFileName() == "My Kit.mdp", "kit file name");
+    const auto report = MimicKit::buildFile (files, templateFile, out);
+    const auto kit = mci::readSettings (out);
+
+    auto in = [&] (const char* slot) { return kit.getString (std::string ("insstCS") + slot + "lsin"); };
+    check (in ("Kick") == "22 Kick" && in ("Snare") == "14 Snare" && in ("Ride 1") == "20 Ride", "kick, snare, ride");
+    check (in ("Tom 1") == "10 Tom" && in ("Tom 2") == "12 Tom" && in ("Tom 3") == "16 Floor Tom" && in ("Tom 4").isEmpty(),
+           "toms smallest first");
+    check (in ("Crash 1") == "16 Crash 3-zone" && in ("Crash 2") == "18 Crash" && in ("Aux 1") == "10 Splash", "cymbals");
+    check (kit.getString ("insstCSCrash 1itp") == "Ride" && kit.getInt ("insstCSCrash 1artc") == 4
+           && kit.getInts ("insstCSCrash 1azt") == std::vector<int> { 40, 42, 43, 41 }, "3-zone crash slot");
+    check (kit.getString ("insstCSTom 1artn2") == "Rim Shot" && kit.getInt ("insstCSTom 1isld") == 1, "tom slot");
+    check (in ("Kick Layer").isEmpty() && kit.getInt ("insstCSKick Layerisld") == 0 && kit.find ("CMEKick Layercv") == nullptr,
+           "unused slot emptied");
+    check (kit.getInt ("insstCSRide 2enb") == 0 && in ("Ride 2").isEmpty(), "disabled slot left alone");
+    check (report.placed.size() == 9 && report.leftOut.isEmpty() && report.notes.size() == 1, "report");
+
+    check (kit.getInt ("CMEKicknm") == 1 && kit.find ("CMEKickmi1micv") == nullptr
+           && kit.getString ("CMEKickmi0micn") == "Kick", "kick channel has the instrument's one mic");
+    check (juce::exactlyEqual (kit.getFloat ("CMEKickmi0micp"), 0.5f) && juce::exactlyEqual (kit.getFloat ("CMEKickmi0micv"), 0.8f), "kick mic centred at the template level");
+    check (kit.getInt ("CMEKickcmp0en") == 1, "kick channel keeps its compressor");
+    check (juce::exactlyEqual (kit.getFloat ("CMETom 1cv"), 1.0f) && kit.getInt ("CMETom 1cmp0en") == 0 && kit.getInt ("CMETom 1eq0e5v1en") == 0,
+           "new channel copied, EQ and compressor off");
+    check (kit.find ("CMEKickscb") != nullptr && kit.find ("CMEKicksvr") != nullptr
+           && kit.getString ("TPADKICKKICKfprn") == "R-KD-120", "buses and pads kept");
+}
+
+int buildKit (const juce::StringArray& args)
+{
+    try
+    {
+        const auto cwd = juce::File::getCurrentWorkingDirectory();
+        juce::Array<juce::File> files;
+        for (int i = 2; i < args.size(); ++i)
+            files.add (cwd.getChildFile (args[i]));
+        const auto report = MimicKit::buildFile (files, cwd.getChildFile (args[0]), cwd.getChildFile (args[1]));
+        for (const auto& [slot, name] : report.placed)
+            std::printf ("%-12s %s\n", slot.toRawUTF8(), name.toRawUTF8());
+        for (const auto& name : report.leftOut)
+            std::printf ("left out: %s\n", name.toRawUTF8());
+        for (const auto& note : report.notes)
+            std::printf ("note: %s\n", note.toRawUTF8());
+        return 0;
+    }
+    catch (const mci::Error& e)
+    {
+        std::fprintf (stderr, "error: %s\n", e.what());
+        return 1;
+    }
+}
+
+int rewriteKit (const juce::String& in, const juce::String& out)
+{
+    try
+    {
+        const auto cwd = juce::File::getCurrentWorkingDirectory();
+        const auto result = mci::writeKitFile (mci::readSettings (cwd.getChildFile (in)), cwd.getChildFile (out));
+        if (result.failed())
+            throw mci::Error (result.getErrorMessage().toStdString());
+        return 0;
+    }
+    catch (const mci::Error& e)
+    {
+        std::fprintf (stderr, "error: %s\n", e.what());
+        return 1;
+    }
+}
+
 int convert (const juce::StringArray& args)
 {
     WavToMci::Options options;
@@ -218,10 +370,18 @@ int main (int argc, char** argv)
     }
     if (args[0] == "--rewrite" && args.size() == 3)
         return rewrite (args[1], args[2]);
+    if (args[0] == "--rewrite-kit" && args.size() == 3)
+        return rewriteKit (args[1], args[2]);
+    if (args[0] == "--kit" && args.size() >= 4)
+    {
+        args.remove (0);
+        return buildKit (args);
+    }
     if (args.size() > 0 && args[0] != "--selftest")
     {
         std::fprintf (stderr, "usage: %s [--selftest | --convert INPUT [INPUT...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]"
-                              " | --rewrite IN.mci OUT.mci]\n", argv[0]);
+                              " | --rewrite IN.mci OUT.mci"
+                              " | --rewrite-kit IN.kit OUT.kit | --kit TEMPLATE.kit OUT.kit IN.mci...]\n", argv[0]);
         return 2;
     }
 
@@ -230,6 +390,7 @@ int main (int argc, char** argv)
         checkCodec();
         checkBuilders();
         checkContainer();
+        checkKits();
     }
     catch (const std::exception& e)
     {

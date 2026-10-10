@@ -134,6 +134,15 @@ A piece folder (the one holding its zone folders) may hold `mimic.txt` (`name: .
 `library: ...` lines) and `mimic.png` (94x63); recordings get them from the table, and the
 converter puts them in the instrument.
 
+**Build Mimic kit...** makes a Mimic kit preset (`.kit`) from `.mci` files (pick them, or the
+folder holding them). It starts from one of your own Mimic kits, picked once and remembered
+(**Other kit to start from...** changes it), so its pad and trigger settings and its mixer
+carry over; the instruments go in its slots (kick, snare, hi-hat, ride, toms smallest first,
+crashes, then Aux and Xtra), every other slot is emptied, and each channel is panned to the
+centre. The kit is written next to the instruments as `<kit name>.mdp/[U] <kit name>.kit`,
+the way the Mimic stores its own. The Mimic finds a slot's instrument by its name and library,
+so keep the `.mci` files as they were made, and copy them to the Mimic along with the kit.
+
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 24-bit WAVs under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
 the layout the converter reads (below). The hi-hat is recorded at five pedal positions
