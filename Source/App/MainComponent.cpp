@@ -18,8 +18,8 @@ juce::File defaultOutputFolder()
 class PluginWindow : public juce::DocumentWindow
 {
 public:
-    PluginWindow (juce::AudioProcessorEditor* editor, const juce::String& name)
-        : DocumentWindow (name, juce::Colours::black, DocumentWindow::closeButton)
+    PluginWindow (juce::AudioProcessorEditor* editor, const juce::String& name, LiveHost& liveIn)
+        : DocumentWindow (name, juce::Colours::black, DocumentWindow::closeButton), live (liveIn)
     {
         setUsingNativeTitleBar (true);
         setContentOwned (editor, true);
@@ -27,6 +27,25 @@ public:
     }
 
     void closeButtonPressed() override { setVisible (false); }
+
+    // Resizing a plugin's window can make it change its outputs (MODO DRUM through yabridge does,
+    // and crashes if it's playing meanwhile): keep it out of the audio thread while it resizes,
+    // and for a moment after, while the restart it asks for comes through.
+    void resized() override
+    {
+        auto* plugin = live.getProcessor();
+        if (plugin == nullptr)
+            return DocumentWindow::resized();
+        live.pauseFor (500);
+        {
+            const juce::ScopedLock pluginLock (plugin->getCallbackLock());
+            DocumentWindow::resized();
+        }
+        live.pauseFor (500);
+    }
+
+private:
+    LiveHost& live;
 };
 
 /** A table cell the user can type into. */
@@ -829,7 +848,7 @@ void MainComponent::showPluginWindow()
         const bool wasLive = live.getProcessor() != nullptr;
         setLive (false);
         if (auto* editor = plugin->createEditorIfNeeded())
-            pluginWindow = std::make_unique<PluginWindow> (editor, plugin->getName());
+            pluginWindow = std::make_unique<PluginWindow> (editor, plugin->getName(), live);
         if (wasLive)
             setLive (true);
     }
