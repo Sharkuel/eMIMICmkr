@@ -318,6 +318,81 @@ bool ugritoneKitReads()
     return ok;
 }
 
+/** A DW Soundworks kit, cut down from one Alexandre saved (DW Maple Mahogany, 2026-10-10). */
+bool soundworksKitReads()
+{
+    auto inst = [] (int mixer, const char* channel, const char* drum, const char* name, int note)
+    {
+        return juce::String ("<Instrument Mixer=\"") + juce::String (mixer) + "\" Midi=\"" + juce::String (note)
+             + "\" LibName=\"" + (juce::String (drum).isEmpty() ? "" : "DW Maple Mahogany") + "\" MixerName=\"" + channel
+             + "\" InstrumentName=\"" + drum + "\" Name=\"" + name + "\"><Sound VelIx=\"1\"/></Instrument>\r\n";
+    };
+    const juce::String snare = "DW TrueCast 6.5x14 Snare Drum", hat = "Zildjian 15'' Sweet K Hi-Hat";
+    const auto text = "<PDPreset>\r\n<InstDef Ver=\"213\" InstrumentType=\"1\">\r\n"
+        + inst (1, "Kick", "DW Maple Mahogany 16x22 Plastic Beater P3BD Coated", "Center", 36)
+        + inst (1, "Instrument 01", "", "ADD 1", -1)
+        + inst (2, "Snare", snare.toRawUTF8(), "Center", 38) + inst (2, "Snare", snare.toRawUTF8(), "Edge", -1)
+        + inst (2, "Snare", snare.toRawUTF8(), "Rimshot", 40) + inst (2, "Snare", snare.toRawUTF8(), "X Stick", 37)
+        + inst (2, "Snare", snare.toRawUTF8(), "Rim", 4) + inst (2, "Snare", snare.toRawUTF8(), "Center SO", 19)
+        + inst (3, "Floor 1", "DW Maple Mahogany 12x14 Floor Tom", "Rimshot", 58)
+        + inst (3, "Floor 1", "DW Maple Mahogany 12x14 Floor Tom", "Center", 43)
+        + inst (8, "Hi Hat", hat.toRawUTF8(), "Open 4 Bow", 46) + inst (8, "Hi Hat", hat.toRawUTF8(), "Normal Closed Edge", 81)
+        + inst (8, "Hi Hat", hat.toRawUTF8(), "Tight Closed Bow", 74) + inst (8, "Hi Hat", hat.toRawUTF8(), "Pedal Closed", 44)
+        + inst (9, "Ride", "Zildjian 22'' Sweet K Ride-Crash", "Bell", 53)
+        + inst (13, "Crash 4", "Zildjian 19'' Sweet K Crash", "Edge", 52) + inst (13, "Crash 4", "Zildjian 19'' Sweet K Crash", "Bell", 96)
+        + inst (20, "Instrument 20", "", "MAIN", 61)
+        + "</InstDef>\r\n<InstDef Ver=\"213\" InstrumentType=\"2\"/><Pars Ver=\"213\"><Par ix=\"0\" Name=\"MainVol\" val=\"1\"/></Pars></PDPreset>";
+
+    juce::MemoryBlock state;
+    state.append ("\0\0\0\0K\001", 6);
+    state.append (text.toRawUTF8(), text.getNumBytesAsUTF8());
+    juce::String error;
+    const auto m = emk::KitMap::fromSoundworks (emk::KitMap::soundworksTextIn (state), error);
+    auto find = [&m] (const char* label) -> const emk::KitZone*
+    {
+        for (const auto& z : m.zones)
+            if (z.label == label)
+                return &z;
+        return nullptr;
+    };
+    auto is = [&] (const char* label, const char* piece, int note, bool on)
+    {
+        const auto* z = find (label);
+        return z != nullptr && z->piece == piece && z->note == note && z->enabled == on;
+    };
+    bool ok = error.isEmpty() && m.kitName == "DW Maple Mahogany" && is ("KICK1", "Kick", 36, true)
+              && find ("KICK1")->name == "DW Maple Mahogany 16x22 Plastic Beater P3BD Coated" && find ("KICK1")->library == "DW Maple Mahogany"
+              && is ("SNARE1 CENTER", "Snare", 38, true) && is ("SNARE1 RIMSHOT", "Snare", 40, true)
+              && is ("SNARE1 SIDESTICK", "Snare", 37, true) && is ("SNARE1 RIMCLICK", "Snare", 4, true)
+              && find ("SNARE1 EDGE") == nullptr   // no note
+              && is ("SNARE2 CENTER", "Snare 2", 19, false) && find ("SNARE2 CENTER")->name == snare + " Snares Off"
+              && is ("TOM1 CENTER", "Tom 1", 43, true) && is ("TOM1 RIMSHOT", "Tom 1", 58, true)
+              && is ("HATS BOW OPEN4", "Hi-Hat", 46, true) && is ("HATS EDGE CLOSED", "Hi-Hat", 81, true)
+              && is ("HATS BOW TIGHT", "Hi-Hat", 74, false) && is ("HATS PEDAL CLOSED", "Hi-Hat", 44, true)
+              && is ("RIDE1 BELL", "Ride 1", 53, true) && is ("CRASH1 EDGE", "Crash 1", 52, true) && is ("CRASH1 BELL", "Crash 1", 96, false)
+              && m.zones.size() == 15;
+
+    juce::String notSoundworks;
+    emk::KitMap::fromSoundworks ("<Root/>", notSoundworks);
+    ok = ok && notSoundworks.isNotEmpty() && emk::KitMap::soundworksTextIn (juce::MemoryBlock ("PlugVersion 3", 13)).isEmpty();
+
+    if (const auto path = juce::SystemStats::getEnvironmentVariable ("SOUNDWORKS_STATE", {}); path.isNotEmpty())
+    {
+        juce::MemoryBlock real;
+        juce::File (path).loadFileAsData (real);
+        juce::String realError;
+        const auto r = emk::KitMap::fromSoundworks (emk::KitMap::soundworksTextIn (real), realError);
+        std::printf ("DW Soundworks state: %s, %d zones, error '%s'\n", r.kitName.toRawUTF8(), r.zones.size(), realError.toRawUTF8());
+        for (const auto& z : r.zones)
+            std::printf ("  %-10s %-20s %3d %s %-24s %s\n", z.piece.toRawUTF8(), z.label.toRawUTF8(), z.note, z.enabled ? "on " : "off",
+                         z.pluginName.toRawUTF8(), z.name.toRawUTF8());
+        ok = ok && realError.isEmpty();
+    }
+    if (! ok)
+        std::printf ("soundworksKitReads failed (%s)\n", error.toRawUTF8());
+    return ok;
+}
+
 /** A MODO DRUM kit, built as MODO DRUM stores it (a binary ValueTree after its own header). */
 bool modoKitReads()
 {
@@ -674,7 +749,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
