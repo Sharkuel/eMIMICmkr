@@ -49,12 +49,6 @@ public:
 
     juce::AudioPluginInstance* getProcessor() const { return processor; }
 
-    /** Keeps the plugin silent (not called at all) for the next ms milliseconds. */
-    void pauseFor (int ms)
-    {
-        resumeAt = juce::Time::getMillisecondCounter() + (juce::uint32) ms;
-    }
-
     /** Plays a message as if it came from a MIDI input. */
     void play (const juce::MidiMessage& m)
     {
@@ -94,8 +88,7 @@ public:
         collector.removeNextBlockOfMessages (midi, numSamples);
 
         const juce::ScopedTryLock sl (lock);
-        if (! sl.isLocked() || processor == nullptr || numSamples > buffer.getNumSamples()
-            || (int) (resumeAt.load() - juce::Time::getMillisecondCounter()) > 0)
+        if (! sl.isLocked() || processor == nullptr || numSamples > buffer.getNumSamples())
             return;
         // A plugin can add outputs while it runs (some do when their window opens or a kit loads).
         // Until it's prepared again for them, give it nothing to fill.
@@ -250,7 +243,6 @@ private:
     static constexpr int chunk = 256;
     std::atomic<bool> listening { false };
     std::atomic<bool> outdated { false };
-    std::atomic<juce::uint32> resumeAt { 0 };
     std::atomic<int> capturePhase { armed };
     juce::AudioBuffer<float> capture;
     double captureRate = 44100.0;
