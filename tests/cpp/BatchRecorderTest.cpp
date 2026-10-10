@@ -293,7 +293,8 @@ bool ugritoneKitReads()
     bool ok = error.isEmpty() && m.kitName == "ModernDeathMetal" && kick != nullptr && kick->note == 36
               && kick->name == "DM Felt Tight" && kick->library == "KVLT Drums II"
               && tom != nullptr && tom->note == 48 && find ("SNARE1 CENTER")->note == 38
-              && open != nullptr && open->note == 46 && crash != nullptr && crash->note == 57 && crash->enabled
+              && open != nullptr && open->note == 32 && find ("HATS BOW OPEN2")->note == 46
+              && find ("CRASH2 CHOKE") != nullptr && find ("CRASH2 CHOKE")->note == 58 && ! find ("CRASH2 CHOKE")->enabled && crash != nullptr && crash->note == 57 && crash->enabled
               && bell != nullptr && bell->note == 53 && find ("SPLASH1 EDGE") == nullptr;
 
     juce::String notUgritone;

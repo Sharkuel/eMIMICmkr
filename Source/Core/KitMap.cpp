@@ -990,19 +990,20 @@ KitMap KitMap::fromUgritone (const juce::String& text, juce::String& error)
         return {};
     }
 
-    // The state lists the notes its MIDI map plays (as note / 127) first in AllUserParam:
-    // kick, toms 1-5, snare, then the hi-hat's closed, pedal and open notes. What the rest
-    // belong to isn't known yet, so cymbals get their General MIDI notes.
-    std::vector<int> notes;
+    // The MIDI map's notes come first in AllUserParam (as note / 127), in the order of
+    // Ugritone's Midinote Settings matrix.
+    static const juce::StringArray noteSlots { "kick", "tom1", "tom2", "tom3", "tom4", "tom5", "snare",
+                                               "hihat closed", "hihat pedal", "hihat semiopen", "hihat wideopen",
+                                               "crash1", "crash1choke", "crash2", "crash2choke", "splash1",
+                                               "fxcymbal1", "fxcymbal2", "china1", "china2", "ridetop", "ridebell", "ridecrash" };
+    std::map<juce::String, int> notes;
     if (auto* params = xml->getChildByName ("AllUserParam"))
-        for (const auto& v : juce::StringArray::fromTokens (params->getAllSubText(), ",", {}))
-        {
-            if (notes.size() == 23)
-                break;
-            notes.push_back (juce::roundToInt (v.getDoubleValue() * 127.0));
-        }
-    auto noteAt = [&] (size_t i, int fallback) { return i < notes.size() && notes[i] > 0 ? notes[i] : fallback; };
-    auto mapped = [&] (int note) { return std::find (notes.begin(), notes.end(), note) != notes.end(); };
+    {
+        const auto values = juce::StringArray::fromTokens (params->getAllSubText(), ",", {});
+        for (int i = 0; i < noteSlots.size() && i < values.size(); ++i)
+            notes[noteSlots[i]] = juce::roundToInt (values[i].getDoubleValue() * 127.0);
+    }
+    auto noteOf = [&] (const juce::String& slot) { return notes.count (slot) ? notes.at (slot) : 0; };
 
     // "/mnt/.../Soundbanks/KVLT Drums II Data/Presets/OSDM/ModernDeathMetal.xml" -> "KVLT Drums II"
     auto library = xml->getStringAttribute ("LastLoadedPresetFile").replaceCharacter ('\\', '/')
@@ -1028,39 +1029,37 @@ KitMap KitMap::fromUgritone (const juce::String& text, juce::String& error)
             m.zones.add ({ piece, label, note, cc, on && note > 0 });
         };
 
+        const auto lower = panel.toLowerCase();
         if (panel == "KICK")
-            add ("Kick", "KICK1", noteAt (0, 36), true);
+            add ("Kick", "KICK1", noteOf ("kick"), true);
         else if (panel == "SNARE")
-        {
-            add ("Snare", "SNARE1 CENTER", noteAt (6, 38), true);
-            add ("Snare", "SNARE1 RIMSHOT", 0, false);
-            add ("Snare", "SNARE1 SIDESTICK", 0, false);
-        }
+            add ("Snare", "SNARE1 CENTER", noteOf ("snare"), true);
         else if (panel.startsWith ("TOM"))
-            add ("Tom " + juce::String (n), "TOM" + juce::String (n) + " CENTER", noteAt ((size_t) juce::jlimit (1, 5, n), 0), n <= 5);
+            add ("Tom " + juce::String (n), "TOM" + juce::String (n) + " CENTER", noteOf (lower), true);
         else if (panel == "HIHAT")
         {
-            add ("Hi-Hat", "HATS BOW CLOSED", noteAt (7, 42), true);
-            add ("Hi-Hat", "HATS BOW OPEN4", noteAt (9, 46), true);
-            add ("Hi-Hat", "HATS PEDAL CLOSED", noteAt (8, 44), true);
+            add ("Hi-Hat", "HATS BOW CLOSED", noteOf ("hihat closed"), true);
+            add ("Hi-Hat", "HATS BOW OPEN2", noteOf ("hihat semiopen"), true);
+            add ("Hi-Hat", "HATS BOW OPEN4", noteOf ("hihat wideopen"), true);
+            add ("Hi-Hat", "HATS PEDAL CLOSED", noteOf ("hihat pedal"), true);
         }
         else if (panel.startsWith ("RIDE"))
         {
-            add ("Ride", "RIDE" + juce::String (n) + " BOW", n == 1 ? 51 : 0, mapped (51));
-            add ("Ride", "RIDE" + juce::String (n) + " BELL", n == 1 ? 53 : 0, mapped (53));
-            add ("Ride", "RIDE" + juce::String (n) + " EDGE", n == 1 ? 59 : 0, mapped (59));
+            add ("Ride", "RIDE1 BOW", noteOf ("ridetop"), true);
+            add ("Ride", "RIDE1 BELL", noteOf ("ridebell"), true);
+            add ("Ride", "RIDE1 EDGE", noteOf ("ridecrash"), true);
         }
         else
         {
-            // General MIDI's crash 1 and 2, splash and china; FX cymbals have none.
             const auto family = panel.startsWith ("CRASH") ? "CRASH" : panel.startsWith ("SPLASH") ? "SPLASH"
                               : panel.startsWith ("CHINA") ? "CHINA" : "CYMBAL";
-            const int gm = juce::String (family) == "CRASH" ? (n == 1 ? 49 : n == 2 ? 57 : 0)
-                         : juce::String (family) == "SPLASH" ? (n == 1 ? 55 : 0)
-                         : juce::String (family) == "CHINA" ? (n == 1 ? 52 : 0) : 0;
-            const auto piece = juce::String (family).substring (0, 1) + juce::String (family).substring (1).toLowerCase()
-                               + " " + juce::String (n);
-            add (piece, family + juce::String (n) + " EDGE", gm, mapped (gm));
+            const auto piece = panel.startsWith ("FX") ? "FX Cymbal " + juce::String (n)
+                                                       : juce::String (family).substring (0, 1) + juce::String (family).substring (1).toLowerCase()
+                                                             + " " + juce::String (n);
+            const auto head = family + juce::String (n);
+            add (piece, head + " EDGE", noteOf (lower), true);
+            if (notes.count (lower + "choke"))
+                add (piece, head + " CHOKE", noteOf (lower + "choke"), false);
         }
 
         for (int z = firstZone; z < m.zones.size(); ++z)

@@ -74,8 +74,7 @@ public:
 
     /** The kit an Ugritone plugin (KVLT Drums II and its relatives) has loaded, from its plugin
         state: each panel (KICK, SNARE, TOM1-5, HIHAT, CRASH1...) and its drum ("DM Custom Z17").
-        Kick, snare, tom and hi-hat notes come from the state's note list; cymbals get their
-        General MIDI notes. Empty, with error set, when the text isn't Ugritone's. */
+        Every zone's note comes from the MIDI map the state holds. Empty, with error set, when the text isn't Ugritone's. */
     static KitMap fromUgritone (const juce::String& text, juce::String& error);
 
     /** Finds an Ugritone plugin's state XML inside a plugin state. */
