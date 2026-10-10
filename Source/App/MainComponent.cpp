@@ -100,6 +100,8 @@ emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& erro
         return emk::KitMap::fromSd3 (sd3, error);
     if (const auto bfd3 = emk::KitMap::bfd3TextIn (data); bfd3.isNotEmpty())
         return emk::KitMap::fromBfd3 (bfd3, error);
+    if (emk::KitMap::isModoState (data))
+        return emk::KitMap::fromModo (data, error);
     found = false;
     return {};
 }

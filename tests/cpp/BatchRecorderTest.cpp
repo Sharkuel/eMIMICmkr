@@ -255,6 +255,93 @@ bool bfd3KitReads()
     return ok && empty.isNotEmpty();
 }
 
+/** A MODO DRUM kit, built as MODO DRUM stores it (a binary ValueTree after its own header). */
+bool modoKitReads()
+{
+    auto slot = [] (const char* type, std::initializer_list<std::pair<const char*, int>> artics)
+    {
+        juce::ValueTree s (type);
+        for (const auto& [name, note] : artics)
+            s.appendChild (juce::ValueTree (name, { { "MIDINote", note } }), nullptr);
+        return s;
+    };
+    auto bus = [] (const char* type, const char* element, bool on)
+    {
+        juce::ValueTree b (type, { { "isEnabled", on ? "1" : "0" } });
+        b.appendChild (juce::ValueTree ("ELEMENT", { { "referencedElementId", element } }), nullptr);
+        return b;
+    };
+    juce::ValueTree session ("SESSION_STATE"), project ("PROJECT", { { "presetName", "METAL" } }), midiMap ("MIDI_MAP");
+    project.appendChild (bus ("Slot2Cymbal", "Crash16_Custom", true), nullptr);
+    project.appendChild (bus ("Slot4Cymbal", "Splash10_Vintage", false), nullptr);
+    project.appendChild (bus ("Slot6Ride", "Ride24_Custom", true), nullptr);
+    project.appendChild (bus ("Slot8RightKick", "Kick_Metal", true), nullptr);
+    project.appendChild (bus ("Slot14Snare", "Snare_Metal", true), nullptr);
+    project.appendChild (bus ("Slot15HiHat", "HiHat_Custom", true), nullptr);
+    project.appendChild (bus ("Slot19FloorTom0", "FloorTom0_Metal", true), nullptr);
+    project.appendChild (bus ("Slot22Tom0", "Tom0_Metal", true), nullptr);
+    project.appendChild (bus ("SlotCowbell", "Cowbell", true), nullptr);
+    midiMap.appendChild (slot ("Slot2Cymbal", { { "Edge", 49 }, { "Catch", 66 } }), nullptr);
+    midiMap.appendChild (slot ("Slot4Cymbal", { { "Edge", 55 } }), nullptr);
+    midiMap.appendChild (slot ("Slot6Ride", { { "Edge", 51 }, { "Bell", 53 } }), nullptr);
+    midiMap.appendChild (slot ("Slot8RightKick", { { "Beater", 36 }, { "BeaterBuried", 35 } }), nullptr);
+    midiMap.appendChild (slot ("Slot14Snare", { { "SnareL", 38 }, { "SnareR", 62 }, { "SideStick", 37 }, { "RimShotL", 40 } }), nullptr);
+    midiMap.appendChild (slot ("Slot15HiHat", { { "ClosedTip", 42 }, { "ClosedShank", 30 }, { "HalfOpenTip", 46 },
+                                                { "OpenShank", 31 }, { "FootClosed", 44 }, { "FootOpen", 32 }, { "SuperTight", 29 } }), nullptr);
+    midiMap.appendChild (slot ("Slot19FloorTom0", { { "TomL", 45 }, { "TomR", 69 } }), nullptr);
+    midiMap.appendChild (slot ("Slot22Tom0", { { "TomL", 50 } }), nullptr);
+    midiMap.appendChild (slot ("SlotCowbell", { { "Normal", 56 } }), nullptr);
+    session.appendChild (project, nullptr);
+    session.appendChild (midiMap, nullptr);
+    juce::MemoryOutputStream state;
+    state.write ("VstW\0\0\0\x08", 8);
+    session.writeToStream (state);
+
+    juce::String error;
+    const auto map = emk::KitMap::fromModo (state.getMemoryBlock(), error);
+    auto noteOf = [&map] (const juce::String& piece, const juce::String& label, bool on = true)
+    {
+        for (const auto& z : map.zones)
+            if (z.piece == piece && z.label == label)
+                return z.enabled == on ? z.note : -2;
+        return -1;
+    };
+    juce::StringArray pieces;
+    for (const auto& z : map.zones)
+        pieces.addIfNotAlreadyThere (z.piece);
+    bool ok = error.isEmpty() && map.kitName == "METAL" && emk::KitMap::isModoState (state.getMemoryBlock())
+              && ! emk::KitMap::isModoState (juce::MemoryBlock ("PlugVersion 3", 13))
+              && pieces.joinIntoString (",") == "Kick,Snare,Hi-Hat,Tom 1,Tom 2,Crash 1,Ride 1,Cowbell"
+              && noteOf ("Kick", "KICK1") == 36 && noteOf ("Kick", "KICK1 BURIED", false) == 35
+              && noteOf ("Snare", "SNARE1 CENTER") == 38 && noteOf ("Snare", "SNARE1 RIMSHOT") == 40
+              && noteOf ("Snare", "SNARE1 SIDESTICK") == 37 && noteOf ("Snare", "SNARE1 CENTER R", false) == 62
+              && noteOf ("Hi-Hat", "HATS BOW CLOSED") == 42 && noteOf ("Hi-Hat", "HATS EDGE CLOSED") == 30
+              && noteOf ("Hi-Hat", "HATS BOW OPEN2") == 46 && noteOf ("Hi-Hat", "HATS EDGE OPEN4") == 31
+              && noteOf ("Hi-Hat", "HATS PEDAL CLOSED") == 44 && noteOf ("Hi-Hat", "HATS FOOT SPLASH") == 32
+              && noteOf ("Hi-Hat", "HATS SUPERTIGHT", false) == 29
+              && noteOf ("Tom 1", "TOM1 CENTER") == 50 && noteOf ("Tom 2", "TOM2 CENTER") == 45
+              && noteOf ("Crash 1", "CRASH1 EDGE") == 49 && noteOf ("Crash 1", "CRASH1 CHOKE", false) == 66
+              && noteOf ("Ride 1", "RIDE1 BOW") == 51 && noteOf ("Ride 1", "RIDE1 BELL") == 53
+              && noteOf ("Cowbell", "PERC COWBELL MAIN") == 56;
+    for (const auto& z : map.zones)
+        if (z.piece == "Crash 1")
+            ok = ok && z.name == "Crash 16 Custom" && z.library == "MODO DRUM" && z.instrument == "MODO DRUM/Crash16_Custom";
+    if (const auto real = juce::SystemStats::getEnvironmentVariable ("MODO_STATE", {}); real.isNotEmpty())
+    {
+        juce::MemoryBlock data;
+        juce::File (real).loadFileAsData (data);
+        juce::String realError;
+        const auto realMap = emk::KitMap::fromModo (data, realError);
+        std::cout << "real state: " << realMap.kitName << ", " << realMap.zones.size() << " zones " << realError << "\n";
+        for (const auto& z : realMap.zones)
+            std::cout << "  " << z.piece << " | " << z.name << " | " << z.label << " | " << z.note << " | " << (z.enabled ? "on" : "off") << " | " << z.pluginName << "\n";
+    }
+    juce::String notModo;
+    emk::KitMap::fromModo (juce::MemoryBlock ("hello", 5), notModo);
+    std::printf ("modo kit %s (%d zones)\n", ok && notModo.isNotEmpty() ? "ok" : "WRONG", map.zones.size());
+    return ok && notModo.isNotEmpty();
+}
+
 /** Drum-like test sounds: a low thud, a short noisy crack, a long bright ring. */
 juce::AudioBuffer<float> testHit (int kind, double rate, float gain, int seed)
 {
@@ -524,7 +611,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
