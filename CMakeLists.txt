@@ -37,6 +37,7 @@ target_sources(eMIMICmkr PRIVATE
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp
     Source/Core/Mci.cpp
+    Source/Core/MimicKit.cpp
     Source/Core/WavToMci.cpp
     Source/Core/SoundPrint.cpp
     Source/Core/MimicImage.cpp)
@@ -79,6 +80,7 @@ target_sources(eMIMICmkr_tests PRIVATE
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp
     Source/Core/Mci.cpp
+    Source/Core/MimicKit.cpp
     Source/Core/WavToMci.cpp
     Source/Core/SoundPrint.cpp
     Source/Core/MimicImage.cpp
@@ -100,6 +102,7 @@ juce_add_console_app(eMIMICmkr_mci_tests PRODUCT_NAME "eMIMICmkr_mci_tests")
 target_sources(eMIMICmkr_mci_tests PRIVATE
     tests/cpp/MciTest.cpp
     Source/Core/Mci.cpp
+    Source/Core/MimicKit.cpp
     Source/Core/WavToMci.cpp)
 target_compile_definitions(eMIMICmkr_mci_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(eMIMICmkr_mci_tests PRIVATE

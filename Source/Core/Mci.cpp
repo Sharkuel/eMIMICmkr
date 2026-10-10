@@ -355,6 +355,56 @@ juce::Result writeMciFile (const MciFile& f, const juce::File& file)
     return juce::Result::ok();
 }
 
+//==============================================================================
+namespace
+{
+MciFile settingsFrom (juce::InputStream& in)
+{
+    juce::uint8 header[headerSize];
+    if (in.read (header, (int) headerSize) != (int) headerSize || std::memcmp (header, magic, magicSize) != 0)
+        throw Error ("not a Mimic file (bad magic)");
+    MciFile f;
+    f.version = (int) juce::ByteOrder::littleEndianInt (header + 14);
+    const auto metaSize = juce::ByteOrder::littleEndianInt (header + 18);
+    if (f.version != containerVersion)
+        throw Error ("unsupported container version " + std::to_string (f.version));
+    juce::MemoryBlock raw (metaSize);
+    juce::GZIPDecompressorInputStream z (in);
+    if ((size_t) z.read (raw.getData(), (int) raw.getSize()) != raw.getSize())
+        throw Error ("metadata length mismatch");
+    readMeta (raw, f);
+    return f;
+}
+} // namespace
+
+MciFile readSettings (const void* bytes, size_t size)
+{
+    juce::MemoryInputStream in (bytes, size, false);
+    return settingsFrom (in);
+}
+
+MciFile readSettings (const juce::File& file)
+{
+    juce::FileInputStream in (file);
+    if (! in.openedOk())
+        throw Error ("cannot read " + file.getFullPathName().toStdString());
+    return settingsFrom (in);
+}
+
+juce::MemoryBlock writeKit (const MciFile& f)
+{
+    return headerAndMeta (f);
+}
+
+juce::Result writeKitFile (const MciFile& f, const juce::File& file)
+{
+    juce::TemporaryFile temp (file);
+    const auto bytes = writeKit (f);
+    if (! temp.getFile().replaceWithData (bytes.getData(), bytes.getSize()) || ! temp.overwriteTargetFileWithTemporary())
+        return juce::Result::fail ("Cannot write " + file.getFullPathName());
+    return juce::Result::ok();
+}
+
 Samples sample (const MciFile& f, int index)
 {
     const auto dofs = f.getInts ("INST0pool0dofs"), dlen = f.getInts ("INST0pool0dlen");

@@ -82,6 +82,15 @@ juce::MemoryBlock writeMci (const MciFile&);
 /** Writes through a temporary file, so a failed write leaves no half-written instrument. */
 juce::Result writeMciFile (const MciFile&, const juce::File&);
 
+/** Reads only the header and metadata: a kit preset (.kit, which has nothing else), or the
+    settings of a .mci without loading its audio. Throws mci::Error. */
+MciFile readSettings (const void* bytes, size_t size);
+MciFile readSettings (const juce::File&);
+
+/** A kit preset (.kit): the header and metadata alone, no audio and no checksum trailer. */
+juce::MemoryBlock writeKit (const MciFile&);
+juce::Result writeKitFile (const MciFile&, const juce::File&);
+
 /** Decodes pool sample `index` (all channels interleaved). */
 Samples sample (const MciFile&, int index);
 

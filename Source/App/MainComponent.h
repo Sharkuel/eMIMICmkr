@@ -43,6 +43,8 @@ private:
     void learnFromSound (const juce::AudioBuffer<float>& hit, double rate);
     void readNoteNames();
     void convertWavFolder();
+    void buildMimicKit();
+    void buildMimicKitWith (const juce::Array<juce::File>& instruments, const juce::File& templateKit);
     juce::File outputFolder() const;
     void chooseOutputFolder();
     void showOutputFolder();
@@ -77,6 +79,7 @@ private:
     LiveHost live;   // the plugin on the sound card, played from MIDI inputs and its own window
     std::unique_ptr<juce::ThreadWithProgressWindow> job;
     std::unique_ptr<juce::FileChooser> chooser;
+    std::unique_ptr<juce::AlertWindow> kitDialog;
     std::map<int, emk::SoundPrint> notePrints;   // what each note sounds like, to learn clicks in the plugin window
     juce::uint32 lastPluginNoteMs = 0;
     std::map<juce::String, emk::DrumInfo> drums;       // names and pictures you gave drums, by the plugin's ID for them
@@ -98,7 +101,7 @@ private:
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
         namesButton { "Read plugin" }, captureButton { "Capture..." },
-        convertButton { "Convert WAV folder..." }, saveToButton { "Change..." }, stateButton { "Save state..." };
+        convertButton { "Convert WAV folder..." }, kitButton { "Build Mimic kit..." }, saveToButton { "Change..." }, stateButton { "Save state..." };
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
     juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };
     juce::ComboBox pluginChoice, mapChoice;
