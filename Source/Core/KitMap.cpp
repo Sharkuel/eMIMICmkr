@@ -769,6 +769,202 @@ KitMap KitMap::fromBfd3 (const juce::String& text, juce::String& error)
     return m;
 }
 
+namespace
+{
+/** MODO DRUM keeps its whole session as a JUCE ValueTree, in binary, starting at SESSION_STATE. */
+juce::ValueTree modoTreeIn (const juce::MemoryBlock& data)
+{
+    juce::ValueTree tree;
+    findInState (data, [&tree] (const char* bytes, size_t size) -> juce::String
+    {
+        static const std::string marker ("SESSION_STATE\0", 14);
+        const auto at = std::search (bytes, bytes + size, marker.begin(), marker.end());
+        if (at == bytes + size)
+            return {};
+        tree = juce::ValueTree::readFromData (at, (size_t) (bytes + size - at));
+        return tree.isValid() ? "found" : "";
+    });
+    return tree;
+}
+
+/** "Crash16_Custom" -> "Crash 16 Custom", "FloorTom0_Metal" -> "Floor Tom 0 Metal". */
+juce::String modoName (const juce::String& id)
+{
+    juce::String name;
+    for (int i = 0; i < id.length(); ++i)
+    {
+        const juce::juce_wchar c = id[i], before = i > 0 ? id[i - 1] : ' ';
+        if (c == '_')
+        {
+            name << ' ';
+            continue;
+        }
+        const bool newWord = before != ' ' && before != '_'
+                             && ((juce::CharacterFunctions::isUpperCase (c) && juce::CharacterFunctions::isLowerCase (before))
+                                 || (juce::CharacterFunctions::isDigit (c) != juce::CharacterFunctions::isDigit (before)));
+        if (newWord)
+            name << ' ';
+        name << juce::String::charToString (c);
+    }
+    return name;
+}
+} // namespace
+
+bool KitMap::isModoState (const juce::MemoryBlock& data)
+{
+    return modoTreeIn (data).getChildWithName ("MIDI_MAP").isValid();
+}
+
+KitMap KitMap::fromModo (const juce::MemoryBlock& state, juce::String& error)
+{
+    const auto tree = modoTreeIn (state);
+    const auto midiMap = tree.getChildWithName ("MIDI_MAP");
+    if (! midiMap.isValid())
+    {
+        error = "This isn't a MODO DRUM state.";
+        return {};
+    }
+
+    // Which instrument each slot holds, and whether it's in the kit at all.
+    std::map<juce::String, juce::String> elements;   // "Slot2Cymbal" -> "Crash16_Custom"
+    for (const auto& slot : tree.getChildWithName ("PROJECT"))
+        if (const auto element = slot.getChildWithName ("ELEMENT"); element.isValid() && slot.getProperty ("isEnabled", true))
+            elements[slot.getType().toString()] = element["referencedElementId"].toString();
+
+    auto familyOf = [] (const juce::String& slot, const juce::String& element)
+    {
+        const auto s = slot.toLowerCase(), e = element.toLowerCase();
+        if (s.contains ("kick")) return "kick";
+        if (s.contains ("snare")) return "snare";
+        if (s.contains ("hihat")) return "hats";
+        if (s.contains ("tom")) return "tom";
+        if (s.contains ("ride")) return "ride";
+        if (s.contains ("cymbal"))
+            return e.startsWith ("china") ? "china" : e.startsWith ("splash") ? "splash" : "crash";
+        return "";
+    };
+    // Kicks (right, then left), snare, hi-hat, toms high to low, cymbals, ride, then percussion.
+    auto order = [&familyOf] (const juce::String& slot, const juce::String& element)
+    {
+        static const juce::StringArray families { "kick", "snare", "hats", "tom", "crash", "splash", "china", "ride", "" };
+        static const juce::StringArray toms { "Tom0", "Tom1", "Tom2", "Tom3", "FloorTom0", "FloorTom1", "FloorTom2" };
+        int rank = families.indexOf (familyOf (slot, element)) * 100;
+        if (slot.contains ("LeftKick")) rank += 1;
+        for (int t = 0; t < toms.size(); ++t)
+            if (slot.endsWith (toms[t]) && ! (toms[t].startsWith ("Tom") && slot.containsIgnoreCase ("floor")))
+                rank += t;
+        return rank;
+    };
+
+    std::vector<juce::ValueTree> slots;
+    for (const auto& slot : midiMap)
+        if (elements.empty() || elements.count (slot.getType().toString()))
+            slots.push_back (slot);
+    std::stable_sort (slots.begin(), slots.end(), [&] (const juce::ValueTree& a, const juce::ValueTree& b)
+    {
+        const auto an = a.getType().toString(), bn = b.getType().toString();
+        return order (an, elements[an]) < order (bn, elements[bn]);
+    });
+    if (slots.empty())
+    {
+        error = "The MODO DRUM kit is empty.";
+        return {};
+    }
+
+    KitMap m;
+    m.kitName = tree.getChildWithName ("PROJECT")["presetName"].toString();
+    std::map<juce::String, int> counts;
+    juce::StringArray names;
+    for (const auto& slot : slots)
+    {
+        const auto slotName = slot.getType().toString();
+        const auto element = elements.count (slotName) && elements[slotName].isNotEmpty()
+                                 ? elements[slotName] : slotName.fromFirstOccurrenceOf ("Slot", false, false);
+        const juce::String family = familyOf (slotName, element);
+        auto name = modoName (element);
+        for (int n = 2; names.contains (name); ++n)
+            name = modoName (element) + " " + juce::String (n);
+        names.add (name);
+        std::map<juce::String, int> notes;   // MODO's articulation -> its note
+        for (const auto& artic : slot)
+            notes[artic.getType().toString()] = (int) artic["MIDINote"];
+
+        const int firstZone = m.zones.size();
+        std::set<juce::String> used;
+        auto add = [&] (const juce::String& piece, const juce::String& label, const juce::String& artic, bool on)
+        {
+            if (auto it = notes.find (artic); it != notes.end())
+            {
+                m.zones.add ({ piece, label, it->second, -1, on, name + ": " + artic });
+                used.insert (artic);
+            }
+        };
+
+        juce::String piece, head;
+        if (family.isEmpty())
+        {
+            piece = name;
+            head = "PERC " + element.toUpperCase().retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+            static const char* percZones[] = { "MAIN", "SECONDARY", "ADD1", "ADD2" };
+            int zone = 0;
+            for (const auto& [artic, note] : notes)
+                if (zone < 4)
+                {
+                    add (piece, head + " " + percZones[zone], artic, zone == 0);
+                    ++zone;
+                }
+        }
+        else if (family == "hats")
+        {
+            // MODO DRUM plays each openness from its own note: Tip (bow) and Shank (edge).
+            piece = "Hi-Hat";
+            head = "HATS";
+            for (const auto& [area, label] : { std::pair { "Tip", "BOW" }, std::pair { "Shank", "EDGE" } })
+            {
+                add (piece, juce::String ("HATS ") + label + " CLOSED", juce::String ("Closed") + area, true);
+                add (piece, juce::String ("HATS ") + label + " OPEN2", juce::String ("HalfOpen") + area, true);
+                add (piece, juce::String ("HATS ") + label + " OPEN4", juce::String ("Open") + area, true);
+            }
+            add (piece, "HATS PEDAL CLOSED", "FootClosed", true);
+            add (piece, "HATS FOOT SPLASH", "FootOpen", true);
+        }
+        else
+        {
+            const int n = ++counts[family];
+            const juce::String num (n);
+            piece = family == "kick" ? (n == 1 ? juce::String ("Kick") : "Kick " + num)
+                  : family == "snare" ? (n == 1 ? juce::String ("Snare") : "Snare " + num)
+                  : family.substring (0, 1).toUpperCase() + family.substring (1) + " " + num;
+            head = family.toUpperCase() + num;
+            // MODO DRUM's articulations -> the Mimic's zones, and which are ticked to start with.
+            // Each hand has its own note; the left hand's is recorded, the right's is there to tick.
+            struct Zone { const char* modo; const char* zone; bool on; };
+            static const std::map<juce::String, std::vector<Zone>> zonesOf {
+                { "kick", { { "Beater", "", true }, { "BeaterBuried", "BURIED", false } } },
+                { "snare", { { "SnareL", "CENTER", true }, { "RimShotL", "RIMSHOT", true }, { "SideStick", "SIDESTICK", true },
+                             { "SnareR", "CENTER R", false }, { "RimShotR", "RIMSHOT R", false } } },
+                { "tom", { { "TomL", "CENTER", true }, { "TomR", "CENTER R", false } } },
+                { "ride", { { "Edge", "BOW", true }, { "Bell", "BELL", true }, { "Catch", "CHOKE", false } } },
+                { "crash", { { "Edge", "EDGE", true }, { "Bell", "BELL", false }, { "Catch", "CHOKE", false } } },
+            };
+            const auto& table = zonesOf.count (family) ? zonesOf.at (family) : zonesOf.at ("crash");
+            for (const auto& z : table)
+                add (piece, juce::String (z.zone).isEmpty() ? head : head + " " + z.zone, z.modo, z.on);
+        }
+        for (const auto& [artic, note] : notes)   // anything else: there to listen to and tick
+            if (used.count (artic) == 0)
+                add (piece, head + " " + artic.toUpperCase(), artic, false);
+        for (int z = firstZone; z < m.zones.size(); ++z)
+        {
+            auto& zone = m.zones.getReference (z);
+            zone.instrument = "MODO DRUM/" + element;
+            zone.name = name;
+            zone.library = "MODO DRUM";
+        }
+    }
+    return m;
+}
+
 juce::ValueTree KitMap::toValueTree() const
 {
     juce::ValueTree tree ("KitMap");

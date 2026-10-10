@@ -82,10 +82,12 @@ them as VST3 plugins the app can load.
      note is filled in and the next row selected.
    - **Find notes**: plays every note once, adds any the map lacks as "?" rows to listen to and
      name, and shows mapped rows that play nothing in red.
-   - **Read plugin**: with Superior Drummer 3 or BFD3, reads the loaded kit straight from the
+   - **Read plugin**: with Superior Drummer 3, BFD3 or MODO DRUM, reads the loaded kit straight from the
      plugin: every instrument slot, its articulations and their notes (main zones ticked). BFD3
      also gives each drum's name ("Snare AXM Open High") and library ("Crush Drums"), which fill
-     Name on the Mimic and Library. Other VST3 plugins fill the "Name in plugin" column from their
+     Name on the Mimic and Library; MODO DRUM gives each instrument's name ("Crash 16 Custom") and
+     leaves out the slots switched off in its kit. Each MODO DRUM drum has a note per hand: the left
+     hand's is ticked, the right hand's is there to tick. Other VST3 plugins fill the "Name in plugin" column from their
      note names. **Open map...** also opens an SD3 preset (.sd3p) or a BFD3 kit preset (.bfd3kit)
      the same way; a BFD3 kit preset has no MIDI map, so BFD3's default "BFD 3.0" map is assumed.
      A BFD3 drum that its MIDI map gives no note (the default map has none for some cymbal slots)

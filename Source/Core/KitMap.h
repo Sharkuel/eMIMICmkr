@@ -64,6 +64,14 @@ public:
         used for it. Empty, with error set, when the text isn't BFD3's or the kit is empty. */
     static KitMap fromBfd3 (const juce::String& text, juce::String& error);
 
+    /** The map a MODO DRUM kit uses, from its plugin state: each enabled slot's instrument, as
+        MODO DRUM names it ("Crash16_Custom"), its articulations and the notes they're on.
+        Empty, with error set, when the state isn't MODO DRUM's. */
+    static KitMap fromModo (const juce::MemoryBlock& state, juce::String& error);
+
+    /** Whether a plugin state is MODO DRUM's. */
+    static bool isModoState (const juce::MemoryBlock&);
+
     /** What you told the app about drums, by their plugin ID, and library names by the plugin's
         library ID: every zone whose drum is known takes its name and image, and its library's
         name. Two pieces never end up sharing one name. */
