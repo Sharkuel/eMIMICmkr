@@ -103,6 +103,8 @@ emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& erro
         return emk::KitMap::fromBfd3 (bfd3, error);
     if (emk::KitMap::isModoState (data))
         return emk::KitMap::fromModo (data, error);
+    if (const auto ugritone = emk::KitMap::ugritoneTextIn (data); ugritone.isNotEmpty())
+        return emk::KitMap::fromUgritone (ugritone, error);
     found = false;
     return {};
 }
