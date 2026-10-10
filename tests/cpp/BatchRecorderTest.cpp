@@ -508,6 +508,31 @@ bool mdlToneMapReads()
     return ok;
 }
 
+/** The built-in Kontakt library maps: Kontakt's note names (C3 = 60) and every label unique. */
+bool kontaktLibrariesRead()
+{
+    const auto names = emk::KitMap::kontaktLibraries();
+    bool ok = names.size() == 4;
+    for (const auto& name : names)
+    {
+        const auto m = emk::KitMap::kontaktLibrary (name);
+        juce::StringArray labels;
+        for (const auto& z : m.zones)
+        {
+            ok = ok && z.note >= 0 && z.note <= 127 && ! labels.contains (z.label) && z.library.isNotEmpty();
+            labels.add (z.label);
+        }
+        ok = ok && m.zones.size() > 20 && m.kitName == name;
+    }
+    const auto krimh = emk::KitMap::kontaktLibrary ("Krimh Drums");
+    auto noteOf = [&] (const juce::String& label) { for (const auto& z : krimh.zones) if (z.label == label) return z.note; return -1; };
+    ok = ok && noteOf ("KICK1") == 24 && noteOf ("KICK2") == 23 && noteOf ("HATS EDGE CLOSED") == 42
+            && noteOf ("RIDE1 BOW") == 62 && noteOf ("HATS2 EDGE OPEN6") == 88 && noteOf ("CRASH1 EDGE") == 52;
+    if (! ok)
+        std::printf ("kontaktLibrariesRead failed\n");
+    return ok;
+}
+
 /** A MODO DRUM kit, built as MODO DRUM stores it (a binary ValueTree after its own header). */
 bool modoKitReads()
 {
@@ -864,7 +889,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

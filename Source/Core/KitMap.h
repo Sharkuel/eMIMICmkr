@@ -106,6 +106,11 @@ public:
         the text isn't that. */
     static KitMap fromMdlTone (const juce::String& text, juce::String& error);
 
+    /** Drum libraries that run inside Kontakt keep their kit encrypted in Kontakt's state, so
+        their default MIDI maps are built in, read from each library's Mapping page. */
+    static juce::StringArray kontaktLibraries();
+    static KitMap kontaktLibrary (const juce::String& name);
+
     /** What you told the app about drums, by their plugin ID, and library names by the plugin's
         library ID: every zone whose drum is known takes its name and image, and its library's
         name. Two pieces never end up sharing one name. */

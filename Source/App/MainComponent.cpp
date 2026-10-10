@@ -220,11 +220,22 @@ MainComponent::MainComponent()
 
     mapChoice.addItem ("Note map: e-drum (Roland TD, hi-hat on CC4)", 1);
     mapChoice.addItem ("Note map: General MIDI", 2);
+    // Kontakt keeps its libraries' kits encrypted, so their maps are built in: ids from 100.
+    const auto kontakt = emk::KitMap::kontaktLibraries();
+    for (int i = 0; i < kontakt.size(); ++i)
+        mapChoice.addItem ("Note map: " + kontakt[i] + " (Kontakt)", 100 + i);
     mapChoice.setTextWhenNothingSelected ("Note map: your edits");
-    mapChoice.onChange = [this]
+    mapChoice.onChange = [this, kontakt]
     {
-        if (mapChoice.getSelectedId() == 1) useMap (emk::KitMap::rolandEDrum());
-        if (mapChoice.getSelectedId() == 2) useMap (emk::KitMap::generalMidi());
+        const int id = mapChoice.getSelectedId();
+        if (id == 1) useMap (emk::KitMap::rolandEDrum());
+        if (id == 2) useMap (emk::KitMap::generalMidi());
+        if (id >= 100)
+        {
+            auto map = emk::KitMap::kontaktLibrary (kontakt[id - 100]);
+            map.applyNames (drums, libraries);
+            useMap (std::move (map));
+        }
     };
 
     kitName.onTextChange = [this] { kitMap.kitName = kitName.getText(); saveMap(); };

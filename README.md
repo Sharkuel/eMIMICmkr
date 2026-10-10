@@ -105,6 +105,10 @@ them as VST3 plugins the app can load.
      keeps no kit in its own state, so save the library's mapping and open it here. Kick, snare, six
      toms, both hi-hats, two rides and the chinas, crashes and splashes come in with their main
      articulations ticked; chokes, the tight hat, the second hat and the second kick are there to tick.
+     Other Kontakt libraries keep their kit encrypted in Kontakt's state, so their default maps are
+     built in: pick Eloy Drums (CasaGroove, CasaGrande), Trivium Drums or Krimh Drums in the note map
+     list. They follow each library's default Mapping page; if you changed it there, fix the notes here
+     or with Learn.
    - **Piece** groups rows into one Mimic instrument. Typing a piece name changes that row only:
      another piece's name moves the row into it, a new name makes a new piece.
    - Pieces whose labels start with PERC (or OCTOBAN, COWBELL, SHAKER...) become Mimic percussion
