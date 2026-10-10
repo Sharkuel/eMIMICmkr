@@ -101,6 +101,10 @@ them as VST3 plugins the app can load.
      the same way; a BFD3 kit preset has no MIDI map, so BFD3's default "BFD 3.0" map is assumed.
      A BFD3 drum that its MIDI map gives no note (the default map has none for some cymbal slots)
      is left out: give it a note in BFD3's key map and read again.
+     It also opens the MIDI map that MDL Tone's Ultimate Heavy Drums saves from Kontakt (.nka): Kontakt
+     keeps no kit in its own state, so save the library's mapping and open it here. Kick, snare, six
+     toms, both hi-hats, two rides and the chinas, crashes and splashes come in with their main
+     articulations ticked; chokes, the tight hat, the second hat and the second kick are there to tick.
    - **Piece** groups rows into one Mimic instrument. Typing a piece name changes that row only:
      another piece's name moves the row into it, a new name makes a new piece.
    - Pieces whose labels start with PERC (or OCTOBAN, COWBELL, SHAKER...) become Mimic percussion

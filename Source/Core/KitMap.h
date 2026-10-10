@@ -100,6 +100,12 @@ public:
         "value" line each. */
     static juce::String addictiveTextIn (const juce::MemoryBlock&);
 
+    /** The map MDL Tone's Ultimate Heavy Drums (Kontakt) uses, from the .nka its MIDI Mapping
+        page exports: "%mapping", then each articulation's note in the library's own order
+        (Kick 1, Snare, Tom 1-6, China L Choke...), -1 for none. Empty, with error set, when
+        the text isn't that. */
+    static KitMap fromMdlTone (const juce::String& text, juce::String& error);
+
     /** What you told the app about drums, by their plugin ID, and library names by the plugin's
         library ID: every zone whose drum is known takes its name and image, and its library's
         name. Two pieces never end up sharing one name. */

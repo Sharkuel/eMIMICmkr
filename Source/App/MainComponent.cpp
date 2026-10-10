@@ -109,6 +109,8 @@ emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& erro
         return emk::KitMap::fromSoundworks (soundworks, error);
     if (const auto addictive = emk::KitMap::addictiveTextIn (data); addictive.isNotEmpty())
         return emk::KitMap::fromAddictive (addictive, error);
+    if (const auto text = data.toString(); text.trimStart().startsWith ("%mapping"))
+        return emk::KitMap::fromMdlTone (text, error);
     found = false;
     return {};
 }
@@ -1262,8 +1264,8 @@ void MainComponent::removeZone()
 
 void MainComponent::loadMapFile()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Open a note map, a Superior Drummer 3 preset or a BFD3 kit", outputFolder(),
-                                                   "*.csv;*.sd3p;*.bfd3kit");
+    chooser = std::make_unique<juce::FileChooser> ("Open a note map, a Superior Drummer 3 preset, a BFD3 kit or an MDL Tone mapping",
+                                                   outputFolder(), "*.csv;*.sd3p;*.bfd3kit;*.nka");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
     {

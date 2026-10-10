@@ -474,6 +474,40 @@ bool addictiveKitReads()
     return ok;
 }
 
+/** MDL Tone's Ultimate Heavy Drums MIDI mapping (.nka), as its default kit exports it. */
+bool mdlToneMapReads()
+{
+    juce::String text = "%mapping\r\n";
+    for (int note : { 36, 38, 48, 47, 45, 43, 41, 40, 72, 71, 54, 52, 67, 66, 50, 49, 58, 57, 22, 62, 61, 63, 59, 60, 44, 74, 75,
+                      65, 64, 53, 51, 56, 55, 70, 69, 35 })
+        text << note << "\r\n";
+    for (int i = 36; i < 128; ++i)
+        text << (i < 72 ? -1 : 0) << "\r\n";
+
+    juce::String error;
+    const auto m = emk::KitMap::fromMdlTone (text, error);
+    auto is = [&] (const char* label, const char* piece, int note, bool on)
+    {
+        for (const auto& z : m.zones)
+            if (z.label == label)
+                return z.piece == piece && z.note == note && z.enabled == on;
+        return false;
+    };
+    bool ok = error.isEmpty() && m.zones.size() == 38 && is ("KICK1", "Kick", 36, true) && is ("SNARE1 CENTER", "Snare", 38, true)
+              && is ("TOM6 CENTER", "Tom 6", 40, true) && is ("CHINA1 EDGE", "China 1", 71, true) && is ("CHINA1 CHOKE", "China 1", 72, false)
+              && is ("CRASH3 EDGE", "Crash 3", 57, true) && is ("HATS EDGE CLOSED", "Hi-Hat", 22, true)
+              && is ("HATS BOW OPEN4", "Hi-Hat", 60, true) && is ("HATS EDGE OPEN4", "Hi-Hat", 60, true)
+              && is ("HATS PEDAL CLOSED", "Hi-Hat", 44, true) && is ("RIDE2 BOW", "Ride 2", 51, true)
+              && is ("SPLASH2 EDGE", "Splash 2", 69, true) && is ("KICK2", "Kick 2", 35, false);
+
+    juce::String notMdl;
+    emk::KitMap::fromMdlTone ("piece,zone,note", notMdl);
+    ok = ok && notMdl.isNotEmpty();
+    if (! ok)
+        std::printf ("mdlToneMapReads failed (%s, %d zones)\n", error.toRawUTF8(), m.zones.size());
+    return ok;
+}
+
 /** A MODO DRUM kit, built as MODO DRUM stores it (a binary ValueTree after its own header). */
 bool modoKitReads()
 {
@@ -830,7 +864,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && addictiveKitReads() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
