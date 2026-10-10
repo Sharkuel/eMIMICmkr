@@ -512,7 +512,7 @@ bool mdlToneMapReads()
 bool kontaktLibrariesRead()
 {
     const auto names = emk::KitMap::kontaktLibraries();
-    bool ok = names.size() == 4;
+    bool ok = names.size() == 6;
     for (const auto& name : names)
     {
         const auto m = emk::KitMap::kontaktLibrary (name);
@@ -527,7 +527,8 @@ bool kontaktLibrariesRead()
     const auto krimh = emk::KitMap::kontaktLibrary ("Krimh Drums");
     auto noteOf = [&] (const juce::String& label) { for (const auto& z : krimh.zones) if (z.label == label) return z.note; return -1; };
     ok = ok && noteOf ("KICK1") == 24 && noteOf ("KICK2") == 23 && noteOf ("HATS EDGE CLOSED") == 42
-            && noteOf ("RIDE1 BOW") == 62 && noteOf ("HATS2 EDGE OPEN6") == 88 && noteOf ("CRASH1 EDGE") == 52;
+            && noteOf ("RIDE1 BOW") == 62 && noteOf ("HATS2 EDGE OPEN6") == 88 && noteOf ("CRASH1 EDGE") == 52
+            && emk::KitMap::kontaktLibrary ("Odeholm Drums").zones[0].note == 36;
     if (! ok)
         std::printf ("kontaktLibrariesRead failed\n");
     return ok;
