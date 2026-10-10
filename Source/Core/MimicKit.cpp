@@ -162,17 +162,9 @@ std::map<juce::String, size_t> assignSlots (const juce::StringArray& slots, cons
     }
     for (auto i : rides) place (i, { "Ride 1", "Ride 2" });
     for (auto i : toms) place (i, { "Tom 1", "Tom 2", "Tom 3", "Tom 4" });
-    for (auto i : cymbals)
-    {
-        const auto slot = place (i, { "Crash 1", "Crash 2" });
-        if (instruments[i].type() == "Ride" && slot.isNotEmpty())
-            report.notes.add (instruments[i].name() + " is a 3-zone (ride type) crash in " + slot
-                              + "; check it plays its bell on the Mimic.");
-    }
+    // The Mimic plays a ride-type instrument from any cymbal input (Alexandre, 2026-10-10).
+    for (auto i : cymbals) place (i, { "Crash 1", "Crash 2" });
     for (auto i : others) place (i, {});
-    for (const auto& [slot, i] : placed)
-        if (instruments[i].type() == "Ride" && ! slot.startsWith ("Ride") && ! slot.startsWith ("Crash"))
-            report.notes.add (instruments[i].name() + " is a ride in " + slot + "; check it on the Mimic.");
     return placed;
 }
 
