@@ -340,6 +340,9 @@ bool soundworksKitReads()
         + inst (8, "Hi Hat", hat.toRawUTF8(), "Tight Closed Bow", 74) + inst (8, "Hi Hat", hat.toRawUTF8(), "Pedal Closed", 44)
         + inst (9, "Ride", "Zildjian 22'' Sweet K Ride-Crash", "Bell", 53)
         + inst (13, "Crash 4", "Zildjian 19'' Sweet K Crash", "Edge", 52) + inst (13, "Crash 4", "Zildjian 19'' Sweet K Crash", "Bell", 96)
+        + inst (18, "Stack", "Paiste Signature 8", "Edge", 99)
+        + inst (19, "Crash 1", "Sabian Freq 17 Crash", "Edge", 52)
+        + inst (26, "Cowbell", "Meinl Black 8", "Edge", 102) + inst (27, "Cowbell", "LP 229 SG", "Edge", 103)
         + inst (20, "Instrument 20", "", "MAIN", 61)
         + "</InstDef>\r\n<InstDef Ver=\"213\" InstrumentType=\"2\"/><Pars Ver=\"213\"><Par ix=\"0\" Name=\"MainVol\" val=\"1\"/></Pars></PDPreset>";
 
@@ -369,8 +372,12 @@ bool soundworksKitReads()
               && is ("TOM1 CENTER", "Tom 1", 43, true) && is ("TOM1 RIMSHOT", "Tom 1", 58, true)
               && is ("HATS BOW OPEN4", "Hi-Hat", 46, true) && is ("HATS EDGE CLOSED", "Hi-Hat", 81, true)
               && is ("HATS BOW TIGHT", "Hi-Hat", 74, false) && is ("HATS PEDAL CLOSED", "Hi-Hat", 44, true)
-              && is ("RIDE1 BELL", "Ride 1", 53, true) && is ("CRASH1 EDGE", "Crash 1", 52, true) && is ("CRASH1 BELL", "Crash 1", 96, false)
-              && m.zones.size() == 15;
+              && is ("RIDE1 BELL", "Ride 1", 53, true) && is ("CRASH4 EDGE", "Crash 4", 52, true) && is ("CRASH4 BELL", "Crash 4", 96, false)
+              && is ("STACK1 EDGE", "Stack 1", 99, true)
+              && is ("CRASH1 EDGE", "Crash 1", 52, false)   // DW also plays Crash 4 from 52
+              && find ("CRASH1 EDGE")->pluginName.contains ("note shared with Zildjian 19'' Sweet K Crash")
+              && is ("PERC COWBELL MAIN", "Cowbell", 102, true) && is ("PERC COWBELL2 MAIN", "Cowbell 2", 103, true)
+              && m.zones.size() == 19;
 
     juce::String notSoundworks;
     emk::KitMap::fromSoundworks ("<Root/>", notSoundworks);

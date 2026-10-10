@@ -90,7 +90,9 @@ them as VST3 plugins the app can load.
      hand's is ticked, the right hand's is there to tick. Ugritone gives each panel's drum ("DM Custom Z17"),
      the kit name and its Midinote Settings map. DW Soundworks gives each drum's name
      ("DW TrueCast 6.5x14 Snare Drum") and kit ("DW Maple Mahogany"); its hi-hat openings, snares-off
-     snare (a second snare piece, unticked) and cymbal bells are there to tick. Other VST3 plugins fill the "Name in plugin" column from their
+     snare (another snare piece, unticked) and cymbal bells are there to tick. DW can put several
+     drums on one note and plays them together; only the first is ticked, the others say which drum
+     they share the note with: give each its own note in DW to record it alone. Other VST3 plugins fill the "Name in plugin" column from their
      note names. **Open map...** also opens an SD3 preset (.sd3p) or a BFD3 kit preset (.bfd3kit)
      the same way; a BFD3 kit preset has no MIDI map, so BFD3's default "BFD 3.0" map is assumed.
      A BFD3 drum that its MIDI map gives no note (the default map has none for some cymbal slots)
