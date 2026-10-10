@@ -106,6 +106,11 @@ public:
                 sentIn.set ((size_t) msg.getNoteNumber());
         }
 
+        // JUCE restarts a plugin that asks for it (new outputs, reload) on the message thread, holding
+        // this lock (cmake/PatchJuce.cmake): stay out of the plugin until it's done.
+        const juce::ScopedTryLock pluginLock (processor->getCallbackLock());
+        if (! pluginLock.isLocked())
+            return;
         juce::AudioBuffer<float> block (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), numSamples);
         block.clear();
         processor->processBlock (block, midi);
