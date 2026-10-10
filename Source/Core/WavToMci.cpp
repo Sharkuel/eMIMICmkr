@@ -418,10 +418,14 @@ std::pair<juce::String, juce::String> WavToMci::classify (const juce::String& zo
         { "RIMSHOT", "rimshot" }, { "RIM", "rimshot" }, { "RIMCLICK", "rimclick" }, { "CROSSSTICK", "sidestick" },
         { "SIDESTICK", "sidestick" }, { "XSTICK", "sidestick" }
     };
-    for (int i = 1; i < words.size(); ++i)
+    juce::String zone;
+    for (int i = 1; i < words.size() && zone.isEmpty(); ++i)
         if (const auto it = zoneWords.find (words[i]); it != zoneWords.end())
-            return { family, it->second };
-    return { family, family == "cymbal" ? "bow" : "center" };
+            zone = it->second;
+    // A shallow rimshot, which the Mimic's snare plays from its Rim Shot Side zone.
+    if (family == "snare" && (words.contains ("SHALLOW") || (zone == "rimshot" && words.contains ("SIDE"))))
+        return { family, "rimshotside" };
+    return { family, zone.isNotEmpty() ? zone : family == "cymbal" ? "bow" : "center" };
 }
 
 std::vector<WavToMci::Piece> WavToMci::scan (const Input& src, juce::StringArray& skipped)
@@ -455,7 +459,7 @@ std::vector<WavToMci::Piece> WavToMci::scan (const Input& src, juce::StringArray
             pieces.push_back ({ pieceName, kind.first, {} });
             it = pieces.end() - 1;
         }
-        it->add (kind.second).push_back ({ velocity, name });
+        it->add (kind.second).push_back ({ velocity, name, {} });
     }
     return pieces;
 }
@@ -505,7 +509,7 @@ std::vector<WavToMci::Hits> WavToMci::splitLayers (Hits hits, int layersWanted)
 
 int WavToMci::roundRobins (const juce::String& family, const juce::String& zone)
 {
-    if ((zone == "center" || zone == "rimshot") && (family == "snare" || family == "tom"))
+    if ((zone == "center" || zone == "rimshot" || zone == "rimshotside") && (family == "snare" || family == "tom"))
         return family == "snare" ? 6 : 5;
     return 4;
 }
@@ -741,15 +745,45 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             onWavRead();
         try
         {
-            return readWav (src.read (h.path));
+            auto x = readWav (src.read (h.path));
+            if (h.blend.isEmpty())
+                return x;
+            auto y = readWav (src.read (h.blend));
+            if (y.size() > x.size())
+                std::swap (x, y);
+            for (size_t i = 0; i < x.size(); ++i)
+                x[i] = (int) floorDiv ((juce::int64) x[i] + (i < y.size() ? y[i] : 0), 2);
+            return x;
         }
         catch (const Error& e)
         {
             throw Error ((h.path + ": " + e.what()).toStdString());
         }
     };
+    // No shallow (side) rimshots recorded: each rimshot is mixed with the rim click (or the
+    // head hit) nearest its velocity, so the Mimic's Rim Shot Side zone isn't silent.
+    Hits sideRimshots;
+    juce::String sideFrom;
+    if (piece.family == "snare" && piece.find ("rimshotside") == nullptr && piece.find ("rimshot") != nullptr)
+    {
+        sideFrom = piece.find ("rimclick") != nullptr ? "rimclick" : piece.find ("center") != nullptr ? "center" : "";
+        if (sideFrom.isNotEmpty())
+        {
+            const auto& others = *piece.find (sideFrom);
+            for (const auto& h : *piece.find ("rimshot"))
+            {
+                const Hit* nearest = &others.front();
+                for (const auto& o : others)
+                    if (std::abs (o.velocity - h.velocity) < std::abs (nearest->velocity - h.velocity))
+                        nearest = &o;
+                sideRimshots.push_back ({ h.velocity, h.path, nearest->path });
+            }
+        }
+    }
     auto hitsOf = [&] (const juce::String& key) -> const Hits&
     {
+        if (key == "rimshotside" && ! sideRimshots.empty())
+            return sideRimshots;
         if (const auto* hits = piece.find (key))
             return *hits;
         throw Error ((piece.name + ": no " + key + " recordings").toStdString());
@@ -776,7 +810,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         z.velocities = minVelocities (split);
         return z;
     };
-    auto has = [&] (const juce::String& key) { return piece.find (key) != nullptr; };
+    auto has = [&] (const juce::String& key) { return piece.find (key) != nullptr || (key == "rimshotside" && ! sideRimshots.empty()); };
 
     if (piece.family == "hat")
     {
@@ -971,16 +1005,20 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     const juce::String kind = snare ? "Snare" : "Tom";
     struct DrumZone { const char* key; const char* zoneType; const char* label; };
     const DrumZone drumZones[] = { { "center", "drum center", "Center" }, { "rimclick", "drum rimclick", "Rimclick" },
-                                   { "rimshot", "drum rimshot", "Rimshot" }, { "sidestick", "snare sidestick", "Sidestick" } };
+                                   { "rimshot", "drum rimshot", "Rimshot" }, { "rimshotside", "snare rimshot side", "Rimshot Side" },
+                                   { "sidestick", "snare sidestick", "Sidestick" } };
+    auto snareOnly = [] (const juce::String& key) { return key == "sidestick" || key == "rimshotside"; };
+    if (! sideRimshots.empty())
+        log ("  " + name + ": no side rimshot recording, blending rimshot and " + sideFrom + " for it");
     Shares available;
     for (const auto& dz : drumZones)
-        if (has (dz.key) && (juce::String (dz.key) != "sidestick" || snare))
+        if (has (dz.key) && (! snareOnly (dz.key) || snare))
             available.emplace_back (dz.key, (int) hitsOf (dz.key).size());
     const auto shares = shareCells (cellLimit (kind), available);
     std::vector<mci::Articulation> arts;
     for (const auto& dz : drumZones)
     {
-        if (! has (dz.key) || (juce::String (dz.key) == "sidestick" && ! snare))
+        if (! has (dz.key) || (snareOnly (dz.key) && ! snare))
             continue;
         auto z = zone (dz.key, maxLayers, shareOf (shares, dz.key), roundRobins (piece.family, dz.key));
         mci::Articulation a;

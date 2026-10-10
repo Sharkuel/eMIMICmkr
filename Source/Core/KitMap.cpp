@@ -187,6 +187,7 @@ std::pair<juce::String, juce::String> KitMap::guessFromName (const juce::String&
     {
         const auto zone = has ("rimclick") || has ("rim only") || has ("rimonly") ? "RIMCLICK"
                         : has ("side") || has ("cross") || has ("xstick") ? "SIDESTICK"
+                        : has ("rim") && has ("shallow") ? "RIMSHOT SHALLOW"
                         : has ("rim") ? "RIMSHOT" : "CENTER";
         return { "Snare", juce::String ("SNARE1 ") + zone };
     }

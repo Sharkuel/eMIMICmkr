@@ -98,6 +98,7 @@ public:
     {
         int velocity = 0;
         juce::String path;
+        juce::String blend;   // a second hit mixed 50/50 with this one (made-up side rimshots)
     };
     using Hits = std::vector<Hit>;
 

@@ -174,6 +174,10 @@ choke sound is made from the hardest edge hit when none was recorded. Kicks, sna
 toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--hat-as-ride` for
 a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
+A snare's shallow rimshots (zone labels with `SHALLOW`, or `RIMSHOT SIDE`) fill the Mimic's
+Rim Shot Side zone. Most libraries have none; then each rimshot is mixed 50/50 with the rim
+click (or, without one, the head hit) nearest its velocity, so that zone still plays.
+
 The converter also runs headless, from the `eMIMICmkr_mci_tests` console tool:
 
 ```

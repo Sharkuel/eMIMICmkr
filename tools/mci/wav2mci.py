@@ -59,6 +59,7 @@ ZONE_WORDS = {"BOW": "bow", "BELL": "bell", "EDGE": "edge", "CHOKE": "choke",
 class Hit:
     velocity: int
     path: str
+    blend: str | None = None     # a second hit mixed 50/50 with this one (made-up side rimshots)
 
 
 @dataclass
@@ -199,6 +200,8 @@ def classify(zone_label: str) -> tuple[str, str]:
     if family is None:
         raise ValueError(f"unknown instrument in zone {zone_label!r}")
     zone = next((ZONE_WORDS[w] for w in words[1:] if w in ZONE_WORDS), None)
+    if family == "snare" and ("SHALLOW" in words or (zone == "rimshot" and "SIDE" in words)):
+        zone = "rimshotside"
     if zone is None:
         zone = "bow" if family == "cymbal" else "center"
     return family, zone
@@ -254,7 +257,7 @@ def split_layers(hits: list[Hit], max_layers: int = MAX_LAYERS) -> list[list[Hit
 def round_robins(family: str, zone: str) -> int:
     """Round robins wanted per velocity layer: 6 on snare heads and rims, 5 on toms', 4
     elsewhere (kick, sidestick, rimclick, cymbals)."""
-    if zone in ("center", "rimshot") and family in ("snare", "tom"):
+    if zone in ("center", "rimshot", "rimshotside") and family in ("snare", "tom"):
         return 6 if family == "snare" else 5
     return 4
 
@@ -306,11 +309,30 @@ def piece_title(piece: Piece, src: Source) -> str:
 
 def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
           hat_as_ride: bool = False) -> mci.MciFile:
+    def read(h):
+        x = read_wav(src.read(h.path))
+        if h.blend is None:
+            return x
+        y = read_wav(src.read(h.blend))
+        if len(y) > len(x):
+            x, y = y, x
+        return [(a + (y[i] if i < len(y) else 0)) // 2 for i, a in enumerate(x)]
+
     def load(hits_layers):
-        return [[read_wav(src.read(h.path)) for h in layer] for layer in hits_layers]
+        return [[read(h) for h in layer] for layer in hits_layers]
+
+    zones = dict(piece.zones)
+    if piece.family == "snare" and "rimshotside" not in zones and "rimshot" in zones:
+        # No shallow (side) rimshots recorded: mix each rimshot with the rim click (or the
+        # head hit) nearest its velocity, so the Mimic's Rim Shot Side zone isn't silent.
+        other = "rimclick" if "rimclick" in zones else "center" if "center" in zones else None
+        if other:
+            zones["rimshotside"] = [Hit(h.velocity, h.path, min(zones[other], key=lambda o: abs(o.velocity - h.velocity)).path)
+                                    for h in zones["rimshot"]]
+            log(f"  {name}: no side rimshot recording, blending rimshot and {other} for it")
 
     def zone(key, max_layers=MAX_LAYERS, max_hits=None, rr=None):
-        hits = piece.zones[key]
+        hits = zones[key]
         if max_hits and len(hits) > max_hits:     # keep an even spread of velocities
             hits = even_spread(hits, max_hits)
         layers = round_robin_layers(hits, rr) if rr else split_layers(hits, max_layers)
@@ -363,12 +385,13 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind)
 
     zone_ids = ({"center": "drum center", "rimshot": "drum rimshot", "rimclick": "drum rimclick",
-                 "sidestick": "snare sidestick"})
-    names = {"center": "Center", "rimshot": "Rimshot", "rimclick": "Rimclick", "sidestick": "Sidestick"}
+                 "rimshotside": "snare rimshot side", "sidestick": "snare sidestick"})
+    names = {"center": "Center", "rimshot": "Rimshot", "rimclick": "Rimclick", "rimshotside": "Rimshot Side",
+             "sidestick": "Sidestick"}
     kind = "Snare" if piece.family == "snare" else "Tom"
-    keys = [k for k in ["center", "rimclick", "rimshot", "sidestick"]
-            if k in piece.zones and (k != "sidestick" or piece.family == "snare")]
-    shares = share_cells(CELL_LIMITS[kind], {k: len(piece.zones[k]) for k in keys})
+    keys = [k for k in ["center", "rimclick", "rimshot", "rimshotside", "sidestick"]
+            if k in zones and (k not in ("sidestick", "rimshotside") or piece.family == "snare")]
+    shares = share_cells(CELL_LIMITS[kind], {k: len(zones[k]) for k in keys})
     arts = []
     for key in keys:
         audio, vel = zone(key, max_hits=shares[key], rr=round_robins(piece.family, key))

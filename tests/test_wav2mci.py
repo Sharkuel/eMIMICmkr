@@ -112,3 +112,19 @@ def test_share_cells():
     assert wav2mci.share_cells(300, {"center": 200, "rimshot": 200, "sidestick": 40}) == \
         {"sidestick": 40, "center": 130, "rimshot": 130}
     assert wav2mci.share_cells(64, {"kick": 20}) == {"kick": 20}
+
+
+def test_shallow_rimshots_go_to_the_rimshot_side_zone():
+    assert wav2mci.classify("SNARE1 RIMSHOT SHALLOW") == ("snare", "rimshotside")
+    assert wav2mci.classify("SNARE1 RIMSHOT SIDE") == ("snare", "rimshotside")
+    assert wav2mci.classify("SNARE1 RIMSHOT") == ("snare", "rimshot")
+    assert wav2mci.classify("TOM1 RIMSHOT SHALLOW") == ("tom", "rimshot")
+
+
+def test_missing_side_rimshot_is_blended(tmp_path):
+    render(tmp_path, ["CENTER", "RIMSHOT", "RIMCLICK"], [127, 64, 20], piece="14 Snare_S1", family="SNARE1")
+    assert wav2mci.main([str(tmp_path / "14 Test Crash"), "--out", str(tmp_path), "--name", "Snare"]) == 0
+    f = mci.read_mci(str(tmp_path / "Snare.mci"))
+    names = [f.get(f"INST0artic{a}artn") for a in range(f.get("INST0numart"))]
+    assert names == ["Snare Center", "Snare Rimclick", "Snare Rimshot", "Snare Rimshot Side"]
+    assert 5 in [f.get(f"INST0zoneType{z}") for z in range(f.get("INST0zonecnt"))]   # Rim Shot Side
