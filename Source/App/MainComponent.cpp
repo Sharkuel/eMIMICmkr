@@ -103,6 +103,8 @@ emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& erro
         return emk::KitMap::fromBfd3 (bfd3, error);
     if (emk::KitMap::isModoState (data))
         return emk::KitMap::fromModo (data, error);
+    if (const auto ugritone = emk::KitMap::ugritoneTextIn (data); ugritone.isNotEmpty())
+        return emk::KitMap::fromUgritone (ugritone, error);
     found = false;
     return {};
 }
@@ -1108,7 +1110,7 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
     kitDialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     kitDialog->enterModalState (true, juce::ModalCallbackFunction::create ([this, instruments, templateKit, folder] (int button)
     {
-        const auto kitName = kitDialog->getTextEditorContents ("name").trim();
+        const auto newKit = kitDialog->getTextEditorContents ("name").trim();
         juce::MessageManager::callAsync ([this] { kitDialog = nullptr; });
         if (button == 2)
         {
@@ -1125,10 +1127,10 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
             });
             return;
         }
-        if (button != 1 || kitName.isEmpty())
+        if (button != 1 || newKit.isEmpty())
             return;
 
-        const auto out = emk::MimicKit::kitFile (folder, kitName);
+        const auto out = emk::MimicKit::kitFile (folder, newKit);
         try
         {
             const auto report = emk::MimicKit::buildFile (instruments, templateKit, out);

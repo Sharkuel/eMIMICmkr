@@ -966,6 +966,115 @@ KitMap KitMap::fromModo (const juce::MemoryBlock& state, juce::String& error)
     return m;
 }
 
+juce::String KitMap::ugritoneTextIn (const juce::MemoryBlock& data)
+{
+    return findInState (data, [] (const char* bytes, size_t size) -> juce::String
+    {
+        static const std::string open = "<Root ", close = "</Root>", panel = "Loadedpresetname0panels";
+        const auto at = std::search (bytes, bytes + size, open.begin(), open.end());
+        if (at == bytes + size)
+            return {};
+        const auto end = std::search (at, bytes + size, close.begin(), close.end());
+        if (end == bytes + size || std::search (at, end, panel.begin(), panel.end()) == end)
+            return {};
+        return juce::String::fromUTF8 (at, (int) (end - at) + (int) close.size());
+    });
+}
+
+KitMap KitMap::fromUgritone (const juce::String& text, juce::String& error)
+{
+    const auto xml = juce::parseXML (text);
+    if (xml == nullptr || ! xml->hasTagName ("Root") || ! xml->hasAttribute ("PanelName0panels"))
+    {
+        error = "This isn't an Ugritone state.";
+        return {};
+    }
+
+    // The MIDI map's notes come first in AllUserParam (as note / 127), in the order of
+    // Ugritone's Midinote Settings matrix.
+    static const juce::StringArray noteSlots { "kick", "tom1", "tom2", "tom3", "tom4", "tom5", "snare",
+                                               "hihat closed", "hihat pedal", "hihat semiopen", "hihat wideopen",
+                                               "crash1", "crash1choke", "crash2", "crash2choke", "splash1",
+                                               "fxcymbal1", "fxcymbal2", "china1", "china2", "ridetop", "ridebell", "ridecrash" };
+    std::map<juce::String, int> notes;
+    if (auto* params = xml->getChildByName ("AllUserParam"))
+    {
+        const auto values = juce::StringArray::fromTokens (params->getAllSubText(), ",", {});
+        for (int i = 0; i < noteSlots.size() && i < values.size(); ++i)
+            notes[noteSlots[i]] = juce::roundToInt (values[i].getDoubleValue() * 127.0);
+    }
+    auto noteOf = [&] (const juce::String& slot) { return notes.count (slot) ? notes.at (slot) : 0; };
+
+    // "/mnt/.../Soundbanks/KVLT Drums II Data/Presets/OSDM/ModernDeathMetal.xml" -> "KVLT Drums II"
+    auto library = xml->getStringAttribute ("LastLoadedPresetFile").replaceCharacter ('\\', '/')
+                       .fromFirstOccurrenceOf ("/Soundbanks/", false, true).upToFirstOccurrenceOf ("/", false, false)
+                       .upToLastOccurrenceOf (" Data", false, true).trim();
+    if (library.isEmpty())
+        library = "Ugritone";
+
+    KitMap m;
+    m.kitName = xml->getStringAttribute ("curkitpresetname");
+    for (int p = 0; xml->hasAttribute ("PanelName" + juce::String (p) + "panels"); ++p)
+    {
+        const auto suffix = juce::String (p) + "panels";
+        const auto panel = xml->getStringAttribute ("PanelName" + suffix).toUpperCase();
+        const auto drum = xml->getStringAttribute ("Loadedpresetname" + suffix);
+        if (drum.isEmpty() || drum == "Disabled" || xml->getIntAttribute ("vis" + suffix, 1) == 0)
+            continue;
+        const auto number = panel.retainCharacters ("0123456789");
+        const auto n = number.isEmpty() ? 1 : number.getIntValue();
+        const int firstZone = m.zones.size();
+        auto add = [&] (const juce::String& piece, const juce::String& label, int note, bool on, int cc = -1)
+        {
+            m.zones.add ({ piece, label, note, cc, on && note > 0 });
+        };
+
+        const auto lower = panel.toLowerCase();
+        if (panel == "KICK")
+            add ("Kick", "KICK1", noteOf ("kick"), true);
+        else if (panel == "SNARE")
+            add ("Snare", "SNARE1 CENTER", noteOf ("snare"), true);
+        else if (panel.startsWith ("TOM"))
+            add ("Tom " + juce::String (n), "TOM" + juce::String (n) + " CENTER", noteOf (lower), true);
+        else if (panel == "HIHAT")
+        {
+            add ("Hi-Hat", "HATS BOW CLOSED", noteOf ("hihat closed"), true);
+            add ("Hi-Hat", "HATS BOW OPEN2", noteOf ("hihat semiopen"), true);
+            add ("Hi-Hat", "HATS BOW OPEN4", noteOf ("hihat wideopen"), true);
+            add ("Hi-Hat", "HATS PEDAL CLOSED", noteOf ("hihat pedal"), true);
+        }
+        else if (panel.startsWith ("RIDE"))
+        {
+            add ("Ride", "RIDE1 BOW", noteOf ("ridetop"), true);
+            add ("Ride", "RIDE1 BELL", noteOf ("ridebell"), true);
+            add ("Ride", "RIDE1 EDGE", noteOf ("ridecrash"), true);
+        }
+        else
+        {
+            const auto family = panel.startsWith ("CRASH") ? "CRASH" : panel.startsWith ("SPLASH") ? "SPLASH"
+                              : panel.startsWith ("CHINA") ? "CHINA" : "CYMBAL";
+            const auto piece = panel.startsWith ("FX") ? "FX Cymbal " + juce::String (n)
+                                                       : juce::String (family).substring (0, 1) + juce::String (family).substring (1).toLowerCase()
+                                                             + " " + juce::String (n);
+            const auto head = family + juce::String (n);
+            add (piece, head + " EDGE", noteOf (lower), true);
+            if (notes.count (lower + "choke"))
+                add (piece, head + " CHOKE", noteOf (lower + "choke"), false);
+        }
+
+        for (int z = firstZone; z < m.zones.size(); ++z)
+        {
+            auto& zone = m.zones.getReference (z);
+            zone.instrument = "Ugritone/" + drum;
+            zone.name = drum;
+            zone.library = library;
+        }
+    }
+    if (m.zones.isEmpty())
+        error = "The Ugritone kit has no drums loaded.";
+    return m;
+}
+
 juce::ValueTree KitMap::toValueTree() const
 {
     juce::ValueTree tree ("KitMap");

@@ -72,6 +72,14 @@ public:
     /** Whether a plugin state is MODO DRUM's. */
     static bool isModoState (const juce::MemoryBlock&);
 
+    /** The kit an Ugritone plugin (KVLT Drums II and its relatives) has loaded, from its plugin
+        state: each panel (KICK, SNARE, TOM1-5, HIHAT, CRASH1...) and its drum ("DM Custom Z17").
+        Every zone's note comes from the MIDI map the state holds. Empty, with error set, when the text isn't Ugritone's. */
+    static KitMap fromUgritone (const juce::String& text, juce::String& error);
+
+    /** Finds an Ugritone plugin's state XML inside a plugin state. */
+    static juce::String ugritoneTextIn (const juce::MemoryBlock&);
+
     /** What you told the app about drums, by their plugin ID, and library names by the plugin's
         library ID: every zone whose drum is known takes its name and image, and its library's
         name. Two pieces never end up sharing one name. */

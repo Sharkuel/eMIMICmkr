@@ -252,7 +252,7 @@ void checkKits()
     check (in ("Kick Layer").isEmpty() && kit.getInt ("insstCSKick Layerisld") == 0 && kit.find ("CMEKick Layercv") == nullptr,
            "unused slot emptied");
     check (kit.getInt ("insstCSRide 2enb") == 0 && in ("Ride 2").isEmpty(), "disabled slot left alone");
-    check (report.placed.size() == 9 && report.leftOut.isEmpty() && report.notes.size() == 1, "report");
+    check (report.placed.size() == 9 && report.leftOut.isEmpty() && report.notes.isEmpty(), "report");
 
     check (kit.getInt ("CMEKicknm") == 1 && kit.find ("CMEKickmi1micv") == nullptr
            && kit.getString ("CMEKickmi0micn") == "Kick", "kick channel has the instrument's one mic");

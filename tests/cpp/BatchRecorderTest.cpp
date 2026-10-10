@@ -255,6 +255,69 @@ bool bfd3KitReads()
     return ok && empty.isNotEmpty();
 }
 
+/** An Ugritone kit, as its plugin state holds it (UGRITONE_STATE names a real state file). */
+bool ugritoneKitReads()
+{
+    juce::String params;
+    for (int note : { 36, 48, 47, 45, 43, 41, 38, 42, 44, 46, 32, 49, 50, 57, 58, 55, 56, 59, 52, 61, 51, 53, 54 })
+        params << juce::String (note / 127.0, 6) << ",";
+    const juce::String text = "<Root curkitpresetname=\"ModernDeathMetal\" "
+        "LastLoadedPresetFile=\"/mnt/SL Libraries/Soundbanks/KVLT Drums II Data/Presets/OSDM/ModernDeathMetal.xml\" "
+        "Loadedpresetname0panels=\"DM Felt Tight\" PanelName0panels=\"KICK\" "
+        "Loadedpresetname1panels=\"DM SPL 12\" PanelName1panels=\"SNARE\" "
+        "Loadedpresetname2panels=\"DM Pancake 10i\" PanelName2panels=\"TOM1\" "
+        "Loadedpresetname3panels=\"DM B8 Pro\" PanelName3panels=\"HIHAT\" "
+        "Loadedpresetname4panels=\"DM Custom Z18\" PanelName4panels=\"CRASH2\" "
+        "Loadedpresetname5panels=\"Disabled\" PanelName5panels=\"SPLASH1\" "
+        "Loadedpresetname6panels=\"DM 2002 GigaBell\" PanelName6panels=\"RIDE\">"
+        "<AllUserParam>" + params + "0,0,0.5</AllUserParam></Root>";
+
+    juce::MemoryBlock state;
+    state.append ("VC2!\0\0\0\0", 8);
+    state.append (text.toRawUTF8(), text.getNumBytesAsUTF8());
+    const auto found = emk::KitMap::ugritoneTextIn (state);
+    juce::String error;
+    const auto m = emk::KitMap::fromUgritone (found, error);
+    auto find = [&m] (const char* label) -> const emk::KitZone*
+    {
+        for (const auto& z : m.zones)
+            if (z.label == label)
+                return &z;
+        return nullptr;
+    };
+    const auto* kick = find ("KICK1");
+    const auto* tom = find ("TOM1 CENTER");
+    const auto* open = find ("HATS BOW OPEN4");
+    const auto* crash = find ("CRASH2 EDGE");
+    const auto* bell = find ("RIDE1 BELL");
+    bool ok = error.isEmpty() && m.kitName == "ModernDeathMetal" && kick != nullptr && kick->note == 36
+              && kick->name == "DM Felt Tight" && kick->library == "KVLT Drums II"
+              && tom != nullptr && tom->note == 48 && find ("SNARE1 CENTER")->note == 38
+              && open != nullptr && open->note == 32 && find ("HATS BOW OPEN2")->note == 46
+              && find ("CRASH2 CHOKE") != nullptr && find ("CRASH2 CHOKE")->note == 58 && ! find ("CRASH2 CHOKE")->enabled && crash != nullptr && crash->note == 57 && crash->enabled
+              && bell != nullptr && bell->note == 53 && find ("SPLASH1 EDGE") == nullptr;
+
+    juce::String notUgritone;
+    emk::KitMap::fromUgritone ("<Root/>", notUgritone);
+    ok = ok && notUgritone.isNotEmpty();
+
+    if (const auto path = juce::SystemStats::getEnvironmentVariable ("UGRITONE_STATE", {}); path.isNotEmpty())
+    {
+        juce::MemoryBlock real;
+        juce::File (path).loadFileAsData (real);
+        juce::String realError;
+        const auto r = emk::KitMap::fromUgritone (emk::KitMap::ugritoneTextIn (real), realError);
+        std::printf ("Ugritone state: %s, %d zones, error '%s'\n", r.kitName.toRawUTF8(), r.zones.size(), realError.toRawUTF8());
+        for (const auto& z : r.zones)
+            std::printf ("  %-10s %-20s %3d %s %s\n", z.piece.toRawUTF8(), z.label.toRawUTF8(), z.note, z.enabled ? "on " : "off",
+                         z.name.toRawUTF8());
+        ok = ok && realError.isEmpty();
+    }
+    if (! ok)
+        std::printf ("ugritoneKitReads failed (%s)\n", error.toRawUTF8());
+    return ok;
+}
+
 /** A MODO DRUM kit, built as MODO DRUM stores it (a binary ValueTree after its own header). */
 bool modoKitReads()
 {
@@ -611,7 +674,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
