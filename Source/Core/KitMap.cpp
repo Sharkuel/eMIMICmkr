@@ -1453,6 +1453,110 @@ KitMap KitMap::fromMdlTone (const juce::String& text, juce::String& error)
     return m;
 }
 
+namespace
+{
+/** "C0", "A#-1", "C#3": Kontakt's note names, where C3 is note 60. */
+int kontaktNote (const juce::String& name)
+{
+    static const juce::StringArray names { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    const auto pitch = name.initialSectionNotContaining ("-0123456789");
+    const int octave = name.substring (pitch.length()).getIntValue();
+    return (octave + 2) * 12 + names.indexOf (pitch);
+}
+
+struct KontaktLibrary
+{
+    const char* name;
+    const char* library;
+    // One zone per line: piece|label|note|1 to record it. Notes are as the Mapping page shows them.
+    const char* rows;
+};
+
+// The libraries' default "Mapping" pages (screenshots Alexandre sent, 2026-10-10). Their hi-hat
+// "Closed/Open n" is the edge, "Tip ..." the bow; "choke hit" rows are left out.
+const char* const eloySnareAndKick =
+    "Kick|KICK1|C0|1\nKick 2|KICK2|B-1|0\n"
+    "Snare|SNARE1 CENTER|D0|1\nSnare|SNARE1 OFF CENTER|C#0|0\nSnare|SNARE1 FLAM|D#0|0\n"
+    "Snare|SNARE1 SIDESTICK|F#0|1\nSnare 2|SNARE2 CENTER|F0|0\n";
+const char* const eloyHats =
+    "Hi-Hat|HATS EDGE CLOSED|F#1|1\nHi-Hat|HATS EDGE OPEN1|G1|1\nHi-Hat|HATS EDGE OPEN2|G#1|1\n"
+    "Hi-Hat|HATS EDGE OPEN3|A1|1\nHi-Hat|HATS EDGE OPEN4|A#1|1\nHi-Hat|HATS EDGE OPEN5|B1|1\n"
+    "Hi-Hat|HATS BOW CLOSED|F1|1\nHi-Hat|HATS PEDAL CLOSED|C2|1\nHi-Hat|HATS FOOT SPLASH|C#2|1\n";
+const char* const tomsOneToFour =
+    "Tom 1|TOM1 CENTER|A0|1\nTom 2|TOM2 CENTER|A#0|1\nTom 3|TOM3 CENTER|B0|1\nTom 4|TOM4 CENTER|C1|1\n";
+const char* const rideD3 =
+    "Ride|RIDE1 BOW|D3|1\nRide|RIDE1 BELL|C#3|1\nRide|RIDE1 EDGE|D#3|1\n";
+
+const std::vector<std::pair<KontaktLibrary, juce::String>>& kontaktLibraryTable()
+{
+    static const std::vector<std::pair<KontaktLibrary, juce::String>> table {
+        { { "Eloy Drums - CasaGroove", "Eloy Drums", nullptr },
+          juce::String (eloySnareAndKick) + tomsOneToFour + rideD3 + "Ride|RIDE1 CHOKE|C3|0\n" + eloyHats
+            + "Hi-Hat|HATS BOW OPEN1|D2|1\nHi-Hat|HATS BOW OPEN2|D#2|1\nHi-Hat|HATS BOW OPEN3|E1|1\n"
+              "Hi-Hat|HATS BOW OPEN4|D#1|1\nHi-Hat|HATS BOW OPEN5|D1|1\n"
+              "Crash 1|CRASH1 EDGE|E2|1\nCrash 1|CRASH1 CHOKE|F2|0\nCrash 2|CRASH2 EDGE|F#2|1\nCrash 2|CRASH2 CHOKE|G2|0\n"
+              "Crash 3|CRASH3 EDGE|G#2|1\nCrash 3|CRASH3 CHOKE|A2|0\nChina|CHINA1 EDGE|F3|1\nChina|CHINA1 CHOKE|F#3|0\n"
+              "Splash|SPLASH1 EDGE|C#4|1\nSplash|SPLASH1 CHOKE|D4|0\nStack|STACK1 EDGE|D#4|1\nStack|STACK1 CHOKE|E4|0\n" },
+        { { "Eloy Drums - CasaGrande", "Eloy Drums", nullptr },
+          juce::String (eloySnareAndKick) + tomsOneToFour + "Tom 5|TOM5 CENTER|C#1|1\n" + rideD3 + "Ride|RIDE1 CHOKE|C3|0\n" + eloyHats
+            + "Hi-Hat|HATS BOW OPEN1|D2|1\nHi-Hat|HATS BOW OPEN2|D#2|1\nHi-Hat|HATS BOW OPEN3|E1|1\n"
+              "Hi-Hat|HATS BOW OPEN4|D#1|1\nHi-Hat|HATS BOW OPEN5|D1|1\n"
+              "Crash 1|CRASH1 EDGE|E2|1\nCrash 1|CRASH1 CHOKE|F2|0\nCrash 2|CRASH2 EDGE|G#2|1\nCrash 2|CRASH2 CHOKE|A2|0\n"
+              "Crash 3|CRASH3 EDGE|F#2|1\nCrash 3|CRASH3 CHOKE|G2|0\nCrash 4|CRASH4 EDGE|A#2|1\nCrash 4|CRASH4 CHOKE|B2|0\n"
+              "China|CHINA1 EDGE|F3|1\nChina|CHINA1 CHOKE|F#3|0\n" },
+        { { "Trivium Drums", "Trivium Drums", nullptr },
+          juce::String (eloySnareAndKick) + tomsOneToFour + "Tom 5|TOM5 CENTER|C#1|1\n" + eloyHats
+            + "Hi-Hat|HATS BOW OPEN1|D2|1\nHi-Hat|HATS BOW OPEN2|D#2|1\nHi-Hat|HATS BOW OPEN3|E1|1\n"
+              "Hi-Hat 2|HATS2 EDGE CLOSED|A#4|0\nHi-Hat 2|HATS2 EDGE OPEN1|B4|0\nHi-Hat 2|HATS2 EDGE OPEN2|C5|0\n"
+              "Hi-Hat 2|HATS2 EDGE OPEN3|C#5|0\n"
+              "Ride 1|RIDE1 BOW|D3|1\nRide 1|RIDE1 BELL|C#3|1\nRide 1|RIDE1 EDGE|D#3|1\n"
+              "Ride 2|RIDE2 BOW|C6|1\nRide 2|RIDE2 BELL|C#6|1\n"
+              "Crash 1|CRASH1 EDGE|E2|1\nCrash 1|CRASH1 CHOKE|F2|0\nCrash 2|CRASH2 EDGE|F#2|1\nCrash 2|CRASH2 CHOKE|G2|0\n"
+              "China 1|CHINA1 EDGE|F3|1\nChina 1|CHINA1 CHOKE|F#3|0\nChina 2|CHINA2 EDGE|G3|1\nChina 2|CHINA2 CHOKE|G#3|0\n"
+              "Splash 1|SPLASH1 EDGE|C#4|1\nSplash 1|SPLASH1 CHOKE|D4|0\nSplash 2|SPLASH2 EDGE|D#4|1\nSplash 2|SPLASH2 CHOKE|E4|0\n" },
+        { { "Krimh Drums", "Krimh Drums", nullptr },
+          juce::String (eloySnareAndKick) + tomsOneToFour + "Tom 5|TOM5 CENTER|C#1|0\n" + rideD3 + eloyHats
+            + "Hi-Hat|HATS BOW OPEN3|D2|1\n"
+              "Hi-Hat 2|HATS2 EDGE CLOSED|A#4|0\nHi-Hat 2|HATS2 EDGE OPEN1|B4|0\nHi-Hat 2|HATS2 EDGE OPEN2|C5|0\n"
+              "Hi-Hat 2|HATS2 EDGE OPEN3|C#5|0\nHi-Hat 2|HATS2 EDGE OPEN4|D5|0\nHi-Hat 2|HATS2 EDGE OPEN5|D#5|0\n"
+              "Hi-Hat 2|HATS2 EDGE OPEN6|E5|0\n"
+              "Crash 1|CRASH1 EDGE|E2|1\nCrash 1|CRASH1 CHOKE|F2|0\nCrash 2|CRASH2 EDGE|F#2|1\nCrash 2|CRASH2 CHOKE|G2|0\n"
+              "Crash 3|CRASH3 EDGE|G#2|1\nCrash 3|CRASH3 CHOKE|A2|0\nCrash 4|CRASH4 EDGE|A#2|1\nCrash 4|CRASH4 CHOKE|B2|0\n"
+              "Splash 1|SPLASH1 EDGE|C#4|1\nSplash 1|SPLASH1 CHOKE|D4|0\nSplash 2|SPLASH2 EDGE|D#4|1\nSplash 2|SPLASH2 CHOKE|E4|0\n"
+              "China 1|CHINA1 EDGE|F3|1\nChina 1|CHINA1 CHOKE|F#3|0\nChina 2|CHINA2 EDGE|G3|1\nChina 2|CHINA2 CHOKE|G#3|0\n" },
+    };
+    return table;
+}
+} // namespace
+
+juce::StringArray KitMap::kontaktLibraries()
+{
+    juce::StringArray names;
+    for (const auto& [lib, rows] : kontaktLibraryTable())
+        names.add (lib.name);
+    return names;
+}
+
+KitMap KitMap::kontaktLibrary (const juce::String& name)
+{
+    KitMap m;
+    for (const auto& [lib, rows] : kontaktLibraryTable())
+    {
+        if (name != lib.name)
+            continue;
+        m.kitName = lib.name;
+        for (const auto& line : juce::StringArray::fromLines (rows.trim()))
+        {
+            const auto f = juce::StringArray::fromTokens (line, "|", "");
+            KitZone zone { f[0], f[1], kontaktNote (f[2]), -1, f[3] == "1" };
+            zone.instrument = juce::String (lib.name) + "/" + f[0];
+            zone.library = lib.library;
+            m.zones.add (zone);
+        }
+    }
+    return m;
+}
+
 juce::ValueTree KitMap::toValueTree() const
 {
     juce::ValueTree tree ("KitMap");
