@@ -82,13 +82,17 @@ them as VST3 plugins the app can load.
      note is filled in and the next row selected.
    - **Find notes**: plays every note once, adds any the map lacks as "?" rows to listen to and
      name, and shows mapped rows that play nothing in red.
-   - **Read plugin**: with Superior Drummer 3, BFD3, MODO DRUM or Ugritone's drums (KVLT Drums II), reads the loaded kit straight from the
+   - **Read plugin**: with Superior Drummer 3, BFD3, MODO DRUM, Ugritone's drums (KVLT Drums II) or DW Soundworks, reads the loaded kit straight from the
      plugin: every instrument slot, its articulations and their notes (main zones ticked). BFD3
      also gives each drum's name ("Snare AXM Open High") and library ("Crush Drums"), which fill
      Name on the Mimic and Library; MODO DRUM gives each instrument's name ("Crash 16 Custom") and
      leaves out the slots switched off in its kit. Each MODO DRUM drum has a note per hand: the left
      hand's is ticked, the right hand's is there to tick. Ugritone gives each panel's drum ("DM Custom Z17"),
-     the kit name and its Midinote Settings map. Other VST3 plugins fill the "Name in plugin" column from their
+     the kit name and its Midinote Settings map. DW Soundworks gives each drum's name
+     ("DW TrueCast 6.5x14 Snare Drum") and kit ("DW Maple Mahogany"); its hi-hat openings, snares-off
+     snare (another snare piece, unticked) and cymbal bells are there to tick. DW can put several
+     drums on one note and plays them together; only the first is ticked, the others say which drum
+     they share the note with: give each its own note in DW to record it alone. Other VST3 plugins fill the "Name in plugin" column from their
      note names. **Open map...** also opens an SD3 preset (.sd3p) or a BFD3 kit preset (.bfd3kit)
      the same way; a BFD3 kit preset has no MIDI map, so BFD3's default "BFD 3.0" map is assumed.
      A BFD3 drum that its MIDI map gives no note (the default map has none for some cymbal slots)

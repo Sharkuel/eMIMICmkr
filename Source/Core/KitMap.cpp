@@ -891,6 +891,7 @@ KitMap KitMap::fromModo (const juce::MemoryBlock& state, juce::String& error)
             notes[artic.getType().toString()] = (int) artic["MIDINote"];
 
         const int firstZone = m.zones.size();
+        std::pair<int, int> snaresOff { 0, 0 };
         std::set<juce::String> used;
         auto add = [&] (const juce::String& piece, const juce::String& label, const juce::String& artic, bool on)
         {
@@ -1072,6 +1073,213 @@ KitMap KitMap::fromUgritone (const juce::String& text, juce::String& error)
     }
     if (m.zones.isEmpty())
         error = "The Ugritone kit has no drums loaded.";
+    return m;
+}
+
+juce::String KitMap::soundworksTextIn (const juce::MemoryBlock& data)
+{
+    return findInState (data, [] (const char* bytes, size_t size) -> juce::String
+    {
+        // DW Soundworks keeps its kit as a <PDPreset>: the instruments come first, under the
+        // first <InstDef>, then thousands of mixer parameters this doesn't need.
+        static const std::string open = "<PDPreset>", close = "</InstDef>";
+        const auto at = std::search (bytes, bytes + size, open.begin(), open.end());
+        if (at == bytes + size)
+            return {};
+        const auto end = std::search (at, bytes + size, close.begin(), close.end());
+        if (end == bytes + size)
+            return {};
+        return juce::String::fromUTF8 (at, (int) (end - at) + (int) close.size()) + "</PDPreset>";
+    });
+}
+
+KitMap KitMap::fromSoundworks (const juce::String& text, juce::String& error)
+{
+    const auto xml = juce::parseXML (text);
+    auto* instruments = xml != nullptr && xml->hasTagName ("PDPreset") ? xml->getChildByName ("InstDef") : nullptr;
+    if (instruments == nullptr)
+    {
+        error = "This isn't a DW Soundworks state.";
+        return {};
+    }
+
+    // Each mixer channel is one drum; its <Instrument>s are the drum's articulations, each on
+    // its own note (-1 = none). Channels with no drum loaded have no InstrumentName.
+    struct Artic { juce::String name; int note; };
+    struct Drum { juce::String channel, drum, library; std::vector<Artic> artics; bool listenOnly = false; };
+    std::vector<Drum> drums;
+    std::map<int, size_t> byMixer;
+    for (auto* e : instruments->getChildWithTagNameIterator ("Instrument"))
+    {
+        const auto drum = e->getStringAttribute ("InstrumentName").trim();
+        if (drum.isEmpty())
+            continue;
+        const int mixer = e->getIntAttribute ("Mixer");
+        if (byMixer.count (mixer) == 0)
+        {
+            byMixer[mixer] = drums.size();
+            drums.push_back ({ e->getStringAttribute ("MixerName").trim(), drum, e->getStringAttribute ("LibName").trim(), {}, false });
+        }
+        drums[byMixer[mixer]].artics.push_back ({ e->getStringAttribute ("Name").trim(), e->getIntAttribute ("Midi", -1) });
+    }
+    if (drums.empty())
+    {
+        error = "The DW Soundworks kit has no drums loaded.";
+        return {};
+    }
+
+    auto familyOf = [] (const Drum& d)
+    {
+        for (const auto& n : { d.channel.toLowerCase(), d.drum.toLowerCase() })
+        {
+            if (n.contains ("kick")) return "kick";
+            if (n.contains ("snare")) return "snare";
+            if (n.contains ("hat")) return "hats";
+            if (n.contains ("tom") || n.contains ("floor")) return "tom";
+            if (n.contains ("ride")) return "ride";
+            if (n.contains ("splash")) return "splash";
+            if (n.contains ("china")) return "china";
+            if (n.contains ("stack")) return "stack";
+            if (n.contains ("crash") || n.contains ("cymbal")) return "crash";
+        }
+        return "";
+    };
+
+    // A snare's snares-off ("SO") articulations are another snare sound: another piece, after
+    // the kit's own drums, there to listen to and tick.
+    const auto ownDrums = drums.size();
+    for (size_t i = 0; i < ownDrums; ++i)
+        if (juce::String (familyOf (drums[i])) == "snare")
+        {
+            Drum off { drums[i].channel, drums[i].drum + " Snares Off", drums[i].library, {}, true };
+            auto& artics = drums[i].artics;
+            for (auto a = artics.begin(); a != artics.end();)
+                if (a->name.endsWithIgnoreCase (" SO"))
+                {
+                    off.artics.push_back ({ a->name.dropLastCharacters (3), a->note });
+                    a = artics.erase (a);
+                }
+                else
+                {
+                    ++a;
+                }
+            if (! off.artics.empty())
+                drums.push_back (std::move (off));
+        }
+
+    KitMap m;
+    m.kitName = drums.front().library;
+    std::map<juce::String, std::set<int>> numbers;
+    juce::StringArray names;
+    for (const auto& d : drums)
+    {
+        const juce::String family = familyOf (d);
+        const int firstZone = m.zones.size();
+        std::set<juce::String> used;
+        auto add = [&] (const juce::String& piece, const juce::String& label, const juce::String& artic, bool on)
+        {
+            for (const auto& a : d.artics)
+                if (a.name.equalsIgnoreCase (artic) && a.note >= 0 && used.insert (a.name).second)
+                    m.zones.add ({ piece, label, a.note, -1, on && ! d.listenOnly,
+                                   d.channel + ": " + a.name + (d.listenOnly ? " SO" : "") });
+        };
+        auto upper = [] (const juce::String& s) { return s.toUpperCase().retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "); };
+
+        if (family.isEmpty())
+        {
+            // Percussion: a Mimic percussion instrument takes the first four articulations.
+            static const char* percZones[] = { "MAIN", "SECONDARY", "ADD1", "ADD2" };
+            // Several channels can share a name ("Cowbell"): each becomes its own piece.
+            auto& taken = numbers["perc " + d.channel];
+            int n = 1;
+            while (taken.count (n) > 0)
+                ++n;
+            taken.insert (n);
+            const auto piece = n == 1 ? d.channel : d.channel + " " + juce::String (n);
+            const auto head = "PERC " + upper (piece).removeCharacters (" ");
+            int zone = 0;
+            for (const auto& a : d.artics)
+                if (zone < 4 && a.note >= 0)
+                {
+                    add (piece, head + " " + percZones[zone], a.name, zone == 0);
+                    ++zone;
+                }
+        }
+        else if (family == "hats")
+        {
+            // DW plays each openness and stick area from its own note: Tighter, Tight, Normal and
+            // Loose Closed, then Open 1 to 4, each on Edge, Bow and Bell. The Mimic's hat takes
+            // bow and edge at five openings, closed to open.
+            static const std::pair<const char*, const char*> steps[] {
+                { "Normal Closed", "CLOSED" }, { "Open 1", "OPEN1" }, { "Open 2", "OPEN2" }, { "Open 3", "OPEN3" }, { "Open 4", "OPEN4" },
+                { "Tight Closed", "TIGHT" }, { "Tighter Closed", "TIGHT2" }, { "Loose Closed", "CLOSED2" },
+            };
+            for (const auto& [area, label] : { std::pair { "Bow", "BOW" }, std::pair { "Edge", "EDGE" }, std::pair { "Bell", "BELL" } })
+                for (const auto& [dw, step] : steps)
+                    add ("Hi-Hat", juce::String ("HATS ") + label + " " + step, juce::String (dw) + " " + area,
+                         juce::String (area) != "Bell" && ! juce::String (step).startsWith ("TIGHT") && juce::String (step) != "CLOSED2");
+            add ("Hi-Hat", "HATS PEDAL CLOSED", "Pedal Closed", true);
+            add ("Hi-Hat", "HATS FOOT SPLASH", "Foot Splash", true);
+        }
+        else
+        {
+            // Cymbals keep DW's number ("Crash 4") when it is free; drums are numbered in kit order,
+            // so rack and floor toms run Tom 1, 2, 3...
+            auto& taken = numbers[family];
+            const bool cymbal = family != "kick" && family != "snare" && family != "tom";
+            int n = cymbal ? d.channel.getTrailingIntValue() : 0;
+            if (n <= 0 || taken.count (n) > 0)
+                for (n = 1; taken.count (n) > 0; ++n) {}
+            taken.insert (n);
+            const juce::String num (n);
+            const juce::String piece = family == "kick" ? (n == 1 ? juce::String ("Kick") : "Kick " + num)
+                                     : family == "snare" ? (n == 1 ? juce::String ("Snare") : "Snare " + num)
+                                     : family.substring (0, 1).toUpperCase() + family.substring (1) + " " + num;
+            const auto head = family.toUpperCase() + num;
+            // DW's articulation names -> the Mimic's zones, and which are ticked to start with.
+            struct Zone { const char* dw; const char* zone; bool on; };
+            static const std::map<juce::String, std::vector<Zone>> zonesOf {
+                { "kick", { { "Center", "", true } } },
+                { "snare", { { "Center", "CENTER", true }, { "Rimshot", "RIMSHOT", true }, { "X Stick", "SIDESTICK", true },
+                             { "Rim", "RIMCLICK", true }, { "Edge", "EDGE", false } } },
+                { "tom", { { "Center", "CENTER", true }, { "Rimshot", "RIMSHOT", true }, { "Rim", "RIMCLICK", true } } },
+                { "ride", { { "Bow", "BOW", true }, { "Bell", "BELL", true }, { "Edge", "EDGE", true } } },
+                { "crash", { { "Edge", "EDGE", true }, { "Bow", "BOW", true }, { "Bell", "BELL", false } } },
+            };
+            const auto& table = zonesOf.count (family) ? zonesOf.at (family) : zonesOf.at ("crash");
+            for (const auto& z : table)
+                add (piece, juce::String (z.zone).isEmpty() ? head : head + " " + z.zone, z.dw, z.on);
+            for (const auto& a : d.artics)   // anything else: there to listen to and tick
+                if (a.note >= 0 && used.count (a.name) == 0)
+                    add (piece, head + " " + upper (a.name), a.name, false);
+        }
+
+        auto name = d.drum;
+        for (int n = 2; names.contains (name); ++n)
+            name = d.drum + " " + juce::String (n);
+        names.add (name);
+        for (int z = firstZone; z < m.zones.size(); ++z)
+        {
+            auto& zone = m.zones.getReference (z);
+            zone.instrument = "DW Soundworks/" + d.drum;
+            zone.name = name;
+            zone.library = d.library.isNotEmpty() ? d.library : juce::String ("DW Soundworks");
+        }
+    }
+    // DW can put several drums on one note and plays them all together, so a recording of it is
+    // their mix. Only the first drum on a note starts ticked.
+    std::map<int, const KitZone*> firstOnNote;
+    for (auto& zone : m.zones)
+    {
+        const auto [first, isNew] = firstOnNote.insert ({ zone.note, &zone });
+        if (! isNew && first->second->piece != zone.piece)
+        {
+            zone.enabled = false;
+            zone.pluginName << " (note shared with " << first->second->name << ")";
+        }
+    }
+    if (m.zones.isEmpty())
+        error = "The DW Soundworks kit has no notes mapped.";
     return m;
 }
 

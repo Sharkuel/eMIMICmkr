@@ -80,6 +80,15 @@ public:
     /** Finds an Ugritone plugin's state XML inside a plugin state. */
     static juce::String ugritoneTextIn (const juce::MemoryBlock&);
 
+    /** The kit DW Soundworks has loaded, from its plugin state: each instrument (Kick, Snare,
+        Tom 1, Hi Hat, Ride, Crash 1...), its drum ("DW TrueCast 6.5x14 Snare Drum"), its
+        articulations and the notes they're on. Empty, with error set, when the text isn't
+        DW Soundworks' or no drums are loaded. */
+    static KitMap fromSoundworks (const juce::String& text, juce::String& error);
+
+    /** Finds DW Soundworks' kit XML inside a plugin state. */
+    static juce::String soundworksTextIn (const juce::MemoryBlock&);
+
     /** What you told the app about drums, by their plugin ID, and library names by the plugin's
         library ID: every zone whose drum is known takes its name and image, and its library's
         name. Two pieces never end up sharing one name. */
