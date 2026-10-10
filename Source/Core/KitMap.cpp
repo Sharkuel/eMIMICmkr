@@ -1391,6 +1391,68 @@ KitMap KitMap::fromAddictive (const juce::String& text, juce::String& error)
     return m;
 }
 
+KitMap KitMap::fromMdlTone (const juce::String& text, juce::String& error)
+{
+    auto lines = juce::StringArray::fromLines (text.trim());
+    if (lines.size() < 37 || lines[0].trim() != "%mapping")
+    {
+        error = "This isn't an MDL Tone MIDI mapping.";
+        return {};
+    }
+    lines.remove (0);
+
+    // The array's slots, in the order the library's MIDI Mapping page saves them (checked against
+    // Alexandre's export and the page's own note list, 2026-10-10). "Close" is a plain hit.
+    struct Slot { const char* piece; const char* label; const char* name; bool on; };
+    static const Slot slots[] {
+        { "Kick", "KICK1", "Kick 1", true }, { "Snare", "SNARE1 CENTER", "Snare", true },
+        { "Tom 1", "TOM1 CENTER", "Tom 1", true }, { "Tom 2", "TOM2 CENTER", "Tom 2", true },
+        { "Tom 3", "TOM3 CENTER", "Tom 3", true }, { "Tom 4", "TOM4 CENTER", "Tom 4", true },
+        { "Tom 5", "TOM5 CENTER", "Tom 5", true }, { "Tom 6", "TOM6 CENTER", "Tom 6", true },
+        { "China 1", "CHINA1 CHOKE", "China L Choke", false }, { "China 1", "CHINA1 EDGE", "China L Close", true },
+        { "China 2", "CHINA2 CHOKE", "China R Choke", false }, { "China 2", "CHINA2 EDGE", "China R Close", true },
+        { "Crash 1", "CRASH1 CHOKE", "Crash LL Choke", false }, { "Crash 1", "CRASH1 EDGE", "Crash LL Close", true },
+        { "Crash 2", "CRASH2 CHOKE", "Crash L Choke", false }, { "Crash 2", "CRASH2 EDGE", "Crash L Close", true },
+        { "Crash 3", "CRASH3 CHOKE", "Crash R Choke", false }, { "Crash 3", "CRASH3 EDGE", "Crash R Close", true },
+        { "Hi-Hat", "HATS EDGE CLOSED", "Hat L Edge", true }, { "Hi-Hat", "HATS BOW CLOSED", "Hat L Tip", true },
+        { "Hi-Hat", "HATS EDGE TIGHT", "Hat L Tight Edge", false }, { "Hi-Hat", "HATS BOW TIGHT", "Hat L Tight Tip", false },
+        { "Hi-Hat", "HATS BOW OPEN2", "Hat L Open1", true }, { "Hi-Hat", "HATS BOW OPEN4", "Hat L Open2", true },
+        { "Hi-Hat", "HATS PEDAL CLOSED", "Hat L Pedal", true },
+        { "Hi-Hat 2", "HATS2 EDGE CLOSED", "Hat R Edge", false }, { "Hi-Hat 2", "HATS2 BOW CLOSED", "Hat R Tip", false },
+        { "Ride 1", "RIDE1 BELL", "Ride L Bell", true }, { "Ride 1", "RIDE1 BOW", "Ride L Close", true },
+        { "Ride 2", "RIDE2 BELL", "Ride R Bell", true }, { "Ride 2", "RIDE2 BOW", "Ride R Close", true },
+        { "Splash 1", "SPLASH1 CHOKE", "Splash L Choke", false }, { "Splash 1", "SPLASH1 EDGE", "Splash L Close", true },
+        { "Splash 2", "SPLASH2 CHOKE", "Splash R Choke", false }, { "Splash 2", "SPLASH2 EDGE", "Splash R Close", true },
+        { "Kick 2", "KICK2", "Kick 2", false },
+    };
+
+    KitMap m;
+    for (int i = 0; i < (int) std::size (slots); ++i)
+    {
+        const int note = lines[i].trim().getIntValue();
+        if (lines[i].trim().isEmpty() || note < 0 || note > 127)
+            continue;
+        const auto& s = slots[i];
+        KitZone zone { s.piece, s.label, note, -1, s.on, s.name };
+        zone.instrument = juce::String ("MDL Tone Ultimate Heavy Drums/") + s.piece;
+        zone.library = "Ultimate Heavy Drums";
+        m.zones.add (zone);
+    }
+    // The open hat is one sound per opening, there for the bow and the edge alike.
+    for (const auto& [from, to] : { std::pair { "HATS BOW OPEN2", "HATS EDGE OPEN2" }, std::pair { "HATS BOW OPEN4", "HATS EDGE OPEN4" } })
+        for (const auto& z : m.zones)
+            if (z.label == from)
+            {
+                auto copy = z;
+                copy.label = to;
+                m.zones.add (copy);
+                break;
+            }
+    if (m.zones.isEmpty())
+        error = "The MDL Tone mapping has no notes.";
+    return m;
+}
+
 juce::ValueTree KitMap::toValueTree() const
 {
     juce::ValueTree tree ("KitMap");
