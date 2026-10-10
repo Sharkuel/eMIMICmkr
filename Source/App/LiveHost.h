@@ -90,6 +90,13 @@ public:
         const juce::ScopedTryLock sl (lock);
         if (! sl.isLocked() || processor == nullptr || numSamples > buffer.getNumSamples())
             return;
+        // A plugin can add outputs while it runs (some do when their window opens or a kit loads).
+        // Until it's prepared again for them, give it nothing to fill.
+        if (juce::jmax (processor->getTotalNumInputChannels(), processor->getTotalNumOutputChannels()) > buffer.getNumChannels())
+        {
+            outdated = true;
+            return;
+        }
 
         std::bitset<128> sentIn;
         for (const auto m : midi)
@@ -99,6 +106,11 @@ public:
                 sentIn.set ((size_t) msg.getNoteNumber());
         }
 
+        // JUCE restarts a plugin that asks for it (new outputs, reload) on the message thread, holding
+        // this lock (cmake/PatchJuce.cmake): stay out of the plugin until it's done.
+        const juce::ScopedTryLock pluginLock (processor->getCallbackLock());
+        if (! pluginLock.isLocked())
+            return;
         juce::AudioBuffer<float> block (buffer.getArrayOfWritePointers(), buffer.getNumChannels(), numSamples);
         block.clear();
         processor->processBlock (block, midi);
@@ -199,6 +211,8 @@ public:
     /** Hands what the audio thread caught to onPluginNote and onHeardHit; the timer calls it. */
     void poll()
     {
+        if (outdated.exchange (false) && processor != nullptr)
+            setProcessor (processor);   // prepares it again, with room for its new outputs
         if (capturePhase == ready)
         {
             if (onHeardHit)
@@ -228,6 +242,7 @@ private:
     enum Phase { armed, capturing, ready };
     static constexpr int chunk = 256;
     std::atomic<bool> listening { false };
+    std::atomic<bool> outdated { false };
     std::atomic<int> capturePhase { armed };
     juce::AudioBuffer<float> capture;
     double captureRate = 44100.0;

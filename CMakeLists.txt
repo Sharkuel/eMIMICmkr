@@ -17,6 +17,8 @@ FetchContent_Declare(JUCE
     GIT_TAG 8.0.10
     GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(JUCE)
+set(JUCE_DIR "${juce_SOURCE_DIR}")
+include(cmake/PatchJuce.cmake)   # see the file: stops a crash with some plugins through yabridge
 
 juce_add_gui_app(eMIMICmkr
     PRODUCT_NAME "eMIMICmkr"

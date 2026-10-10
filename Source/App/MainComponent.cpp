@@ -811,10 +811,10 @@ void MainComponent::loadSelectedPlugin()
         auto program = plugin->getProgramName (plugin->getCurrentProgram()).trim();
         kitName.setText (program.isNotEmpty() ? program : plugin->getName(), juce::sendNotification);
     }
+    showPluginWindow();
     setLive (true);
     setStatus ("Loaded " + plugin->getName() + ". Load a kit in the plugin window, set its MIDI map to match "
                "the note map here, then listen to a zone or record the kit.");
-    showPluginWindow();
 }
 
 void MainComponent::showPluginWindow()
@@ -822,8 +822,17 @@ void MainComponent::showPluginWindow()
     if (plugin == nullptr)
         return;
     if (pluginWindow == nullptr)
+    {
+        // Some plugins (MODO DRUM through yabridge) crash if they're asked to play while their
+        // window is being built, and may change their outputs when it opens: pause them for it,
+        // and prepare them again afterwards.
+        const bool wasLive = live.getProcessor() != nullptr;
+        setLive (false);
         if (auto* editor = plugin->createEditorIfNeeded())
             pluginWindow = std::make_unique<PluginWindow> (editor, plugin->getName());
+        if (wasLive)
+            setLive (true);
+    }
     if (pluginWindow != nullptr)
         pluginWindow->setVisible (true);
 }
