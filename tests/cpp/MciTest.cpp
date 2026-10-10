@@ -65,7 +65,7 @@ void checkBuilders()
 
     WavToMci::Hits hits;
     for (int v = 1; v <= 100; ++v)
-        hits.push_back ({ v, {} });
+        hits.push_back ({ v, {}, {} });
     const auto layers = WavToMci::splitLayers (hits);
     check (layers.size() == 20 && layers[0].size() == 5, "splitLayers");
     const auto vel = WavToMci::minVelocities (layers);
@@ -75,7 +75,7 @@ void checkBuilders()
     {
         WavToMci::Hits h;
         for (int i = 0; i < n; ++i)
-            h.push_back ({ 1 + i * 126 / std::max (1, n - 1), {} });
+            h.push_back ({ 1 + i * 126 / std::max (1, n - 1), {}, {} });
         return h;
     };
     auto sizes = [] (const std::vector<WavToMci::Hits>& split)
@@ -103,6 +103,9 @@ void checkBuilders()
     check (WavToMci::classify ("HATS BOW OPEN3") == std::pair<juce::String, juce::String> ("hat", "bow:open3"), "classify hat");
     check (WavToMci::classify ("HATS FOOT SPLASH").second == "footsplash", "classify foot splash");
     check (WavToMci::classify ("TOM2 RIM").second == "rimshot", "classify tom rim");
+    check (WavToMci::classify ("SNARE1 RIMSHOT SHALLOW").second == "rimshotside"
+           && WavToMci::classify ("SNARE1 RIMSHOT SIDE").second == "rimshotside"
+           && WavToMci::classify ("TOM1 RIMSHOT SHALLOW").second == "rimshot", "classify shallow rimshots");
 
     check (mci::velocityThresholds ({ 1.0, 4.0, 16.0 }) == std::vector<int> { 0, 64, 127 }, "velocityThresholds");
 
