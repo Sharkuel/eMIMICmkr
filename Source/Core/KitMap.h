@@ -89,6 +89,17 @@ public:
     /** Finds DW Soundworks' kit XML inside a plugin state. */
     static juce::String soundworksTextIn (const juce::MemoryBlock&);
 
+    /** The kit Addictive Drums 2 has loaded, from its plugin state: each kit piece slot that
+        holds a drum (KICK, SNAR, HHAT, TOM1-4, RID1-2, CYM1-6, FLX1-3) and the notes its key map
+        plays each articulation from. AD2's state names no drums, only an ID for each, so the
+        names you give them are kept by that ID. Empty, with error set, when the text isn't
+        AD2's or no drums are loaded. */
+    static KitMap fromAddictive (const juce::String& text, juce::String& error);
+
+    /** Finds Addictive Drums 2's settings inside a plugin state, one "key" line then one
+        "value" line each. */
+    static juce::String addictiveTextIn (const juce::MemoryBlock&);
+
     /** What you told the app about drums, by their plugin ID, and library names by the plugin's
         library ID: every zone whose drum is known takes its name and image, and its library's
         name. Two pieces never end up sharing one name. */

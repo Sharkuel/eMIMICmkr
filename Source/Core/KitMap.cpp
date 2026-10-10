@@ -1283,6 +1283,114 @@ KitMap KitMap::fromSoundworks (const juce::String& text, juce::String& error)
     return m;
 }
 
+juce::String KitMap::addictiveTextIn (const juce::MemoryBlock& data)
+{
+    return findInState (data, [] (const char* bytes, size_t size) -> juce::String
+    {
+        // AD2 keeps its settings as "key\0value\0" pairs after a "COTTAD2State" header.
+        static const std::string marker = "COTTAD2State";
+        const auto at = std::search (bytes, bytes + size, marker.begin(), marker.end());
+        if (at == bytes + size)
+            return {};
+        std::string text (at + marker.size(), bytes + size);
+        std::replace (text.begin(), text.end(), '\0', '\n');
+        return juce::String::fromUTF8 (text.data(), (int) text.size());
+    });
+}
+
+KitMap KitMap::fromAddictive (const juce::String& text, juce::String& error)
+{
+    std::map<juce::String, juce::String> values;
+    const auto lines = juce::StringArray::fromLines (text);
+    for (int i = 0; i + 1 < lines.size(); i += 2)
+        values[lines[i]] = lines[i + 1];
+    if (values.count ("StateProductName") == 0 && values.count ("MidiFilterMap_MAP_KeyMap_036") == 0)
+    {
+        error = "This isn't an Addictive Drums 2 state.";
+        return {};
+    }
+    auto value = [&] (const juce::String& key) { return values.count (key) ? values.at (key) : juce::String(); };
+
+    // The key map gives each note the articulation it plays, by AD2's own number for it (the
+    // same in every map: 1 is the kick, 3 the snare's open hit...). A few articulations are on
+    // two notes in AD2 Standard (Ride 1 Tip on 45 and 60); the higher one is used.
+    std::map<int, int> noteOf;
+    for (int note = 0; note < 128; ++note)
+        if (const int artic = value ("MidiFilterMap_MAP_KeyMap_" + juce::String (note).paddedLeft ('0', 3)).getIntValue(); artic > 0)
+            noteOf[artic] = note;
+
+    // "app____Black Oyster__Black Room.AD2Preset" -> "Black Oyster"
+    juce::StringArray presetParts;
+    presetParts.addTokens (value ("Layer1/CurrentPresetId").replace ("__", "\n"), "\n", {});
+    presetParts.removeEmptyStrings();
+    const auto library = presetParts.size() >= 3 ? presetParts[presetParts.size() - 2] : juce::String ("Addictive Drums 2");
+
+    KitMap m;
+    m.kitName = value ("Layer1/CurrentPresetName");
+    struct Zone { int artic; const char* label; const char* name; bool on; };
+    auto addSlot = [&] (const juce::String& slot, const juce::String& piece, std::initializer_list<Zone> zones)
+    {
+        const auto drum = value ("Sampler_" + slot + "_KitPieceSelection");
+        if (drum.getIntValue() == 0)
+            return;
+        const int first = m.zones.size();
+        for (const auto& z : zones)
+            if (noteOf.count (z.artic))
+                m.zones.add ({ piece, z.label, noteOf.at (z.artic), -1, z.on, piece + ": " + z.name });
+        for (int i = first; i < m.zones.size(); ++i)
+        {
+            auto& zone = m.zones.getReference (i);
+            zone.instrument = "Addictive Drums 2/" + drum;
+            zone.library = library;
+        }
+    };
+
+    addSlot ("KICK", "Kick", { { 1, "KICK1", "Kick", true } });
+    addSlot ("SNAR", "Snare", { { 3, "SNARE1 CENTER", "Open Hit", true }, { 2, "SNARE1 RIMSHOT", "RimShot", true },
+                                { 5, "SNARE1 SIDESTICK", "SideStick", true }, { 7, "SNARE1 RIMCLICK", "RimClick", true },
+                                { 4, "SNARE1 RIMSHOT SHALLOW", "Shallow RimShot", true }, { 6, "SNARE1 EDGE", "Shallow Hit", false } });
+    // AD2's open hat (Open A to D) is one sound per opening; the Mimic's hat wants it for the
+    // bow and the edge, so both take it.
+    addSlot ("HHAT", "Hi-Hat", { { 10, "HATS BOW CLOSED", "Closed1 Tip", true }, { 11, "HATS EDGE CLOSED", "Closed1 Shaft", true },
+                                 { 15, "HATS BOW OPEN1", "Open A", true }, { 16, "HATS BOW OPEN2", "Open B", true },
+                                 { 17, "HATS BOW OPEN3", "Open C", true }, { 18, "HATS BOW OPEN4", "Open D", true },
+                                 { 15, "HATS EDGE OPEN1", "Open A", true }, { 16, "HATS EDGE OPEN2", "Open B", true },
+                                 { 17, "HATS EDGE OPEN3", "Open C", true }, { 18, "HATS EDGE OPEN4", "Open D", true },
+                                 { 9, "HATS PEDAL CLOSED", "Foot Close", true }, { 20, "HATS FOOT SPLASH", "Foot Splash", true },
+                                 { 12, "HATS BOW CLOSED2", "Closed2 Tip", false }, { 13, "HATS EDGE CLOSED2", "Closed2 Shaft", false },
+                                 { 14, "HATS BELL CLOSED", "Closed Bell", false }, { 19, "HATS BELL OPEN4", "Open Bell", false } });
+    // AD2's Tom 1 is the highest.
+    static const char* tomLabels[][2] { { "TOM1 CENTER", "TOM1 RIMSHOT" }, { "TOM2 CENTER", "TOM2 RIMSHOT" },
+                                        { "TOM3 CENTER", "TOM3 RIMSHOT" }, { "TOM4 CENTER", "TOM4 RIMSHOT" } };
+    for (int t = 0; t < 4; ++t)
+        addSlot ("TOM" + juce::String (t + 1), "Tom " + juce::String (t + 1),
+                 { { 31 - 2 * t, tomLabels[t][0], "Open Hit", true }, { 32 - 2 * t, tomLabels[t][1], "Rimshot", true } });
+    addSlot ("RID1", "Ride 1", { { 21, "RIDE1 BOW", "Tip", true }, { 22, "RIDE1 BELL", "Bell", true },
+                                 { 23, "RIDE1 EDGE", "Shaft", true }, { 24, "RIDE1 CHOKE", "Choke", false } });
+    addSlot ("RID2", "Ride 2", { { 62, "RIDE2 BOW", "Tip", true }, { 63, "RIDE2 BELL", "Bell", true },
+                                 { 64, "RIDE2 EDGE", "Shaft", true }, { 65, "RIDE2 CHOKE", "Choke", false } });
+    // The state doesn't say which cymbals are crashes, chinas or splashes: they come in as crashes.
+    static const int cymbals[][2] { { 34, 35 }, { 36, 37 }, { 38, 39 }, { 67, 68 }, { 69, 70 }, { 71, 72 } };
+    static const char* cymbalLabels[][2] { { "CRASH1 EDGE", "CRASH1 CHOKE" }, { "CRASH2 EDGE", "CRASH2 CHOKE" }, { "CRASH3 EDGE", "CRASH3 CHOKE" },
+                                           { "CRASH4 EDGE", "CRASH4 CHOKE" }, { "CRASH5 EDGE", "CRASH5 CHOKE" }, { "CRASH6 EDGE", "CRASH6 CHOKE" } };
+    for (int c = 0; c < 6; ++c)
+        addSlot ("CYM" + juce::String (c + 1), "Cymbal " + juce::String (c + 1),
+                 { { cymbals[c][0], cymbalLabels[c][0], "Hit", true }, { cymbals[c][1], cymbalLabels[c][1], "Choke", false } });
+    // Flexi slots hold anything (percussion, extra snares, stacks); each is a percussion piece.
+    static const int flexi[][4] { { 8, 59, 60, 61 }, { 73, 74, 75, 76 }, { 77, 78, 79, 80 } };
+    static const char* flexiLabels[][4] { { "PERC FLEXI1 MAIN", "PERC FLEXI1 SECONDARY", "PERC FLEXI1 ADD1", "PERC FLEXI1 ADD2" },
+                                          { "PERC FLEXI2 MAIN", "PERC FLEXI2 SECONDARY", "PERC FLEXI2 ADD1", "PERC FLEXI2 ADD2" },
+                                          { "PERC FLEXI3 MAIN", "PERC FLEXI3 SECONDARY", "PERC FLEXI3 ADD1", "PERC FLEXI3 ADD2" } };
+    for (int f = 0; f < 3; ++f)
+        addSlot ("FLX" + juce::String (f + 1), "Flexi " + juce::String (f + 1),
+                 { { flexi[f][0], flexiLabels[f][0], "Hit A", true }, { flexi[f][1], flexiLabels[f][1], "Hit B", true },
+                   { flexi[f][2], flexiLabels[f][2], "Hit C", true }, { flexi[f][3], flexiLabels[f][3], "Hit D", true } });
+
+    if (m.zones.isEmpty())
+        error = "The Addictive Drums 2 kit has no drums loaded.";
+    return m;
+}
+
 juce::ValueTree KitMap::toValueTree() const
 {
     juce::ValueTree tree ("KitMap");
