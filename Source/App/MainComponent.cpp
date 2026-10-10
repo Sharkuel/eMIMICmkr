@@ -107,6 +107,8 @@ emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& erro
         return emk::KitMap::fromUgritone (ugritone, error);
     if (const auto soundworks = emk::KitMap::soundworksTextIn (data); soundworks.isNotEmpty())
         return emk::KitMap::fromSoundworks (soundworks, error);
+    if (const auto addictive = emk::KitMap::addictiveTextIn (data); addictive.isNotEmpty())
+        return emk::KitMap::fromAddictive (addictive, error);
     found = false;
     return {};
 }

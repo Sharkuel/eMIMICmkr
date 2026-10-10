@@ -400,6 +400,80 @@ bool soundworksKitReads()
     return ok;
 }
 
+/** An Addictive Drums 2 kit, built as AD2 stores it ("key\0value\0" pairs), with AD2 Standard's notes. */
+bool addictiveKitReads()
+{
+    juce::MemoryOutputStream out;
+    out << "COTTAD2State";
+    auto put = [&out] (const juce::String& key, const juce::String& value)
+    {
+        out << key;
+        out.writeByte (0);
+        out << value;
+        out.writeByte (0);
+    };
+    put ("Version", "8");
+    put ("Layer1/CurrentPresetId", "app____Black Oyster__Black Room.AD2Preset");
+    put ("Layer1/CurrentPresetName", "Black Room");
+    put ("Layer1/PresetSaveInfo", "");
+    for (const auto& [note, artic] : std::initializer_list<std::pair<int, int>> {
+             { 36, 1 }, { 37, 2 }, { 38, 3 }, { 41, 4 }, { 42, 5 }, { 43, 6 }, { 45, 21 }, { 46, 34 }, { 49, 10 }, { 50, 11 },
+             { 54, 15 }, { 57, 18 }, { 48, 9 }, { 60, 21 }, { 61, 22 }, { 62, 23 }, { 71, 31 }, { 72, 32 }, { 65, 25 },
+             { 77, 34 }, { 78, 35 }, { 84, 62 }, { 101, 77 } })
+        put ("MidiFilterMap_MAP_KeyMap_" + juce::String (note).paddedLeft ('0', 3), juce::String (artic));
+    for (const auto& [slot, id] : std::initializer_list<std::pair<const char*, const char*>> {
+             { "KICK", "40102" }, { "SNAR", "40202" }, { "HHAT", "40314" }, { "TOM1", "40402" }, { "TOM4", "40602" },
+             { "RID1", "41004" }, { "RID2", "0" }, { "CYM1", "40911" }, { "FLX3", "41302" } })
+        put (juce::String ("Sampler_") + slot + "_KitPieceSelection", id);
+    put ("StateProductName", "Addictive Drums 2");
+
+    juce::String error;
+    const auto m = emk::KitMap::fromAddictive (emk::KitMap::addictiveTextIn (out.getMemoryBlock()), error);
+    auto find = [&m] (const char* label) -> const emk::KitZone*
+    {
+        for (const auto& z : m.zones)
+            if (z.label == label)
+                return &z;
+        return nullptr;
+    };
+    auto is = [&] (const char* label, const char* piece, int note, bool on)
+    {
+        const auto* z = find (label);
+        return z != nullptr && z->piece == piece && z->note == note && z->enabled == on;
+    };
+    bool ok = error.isEmpty() && m.kitName == "Black Room" && is ("KICK1", "Kick", 36, true)
+              && find ("KICK1")->library == "Black Oyster" && find ("KICK1")->instrument == "Addictive Drums 2/40102"
+              && is ("SNARE1 CENTER", "Snare", 38, true) && is ("SNARE1 RIMSHOT", "Snare", 37, true)
+              && is ("SNARE1 SIDESTICK", "Snare", 42, true) && is ("SNARE1 RIMSHOT SHALLOW", "Snare", 41, true)
+              && is ("SNARE1 EDGE", "Snare", 43, false)
+              && is ("HATS BOW CLOSED", "Hi-Hat", 49, true) && is ("HATS EDGE OPEN4", "Hi-Hat", 57, true)
+              && is ("HATS BOW OPEN1", "Hi-Hat", 54, true) && is ("HATS PEDAL CLOSED", "Hi-Hat", 48, true)
+              && is ("TOM1 CENTER", "Tom 1", 71, true) && is ("TOM4 CENTER", "Tom 4", 65, true) && find ("TOM4 RIMSHOT") == nullptr
+              && is ("RIDE1 BOW", "Ride 1", 60, true) && is ("RIDE1 EDGE", "Ride 1", 62, true) && find ("RIDE2 BOW") == nullptr
+              && is ("CRASH1 EDGE", "Cymbal 1", 77, true) && is ("CRASH1 CHOKE", "Cymbal 1", 78, false)
+              && is ("PERC FLEXI3 MAIN", "Flexi 3", 101, true);
+
+    juce::String notAddictive;
+    emk::KitMap::fromAddictive ("<Root/>", notAddictive);
+    ok = ok && notAddictive.isNotEmpty() && emk::KitMap::addictiveTextIn (juce::MemoryBlock ("PlugVersion 3", 13)).isEmpty();
+
+    if (const auto path = juce::SystemStats::getEnvironmentVariable ("AD2_STATE", {}); path.isNotEmpty())
+    {
+        juce::MemoryBlock real;
+        juce::File (path).loadFileAsData (real);
+        juce::String realError;
+        const auto r = emk::KitMap::fromAddictive (emk::KitMap::addictiveTextIn (real), realError);
+        std::printf ("Addictive Drums 2 state: %s, %d zones, error '%s'\n", r.kitName.toRawUTF8(), r.zones.size(), realError.toRawUTF8());
+        for (const auto& z : r.zones)
+            std::printf ("  %-10s %-24s %3d %s %-24s %s\n", z.piece.toRawUTF8(), z.label.toRawUTF8(), z.note, z.enabled ? "on " : "off",
+                         z.pluginName.toRawUTF8(), z.instrument.toRawUTF8());
+        ok = ok && realError.isEmpty();
+    }
+    if (! ok)
+        std::printf ("addictiveKitReads failed (%s)\n", error.toRawUTF8());
+    return ok;
+}
+
 /** A MODO DRUM kit, built as MODO DRUM stores it (a binary ValueTree after its own header). */
 bool modoKitReads()
 {
@@ -756,7 +830,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && addictiveKitReads() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
