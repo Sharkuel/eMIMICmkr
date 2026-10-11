@@ -436,8 +436,10 @@ std::vector<int> encodeBlocks (const Samples& x, juce::MemoryOutputStream& out)
         for (size_t k = 0; k < widest.size(); ++k)
             widest[k] = std::max (need[(size_t) p + k], k > 0 ? widest[k - 1] : juce::uint8 (1));
 
-        // The smallest width that fits a full block, as mci.py picks it.
-        int bits = 1, n = 0;
+        // The smallest width that fits a full block, as mci.py picks it. Silence would fit 1-bit
+        // blocks of 8128 frames; Pearl's own files never go below 4 bits (2032 frames), and the
+        // narrower ones are the likely cause of clicks heard on the Mimic.
+        int bits = minBlockBits, n = 0;
         for (;; ++bits)
         {
             if (bits > 32)
@@ -860,14 +862,54 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
         }
     }
 
+    // A hit recorded past full scale turns the whole instrument down, so the balance between
+    // layers and zones stays and nothing clips (or overflows a block header).
+    int peak = 0;
+    for (const auto* s : pool)
+        for (auto v : *s)
+            peak = std::max (peak, std::abs (v));
+    std::vector<Samples> scaled;
+    if (peak > fullScale)
+    {
+        scaled.reserve (pool.size());   // no reallocation: pool points into it
+        for (size_t i = 0; i < pool.size(); ++i)
+        {
+            Samples t (pool[i]->size());
+            for (size_t k = 0; k < t.size(); ++k)
+            {
+                const auto v = (juce::int64) (*pool[i])[k] * fullScale;   // Python's floor division
+                t[k] = (int) (v / peak - (v % peak != 0 && v < 0 ? 1 : 0));
+            }
+            scaled.push_back (std::move (t));
+            pool[i] = &scaled.back();
+            envelopes[i] = rmsEnvelope (*pool[i]);
+            if (envelopes[i].empty())
+                envelopes[i].push_back (0);
+        }
+    }
+
+    // Types on the Mimic's stereo overhead mic play a mono sample on the left side only; they
+    // are written as two identical channels, as the stereo cymbals Pearl sells are.
+    const int nchn = instrumentType == "Ride" || instrumentType == "Cymbal" ? 2 : 1;
+    std::vector<Samples> stored;
+    stored.reserve (pool.size());
+    for (const auto* s : pool)
+    {
+        Samples t;
+        t.reserve (s->size() * (size_t) nchn);
+        for (auto v : *s)
+            t.insert (t.end(), (size_t) nchn, v);
+        stored.push_back (std::move (t));
+    }
+
     // Pool: compress every sample, then lay out the RAM heads, first round robins first.
     juce::MemoryOutputStream data;
     std::vector<HeadLayout> layouts;
     std::vector<int> dlen;
-    for (const auto* s : pool)
+    for (const auto& s : stored)
     {
         const auto before = data.getDataSize();
-        layouts.push_back (headLayout (encodeBlocks (*s, data)));
+        layouts.push_back (headLayout (encodeBlocks (s, data)));
         dlen.push_back ((int) (data.getDataSize() - before));
     }
     std::vector<size_t> headOrder (pool.size());
@@ -879,7 +921,7 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
     for (auto i : headOrder)
     {
         dedo[i] = (int) heads.getDataSize();
-        encodeHead (*pool[i], layouts[i].desc, heads);
+        encodeHead (stored[i], layouts[i].desc, heads);
     }
     std::vector<int> dofs;
     auto pos = (juce::int64) heads.getDataSize();
@@ -895,7 +937,7 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
     std::vector<int> fcnt, desc, nobu;
     for (size_t i = 0; i < pool.size(); ++i)
     {
-        fcnt.push_back ((int) pool[i]->size());
+        fcnt.push_back ((int) stored[i].size());   // values, all channels
         desc.push_back (layouts[i].desc);
         nobu.push_back (layouts[i].nobu);
     }
@@ -903,7 +945,7 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
     put (Q + "dofs", Value::ofInts (dofs));
     put (Q + "dlen", Value::ofInts (dlen));
     put (Q + "fcnt", Value::ofInts (fcnt));
-    put (Q + "nchn", Value::ofInts (std::vector<int> (pool.size(), 1)));
+    put (Q + "nchn", Value::ofInts (std::vector<int> (pool.size(), nchn)));
     put (Q + "dedo", Value::ofInts (dedo));
     put (Q + "desc", Value::ofInts (desc));
     put (Q + "nobu", Value::ofInts (nobu));
@@ -943,7 +985,7 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
              { "sus", 1.0 }, { "sus2", 1.0 } })
         put (std::string ("INST0micinf0") + k, Value::ofFloat (v));
     for (const auto& [k, v] : std::initializer_list<std::pair<const char*, int>> {
-             { "INST0dav2", 1 }, { "INST0micinf0enven", 1 }, { "INST0micinf0isst", 0 },
+             { "INST0dav2", 1 }, { "INST0micinf0enven", 1 }, { "INST0micinf0isst", nchn > 1 ? 1 : 0 },
              { "INST0micinf0micen", 1 }, { "INST0micinf0micm", 0 }, { "INST0tmr", 1 },
              { "INSTedtr", 1 }, { "INSTmnlth", 1 } })
         put (k, Value::ofU8 (v));

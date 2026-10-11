@@ -127,21 +127,58 @@ class Source:
         return tops.pop() if len(tops) == 1 else None
 
 
+def _float_wav(data: bytes):
+    """(channels, rate, raw) of a 32-bit float WAV, or None for any other WAV."""
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return None
+    pos, fmt = 12, None
+    while pos + 8 <= len(data):
+        kind, size = data[pos:pos + 4], int.from_bytes(data[pos + 4:pos + 8], "little")
+        body = data[pos + 8:pos + 8 + size]
+        if kind == b"fmt ":
+            tag, ch, rate = struct.unpack_from("<HHI", body)
+            bits = struct.unpack_from("<H", body, 14)[0]
+            if tag == 0xFFFE and len(body) >= 40:
+                tag = struct.unpack_from("<H", body, 24)[0]
+            if tag != 3:
+                return None
+            if bits != 32:
+                raise ValueError(f"unsupported float sample width {bits} bit")
+            fmt = (ch, rate)
+        elif kind == b"data" and fmt is not None:
+            return fmt[0], fmt[1], body[:len(body) // (4 * fmt[0]) * 4 * fmt[0]]
+        pos += 8 + size + (size & 1)
+    raise ValueError("WAV fmt chunk and/or data chunk missing")
+
+
 def read_wav(data: bytes) -> list[int]:
-    """Mono samples on the 24-bit scale. Stereo is averaged; 16-bit lands on the Editor's grid."""
-    w = wave.open(io.BytesIO(data))
-    if w.getframerate() != SAMPLE_RATE:
-        raise ValueError(f"{w.getframerate()} Hz; render at {SAMPLE_RATE} Hz (resampling is not built yet)")
-    width, ch = w.getsampwidth(), w.getnchannels()
-    raw = w.readframes(w.getnframes())
-    if width == 2:
-        vals = [v << 8 for v in struct.unpack(f"<{len(raw) // 2}h", raw)]
-    elif width == 3:
-        vals = [int.from_bytes(raw[i:i + 3], "little", signed=True) for i in range(0, len(raw), 3)]
-    elif width == 4:
-        vals = [v >> 8 for v in struct.unpack(f"<{len(raw) // 4}i", raw)]
+    """Mono samples on the 24-bit scale. Stereo is averaged; 16-bit lands on the Editor's grid.
+
+    32-bit float WAVs (what the recorder writes) may go past full scale; build_instrument()
+    turns such an instrument down as a whole.
+    """
+    flt = _float_wav(data)
+    if flt is not None:
+        ch, rate, raw = flt
+        if rate != SAMPLE_RATE:
+            raise ValueError(f"{rate} Hz; render at {SAMPLE_RATE} Hz (resampling is not built yet)")
+        # Kept within 2**30, so a wild value can't overflow (nor NaN stop the conversion).
+        vals = [round(max(-2.0 ** 30, min(2.0 ** 30, v * 2 ** 23))) if v == v else 0
+                for v in struct.unpack(f"<{len(raw) // 4}f", raw)]
     else:
-        raise ValueError(f"unsupported sample width {width * 8} bit")
+        w = wave.open(io.BytesIO(data))
+        if w.getframerate() != SAMPLE_RATE:
+            raise ValueError(f"{w.getframerate()} Hz; render at {SAMPLE_RATE} Hz (resampling is not built yet)")
+        width, ch = w.getsampwidth(), w.getnchannels()
+        raw = w.readframes(w.getnframes())
+        if width == 2:
+            vals = [v << 8 for v in struct.unpack(f"<{len(raw) // 2}h", raw)]
+        elif width == 3:
+            vals = [int.from_bytes(raw[i:i + 3], "little", signed=True) for i in range(0, len(raw), 3)]
+        elif width == 4:
+            vals = [v >> 8 for v in struct.unpack(f"<{len(raw) // 4}i", raw)]
+        else:
+            raise ValueError(f"unsupported sample width {width * 8} bit")
     if ch > 1:
         vals = [sum(vals[i:i + ch]) // ch for i in range(0, len(vals), ch)]
     return vals

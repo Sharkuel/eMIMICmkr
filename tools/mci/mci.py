@@ -31,6 +31,8 @@ PAYLOAD_BITS = (BLOCK_SIZE - BLOCK_HEADER) * 8
 HEAD_PAD = 63              # zero frames in front of every RAM head
 HEAD_MAX_FRAMES = 32768    # a head never exceeds this many frames
 HEAD_MAX_BLOCKS = 64       # ...nor this many compressed blocks
+MIN_BLOCK_BITS = 4         # Pearl never packs deltas narrower than this (see encode_blocks)
+FULL_SCALE = 2 ** 23 - 1   # largest value a block header (and the Mimic) can hold
 
 MAX_ROUND_ROBINS = 16      # length of every veloLay#smpidx array
 RT_ARRAY_LEN = 8           # length of every release-time array
@@ -248,7 +250,9 @@ def encode_blocks(x: list[int]) -> tuple[bytes, list[int]]:
     p, total = 0, len(x)
     need = [_bits_for(x[k + 1] - x[k]) for k in range(total - 1)]
     while p < total:
-        for bits in range(1, 33):
+        # Silence would fit 1-bit blocks of 8128 frames. Pearl's own files never go below 4 bits
+        # (2032 frames); narrower ones are the likely cause of clicks heard on the Mimic.
+        for bits in range(MIN_BLOCK_BITS, 33):
             n = min(PAYLOAD_BITS // bits, total - p)
             if max(need[p:p + n], default=1) <= bits:
                 break
@@ -337,6 +341,26 @@ ZONE_TYPES = {
 
 # (micpos, mict) the Editor writes per instrument type; anything else gets (0, 0).
 MIC_DEFAULTS = {"Kick": (2, 0), "Ride": (5, 1), "Cymbal": (5, 1), "Hat": (0, 0)}
+# Types on the Mimic's stereo overhead mic, where a mono sample plays on the left side only.
+# They are written as two identical channels, as the stereo cymbals Pearl sells are.
+STEREO_TYPES = ("Ride", "Cymbal")
+
+
+def interleave(samples: list[int], channels: int) -> list[int]:
+    """One mono sample repeated on every channel, interleaved."""
+    return [v for v in samples for _ in range(channels)]
+
+
+def fit_full_scale(pool: list[list[int]]) -> list[list[int]]:
+    """Turns the whole instrument down when any sample goes past full scale.
+
+    One gain for every sample keeps the balance between layers and zones; a hit recorded
+    too hot is not clipped (and would not fit a block header).
+    """
+    peak = max((abs(v) for s in pool for v in s), default=0)
+    if peak <= FULL_SCALE:
+        return pool
+    return [[v * FULL_SCALE // peak for v in s] for s in pool]
 
 
 def _cymbal_zones(zones, choke, release_bottom, release_top) -> list[Articulation]:
@@ -537,8 +561,11 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
             put(L + "maxrtl", F32_ARRAY, [hi] + [1.0] * (RT_ARRAY_LEN - 1))
 
     # Pool: compress every sample, then lay out the RAM heads.
+    pool = fit_full_scale(pool)
+    nchn = 2 if instrument_type in STEREO_TYPES else 1
+    stored = [interleave(s, nchn) if nchn > 1 else s for s in pool]
     blobs, layouts = [], []
-    for s in pool:
+    for s in stored:
         blob, frames = encode_blocks(s)
         blobs.append(blob)
         layouts.append(head_layout(frames))
@@ -547,7 +574,7 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
     heads = bytearray()
     for i in head_order:
         dedo[i] = len(heads)
-        heads += encode_head(pool[i], layouts[i][1])
+        heads += encode_head(stored[i], layouts[i][1])
     dofs, pos = [], len(heads)
     for b in blobs:
         dofs.append(pos)
@@ -557,8 +584,8 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
     put(Q + "psz", I32, len(pool))
     put(Q + "dofs", I32_ARRAY, dofs)
     put(Q + "dlen", I32_ARRAY, [len(b) for b in blobs])
-    put(Q + "fcnt", I32_ARRAY, [len(s) for s in pool])
-    put(Q + "nchn", I32_ARRAY, [1] * len(pool))
+    put(Q + "fcnt", I32_ARRAY, [len(s) for s in stored])   # values, all channels
+    put(Q + "nchn", I32_ARRAY, [nchn] * len(pool))
     put(Q + "dedo", I32_ARRAY, dedo)
     put(Q + "desc", I32_ARRAY, [l[1] for l in layouts])
     put(Q + "nobu", I32_ARRAY, [l[0] for l in layouts])
@@ -588,7 +615,7 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
                  "micrs": 0.0, "mictn": 0.5, "micv": 1.0, "rel": 1.0, "rel2": 1.0,
                  "sus": 1.0, "sus2": 1.0}.items():
         put("INST0micinf0" + k, F32, v)
-    for k, v in {"INST0dav2": 1, "INST0micinf0enven": 1, "INST0micinf0isst": 0,
+    for k, v in {"INST0dav2": 1, "INST0micinf0enven": 1, "INST0micinf0isst": int(nchn > 1),
                  "INST0micinf0micen": 1, "INST0micinf0micm": 0, "INST0tmr": 1,
                  "INSTedtr": 1, "INSTmnlth": 1}.items():
         put(k, U8, v)

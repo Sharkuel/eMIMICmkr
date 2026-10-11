@@ -118,8 +118,10 @@ A 2-zone crash or splash (the Mimic's crash menu) has `instyp` `Cymbal` and mic 
 (micpos 5, mict 1). It has three zones, edge first: Edge (43), Bow (40) and an empty
 Choke Ring (41), with the same release times as a ride. This comes from four Meinl
 "X-Hihat" files from mimicpro.com, which are hi-hats packaged as 2-zone cymbals (they
-came in a folder named `MeinlXhat.lib`). Those files also set `INST0micinf0isst` to 1,
-where Editor files have 0; what it does is **unknown**.
+came in a folder named `MeinlXhat.lib`). Those files are stereo (`pool0nchn` 2) and set
+`INST0micinf0isst` to 1, where Editor files are mono with 0. On the Mimic a mono Cymbal or
+Ride (micpos 5, the overhead mic) plays on the left side only, so eMIMICmkr writes those
+two types as two identical channels with `isst` 1, like the Meinl files.
 
 The Editor cannot make real hi-hats (open/closed with a pedal). Factory hi-hats are
 described below.
@@ -188,7 +190,7 @@ MD5 of the whole file) for every `.bin`, `.drd`, `.kit` and `libver.mimicinfo`.
 | --- | --- | --- |
 | `pool0psz` | int | Number of samples |
 | `pool0fcnt` | int[] | Length in frames |
-| `pool0nchn` | int[] | Channels, always 1 |
+| `pool0nchn` | int[] | Channels: 1 in Editor files, 2 in our Cymbal/Ride, 5 in factory hats |
 | `pool0dofs` | int[] | Offset of the compressed data, counted from `base` |
 | `pool0dlen` | int[] | Compressed length, a multiple of 1024 |
 | `pool0dedo` | int[] | Offset of the RAM head, counted from `base` |
@@ -227,7 +229,7 @@ Each sample is a run of 1024-byte blocks:
 
 | Offset | Size | Content |
 | --- | --- | --- |
-| 0 | 1 | u8 `bits`, the delta width (10–25 seen) |
+| 0 | 1 | u8 `bits`, the delta width (10–25 seen in Editor files, never below 4 in Pearl's) |
 | 1 | 1 | u8 low byte of the first value |
 | 2 | 2 | i16 first value >> 8 |
 | 4 | 4 | u32 `n`, frames in the block |
@@ -246,8 +248,11 @@ next block, so n × bits ≤ 8128. Unused bits are zero.
 
 The Editor sizes a delta as |d| < 2^(bits−1). It picks `bits` from about the next
 580 frames and cuts a block short when a later delta would not fit. Our encoder
-instead picks the smallest `bits` that fits a full block. That gives a different but
-equally valid stream: the decoder only reads the headers.
+instead picks the smallest `bits` that fits a full block, but never less than 4. That
+gives a different but equally valid stream: the decoder only reads the headers. The floor
+matters: without it, silence packs into 1-bit blocks of 8128 frames, which Pearl's files
+never contain (theirs stop at 4 bits, 2032 frames), and are the likely cause of the
+clicks heard on the Mimic from instruments full of them.
 
 ### RAM heads
 
@@ -314,4 +319,4 @@ the master (`mK...`, `mRev...`, `KitVol`) and pad settings (`TPAD...`) are kit-w
 - What exactly do `rmse` and `mrms` drive, and how far off may they be?
 - How does the Editor compute `minvel` and `minvol` from loudness ("Calc Velo")? Ours
   is a square-root curve on peak loudness, close but not identical.
-- What does `isst` do?
+- What does `isst` do on its own (we only ever set it together with 2 channels)?

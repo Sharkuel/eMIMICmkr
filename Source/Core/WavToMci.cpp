@@ -660,7 +660,7 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
 
     int channels = 0, width = 0;
     juce::uint32 rate = 0;
-    bool haveFormat = false;
+    bool haveFormat = false, isFloat = false;
     const juce::uint8* raw = nullptr;
     size_t rawSize = 0;
     for (size_t pos = 12; pos + 8 <= size;)
@@ -675,15 +675,24 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
             channels = juce::ByteOrder::littleEndianShort (d + body + 2);
             rate = juce::ByteOrder::littleEndianInt (d + body + 4);
             const int bits = juce::ByteOrder::littleEndianShort (d + body + 14);
+            int format = tag;
             if (tag == 0xfffe)
             {
-                static const juce::uint8 pcm[] = { 1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71 };
-                if (body + 40 > size || std::memcmp (d + body + 24, pcm, 16) != 0)
-                    throw Error ("unknown WAV format (only integer PCM is read)");
+                // The sub-format GUID: its first two bytes are the format tag, the rest is fixed.
+                static const juce::uint8 guid[] = { 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71 };
+                if (body + 40 > size || std::memcmp (d + body + 26, guid, 14) != 0)
+                    throw Error ("unknown WAV format (only integer PCM and 32-bit float are read)");
+                format = juce::ByteOrder::littleEndianShort (d + body + 24);
             }
-            else if (tag != 1)
+            if (format == 3)
             {
-                throw Error ("unknown WAV format " + std::to_string (tag) + " (only integer PCM is read)");
+                if (bits != 32)
+                    throw Error ("unsupported float sample width " + std::to_string (bits) + " bit");
+                isFloat = true;
+            }
+            else if (format != 1)
+            {
+                throw Error ("unknown WAV format " + std::to_string (format) + " (only integer PCM and 32-bit float are read)");
             }
             width = (bits + 7) / 8;
             if (width == 0 || channels == 0)
@@ -713,7 +722,16 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
     for (size_t i = 0; i < vals.size(); ++i)
     {
         const auto* p = raw + i * (size_t) width;
-        if (width == 2)
+        if (isFloat)
+        {
+            // May go past full scale; buildInstrument turns such an instrument down as a whole.
+            float f;
+            const auto bitsOf = juce::ByteOrder::littleEndianInt (p);
+            std::memcpy (&f, &bitsOf, 4);
+            // Kept within 2^30, so a wild value can't overflow (nor NaN stop the conversion).
+            vals[i] = std::isnan (f) ? 0 : roundHalfEven (juce::jlimit (-1073741824.0, 1073741824.0, (double) f * 8388608.0));
+        }
+        else if (width == 2)
             vals[i] = (int) (juce::int16) juce::ByteOrder::littleEndianShort (p) * 256;
         else if (width == 3)
             vals[i] = juce::ByteOrder::littleEndian24Bit (p);   // sign-extended

@@ -134,8 +134,33 @@ void checkContainer()
     const auto again = mci::readMci (bytes.getData(), bytes.getSize());
     check (mci::writeMci (again) == bytes, "container round trip");
     check (again.getString ("INST0artic2artn") == "Choke Ring" && again.getInt ("INST0pool0psz") == 5, "metadata read back");
+    // Cymbals are stored as two identical channels, so they play centred on the overhead mic.
+    mci::Samples stereo;
+    for (auto v : s)
+        stereo.insert (stereo.end(), 2, v);
     for (int i = 0; i < again.getInt ("INST0pool0psz"); ++i)
-        check (mci::sample (again, i) == s, "audio read back");
+        check (mci::sample (again, i) == stereo, "audio read back");
+    check (again.getInts ("INST0pool0nchn") == std::vector<int> (5, 2) && again.getInt ("INST0micinf0isst") == 1
+               && again.getInts ("INST0pool0fcnt")[0] == (int) stereo.size()
+               && again.getInt ("INST0pool0rmsenv0rmsl") == 4,   // per frame, not per value
+           "cymbal written in stereo");
+
+    // Silence never packs into blocks narrower than Pearl's 4 bits, and a hit past full scale
+    // turns the whole instrument down instead of clipping.
+    mci::Samples loud (20000, 0);
+    loud[10] = 3 * mci::fullScale;
+    loud[11] = -mci::fullScale;
+    const auto k = mci::buildInstrument ("Test Kick", "Kick", { mci::Articulation { "Kick", 36, { { loud }, { s } } } },
+                                         WavToMci::thumbnail());
+    const auto* blob = static_cast<const juce::uint8*> (k.data.getData());
+    bool narrow = false;
+    for (size_t off = 0; off < k.data.getSize(); off += (size_t) mci::blockSize)
+        narrow = narrow || blob[off] < mci::minBlockBits;
+    const auto quieter = mci::sample (k, 0);
+    check (! narrow && quieter[10] == mci::fullScale && quieter[11] == -mci::fullScale / 3 - 1
+               && mci::sample (k, 1)[1] == (int) std::floor ((double) s[1] / 3.0)
+               && k.getInts ("INST0pool0nchn") == std::vector<int> { 1, 1 },
+           "minimum block width and full-scale fit");
 
     juce::TemporaryFile temp (".mci");
     check (mci::writeMciFile (f, temp.getFile()).wasOk(), "writeMciFile");
