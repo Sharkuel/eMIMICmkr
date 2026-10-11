@@ -1524,6 +1524,33 @@ const std::vector<std::pair<KontaktLibrary, juce::String>>& kontaktLibraryTable(
               "Crash 3|CRASH3 EDGE|G#2|1\nCrash 3|CRASH3 CHOKE|A2|0\nCrash 4|CRASH4 EDGE|A#2|1\nCrash 4|CRASH4 CHOKE|B2|0\n"
               "Splash 1|SPLASH1 EDGE|C#4|1\nSplash 1|SPLASH1 CHOKE|D4|0\nSplash 2|SPLASH2 EDGE|D#4|1\nSplash 2|SPLASH2 CHOKE|E4|0\n"
               "China 1|CHINA1 EDGE|F3|1\nChina 1|CHINA1 CHOKE|F#3|0\nChina 2|CHINA2 EDGE|G3|1\nChina 2|CHINA2 CHOKE|G#3|0\n" },
+        { { "GGD Invasion", "GGD Invasion", nullptr },
+          juce::String ("Kick|KICK1|C0|1\nKick 2|KICK2|B-1|0\n"
+              "Snare|SNARE1 CENTER|D0|1\nSnare|SNARE1 FLAM|D#0|0\nSnare|SNARE1 BUZZ|E0|0\nSnare|SNARE1 SIDESTICK|F#0|1\n"
+              "Snare 2|SNARE2 CENTER|F0|0\n")
+            + tomsOneToFour + "Tom 5|TOM5 CENTER|C#1|1\nTom 6|TOM6 CENTER|D1|1\n" + rideD3
+            + "Hi-Hat|HATS BOW TIGHT|F1|1\nHi-Hat|HATS EDGE TIGHT|F#1|1\nHi-Hat|HATS BOW CLOSED|G1|1\nHi-Hat|HATS EDGE CLOSED|G#1|1\n"
+              "Hi-Hat|HATS EDGE OPEN1|A1|1\nHi-Hat|HATS BOW OPEN1|A1|1\nHi-Hat|HATS EDGE OPEN2|A#1|1\nHi-Hat|HATS BOW OPEN2|A#1|1\n"
+              "Hi-Hat|HATS EDGE OPEN3|B1|1\nHi-Hat|HATS BOW OPEN3|B1|1\nHi-Hat|HATS PEDAL CLOSED|C2|1\n"
+              "Hi-Hat 2|HATS2 EDGE CLOSED|A#3|0\nHi-Hat 2|HATS2 EDGE OPEN1|B3|0\n"
+              "Crash 1|CRASH1 EDGE|E2|1\nCrash 1|CRASH1 CHOKE|F2|0\nCrash 2|CRASH2 EDGE|F#2|1\nCrash 2|CRASH2 CHOKE|G2|0\n"
+              "Crash 3|CRASH3 EDGE|G#2|1\nCrash 3|CRASH3 CHOKE|A2|0\nCrash 4|CRASH4 EDGE|A#2|1\nCrash 4|CRASH4 CHOKE|B2|0\n"
+              "China 1|CHINA1 EDGE|F3|1\nChina 1|CHINA1 CHOKE|F#3|0\nChina 2|CHINA2 EDGE|G3|1\nChina 2|CHINA2 CHOKE|G#3|0\n"
+              "Splash 1|SPLASH1 EDGE|C#4|1\nSplash 1|SPLASH1 CHOKE|D4|0\nSplash 2|SPLASH2 EDGE|D#4|1\nSplash 2|SPLASH2 CHOKE|E4|0\n" },
+        // Odeholm's default map uses other notes than the rest; its open hat is one sound per opening.
+        { { "Odeholm Drums", "Odeholm Drums", nullptr },
+          juce::String ("Kick|KICK1|C1|1\nKick 2|KICK2|B0|0\nSnare|SNARE1 CENTER|D1|1\nSnare|SNARE1 FLAM|D#1|0\n"
+              "Tom 1|TOM1 CENTER|C2|1\nTom 2|TOM2 CENTER|B1|1\nTom 3|TOM3 CENTER|A1|1\nTom 4|TOM4 CENTER|G1|1\n"
+              "Hi-Hat|HATS BOW CLOSED|D#3|1\nHi-Hat|HATS EDGE CLOSED|C#3|1\nHi-Hat|HATS PEDAL CLOSED|A-1|1\n"
+              "Hi-Hat|HATS EDGE OPEN1|A#-1|1\nHi-Hat|HATS BOW OPEN1|A#-1|1\nHi-Hat|HATS EDGE OPEN2|E3|1\nHi-Hat|HATS BOW OPEN2|E3|1\n"
+              "Hi-Hat|HATS EDGE OPEN3|C3|1\nHi-Hat|HATS BOW OPEN3|C3|1\n"
+              "Ride|RIDE1 BOW|D#2|1\nRide|RIDE1 BELL|F2|1\nRide|RIDE1 EDGE|B2|1\n"
+              "Crash 1|CRASH1 EDGE|C#2|1\nCrash 1|CRASH1 CHOKE|D2|0\nCrash 2|CRASH2 EDGE|A2|1\nCrash 2|CRASH2 CHOKE|A#2|0\n"
+              "Crash 3|CRASH3 EDGE|G3|1\nCrash 3|CRASH3 CHOKE|G#3|0\n"
+              "China 1|CHINA1 EDGE|F3|1\nChina 1|CHINA1 CHOKE|F#3|0\nChina 2|CHINA2 EDGE|E2|1\nChina 2|CHINA2 CHOKE|F#2|0\n"
+              "Stack|STACK1 EDGE|F0|1\n"
+              "Splash 1|SPLASH1 EDGE|A3|1\nSplash 1|SPLASH1 CHOKE|A#3|0\nSplash 2|SPLASH2 EDGE|G2|1\nSplash 2|SPLASH2 CHOKE|G#2|0\n"
+              "Bell|PERC 1 HEAD|B3|0\n") },
     };
     return table;
 }
