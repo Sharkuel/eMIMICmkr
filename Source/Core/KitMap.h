@@ -149,6 +149,13 @@ public:
     /** Finds BFD3's kit XML inside a plugin state or kit preset file. */
     static juce::String bfd3TextIn (const juce::MemoryBlock&);
 
+    /** A BFD3 plugin state with a note for every articulation of the drums its MIDI map leaves
+        out (drums loaded into extra slots), so they can be recorded. Free notes are used first,
+        then the notes that start grooves. Hand the result to the plugin's setStateInformation.
+        Empty when the state isn't BFD3's or every drum already has notes; mapped counts the
+        notes given. */
+    static juce::MemoryBlock bfd3WithEveryDrumMapped (const juce::MemoryBlock& state, int& mapped);
+
     /** How many hits to record for zones[index] so the piece fits the Mimic's wave-cell limit
         for its instrument type (kick 64, snare 300, tom 200, cymbal 200, ride 300, percussion 200,
         shared by the piece's ticked zones; one cymbal cell goes to the choke ring). Hi-hat

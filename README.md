@@ -85,7 +85,10 @@ them as VST3 plugins the app can load.
    - **Read plugin**: with Superior Drummer 3, BFD3, MODO DRUM, Ugritone's drums (KVLT Drums II), DW Soundworks, Addictive Drums 2 or ML Drums, reads the loaded kit straight from the
      plugin: every instrument slot, its articulations and their notes (main zones ticked). BFD3
      also gives each drum's name ("Snare AXM Open High") and library ("Crush Drums"), which fill
-     Name on the Mimic and Library; MODO DRUM gives each instrument's name ("Crash 16 Custom") and
+     Name on the Mimic and Library. Drums loaded into BFD3 slots its MIDI map leaves out (say, a
+     dozen extra snares and cymbals to export at once) get free notes in BFD3's map, then the notes
+     that start grooves, so they can be recorded too; save the BFD3 project afterwards only if you
+     want to keep that map. MODO DRUM gives each instrument's name ("Crash 16 Custom") and
      leaves out the slots switched off in its kit. Each MODO DRUM drum has a note per hand: the left
      hand's is ticked, the right hand's is there to tick. Ugritone gives each panel's drum ("DM Custom Z17"),
      the kit name and its Midinote Settings map. DW Soundworks gives each drum's name

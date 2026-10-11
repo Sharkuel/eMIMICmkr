@@ -602,6 +602,103 @@ void forEachElement (const juce::XmlElement& e, const std::function<void (const 
 }
 } // namespace
 
+juce::MemoryBlock KitMap::bfd3WithEveryDrumMapped (const juce::MemoryBlock& state, int& mapped)
+{
+    mapped = 0;
+    // A VST3 state as JUCE hosts hand it over: "VC2!", a size, then XML holding the plugin's
+    // own data in base64 under IComponent. BFD3's own data is "BFDstate", a header, then XML.
+    const auto* bytes = static_cast<const char*> (state.getData());
+    if (state.getSize() < 8 || std::memcmp (bytes, "VC2!", 4) != 0)
+        return {};
+    const auto outerSize = (size_t) juce::ByteOrder::littleEndianInt (bytes + 4);
+    if (outerSize > state.getSize() - 8)
+        return {};
+    const std::string outer (bytes + 8, outerSize);
+    const auto b64Start = outer.find ("<IComponent>"), b64End = outer.find ("</IComponent>");
+    if (b64Start == std::string::npos || b64End == std::string::npos || b64End < b64Start)
+        return {};
+    juce::MemoryBlock innerBlock;
+    if (! innerBlock.fromBase64Encoding (juce::String (outer.substr (b64Start + 12, b64End - b64Start - 12)).trim()))
+        return {};
+    std::string inner (static_cast<const char*> (innerBlock.getData()), innerBlock.getSize());
+    const auto rootStart = inner.find ("<root"), rootEnd = inner.find ("</root>");
+    if (inner.compare (0, 8, "BFDstate") != 0 || rootStart == std::string::npos || rootEnd == std::string::npos)
+        return {};
+
+    const auto xml = juce::parseXML (juce::String::fromUTF8 (inner.data() + rootStart, (int) (rootEnd + 7 - rootStart)));
+    if (xml == nullptr)
+        return {};
+    std::map<int, juce::String> items;
+    std::map<int, std::vector<int>> artics;   // slot -> its loaded articulations
+    std::set<int> mappedSlots;
+    std::vector<int> freeNotes, grooveNotes;
+    forEachElement (*xml, [&] (const juce::XmlElement& e)
+    {
+        const auto name = e.getStringAttribute ("name");
+        if (e.hasTagName ("VString") && name.startsWith ("kit_slot_") && e.getAllSubText().trim().isNotEmpty())
+            items[name.getTrailingIntValue()] = e.getAllSubText().trim();
+        else if (e.hasTagName ("BFD2KitPiece") && name.startsWith ("kp_slot_"))
+            forEachElement (e, [&] (const juce::XmlElement& a)
+            {
+                if (a.hasTagName ("BFD2Artic") && a.getStringAttribute ("name").startsWith ("artic_"))
+                    artics[name.getTrailingIntValue()].push_back (a.getStringAttribute ("name").fromFirstOccurrenceOf ("_", false, false).getIntValue());
+            });
+        else if (e.hasTagName ("VObjectArray") && name.startsWith ("midi_note_"))
+        {
+            const auto note = name.getTrailingIntValue();
+            const auto* element = e.getChildByName ("MIDIMapElement");
+            const auto* req = element != nullptr ? element->getChildByName ("RequestedArticulationID") : nullptr;
+            if (req != nullptr)
+                mappedSlots.insert (req->getIntAttribute ("slot"));
+            else if (element != nullptr && element->getBoolAttribute ("isgrv"))
+                grooveNotes.push_back (note);
+            else
+                freeNotes.push_back (note);
+        }
+    });
+    freeNotes.insert (freeNotes.end(), grooveNotes.begin(), grooveNotes.end());
+
+    std::vector<std::pair<int, int>> wanted;   // (slot, articulation) without a note
+    for (const auto& [slot, item] : items)
+        if (slot >= 0 && mappedSlots.count (slot) == 0)
+            for (const int artic : artics[slot])
+                wanted.emplace_back (slot, artic);
+    if (wanted.empty() || freeNotes.empty())
+        return {};
+
+    for (size_t k = 0; k < wanted.size() && k < freeNotes.size(); ++k)
+    {
+        const auto note = std::to_string (freeNotes[k]);
+        const auto open = "<VObjectArray name=\"midi_note_" + note + "\"";
+        const auto at = inner.find (open, rootStart);
+        if (at == std::string::npos || at > inner.find ("</root>"))
+            continue;
+        // The element is either self-closing or runs to its </VObjectArray>.
+        const auto tagEnd = inner.find ('>', at);
+        const auto end = inner[tagEnd - 1] == '/' ? tagEnd + 1 : inner.find ("</VObjectArray>", tagEnd) + 15;
+        const auto replacement = open + ">\r\n"
+            "            <MIDIMapElement note=\"" + note + "\" isgrv=\"false\" minCC=\"0\" maxCC=\"1\" curve=\"0\" minInCC=\"0\" maxInCC=\"1\" inGate=\"false\">\r\n"
+            "                <RequestedArticulationID name=\"req_artic\" slot=\"" + std::to_string (wanted[k].first)
+            + "\" artic=\"" + std::to_string (wanted[k].second) + "\"/>\r\n"
+            "            </MIDIMapElement>\r\n"
+            "        </VObjectArray>";
+        inner.replace (at, end - at, replacement);
+        ++mapped;
+    }
+    if (mapped == 0)
+        return {};
+
+    juce::MemoryBlock newInner (inner.data(), inner.size());
+    const auto newOuter = outer.substr (0, b64Start + 12) + newInner.toBase64Encoding().toStdString() + outer.substr (b64End);
+    juce::MemoryBlock out;
+    out.append ("VC2!", 4);
+    const auto size = juce::ByteOrder::swapIfBigEndian ((juce::uint32) newOuter.size());
+    out.append (&size, 4);
+    out.append (newOuter.data(), newOuter.size());
+    out.append (bytes + 8 + outerSize, state.getSize() - 8 - outerSize);   // whatever followed, as it was
+    return out;
+}
+
 KitMap KitMap::fromBfd3 (const juce::String& text, juce::String& error)
 {
     auto xml = juce::parseXML (text);
@@ -651,7 +748,7 @@ KitMap KitMap::fromBfd3 (const juce::String& text, juce::String& error)
         if (n.contains ("ride")) return "ride";
         if (n.contains ("splash")) return "splash";
         if (n.contains ("china")) return "china";
-        if (n.contains ("crash") || n.contains ("cymbal")) return "crash";
+        if (n.contains ("crash") || n.contains ("cym")) return "crash";   // "Cymbal", 8BK's "Cym 1"
         switch (slot)
         {
             case 0: return "kick";
@@ -754,10 +851,24 @@ KitMap KitMap::fromBfd3 (const juce::String& text, juce::String& error)
                         add (piece, juce::String (z.zone).isEmpty() ? head : head + " " + z.zone, artic, z.on);
                         used.insert (artic);
                     }
+            // Some cymbals have a plain "Hit" instead: the bow of a ride, the edge of anything else.
+            const bool cymbal = family != "kick" && family != "snare" && family != "tom";
+            const juce::String hitZone = family == "ride" ? "BOW" : "EDGE";
+            const auto has = [&] (const juce::String& artName)
+            {
+                return std::any_of (artics[slot].begin(), artics[slot].end(), [&] (const auto& a) { return a.second == artName; });
+            };
+            if (cymbal && ! has (family == "ride" ? "Bow" : "Edge"))
+                for (const auto& [artic, artName] : artics[slot])
+                    if (artName == "Hit")
+                    {
+                        add (piece, head + " " + hitZone, artic, true);
+                        used.insert (artic);
+                    }
             for (const auto& [artic, artName] : artics[slot])   // anything else: there to listen to and tick
                 if (used.count (artic) == 0)
                     add (piece, head + " " + artName.toUpperCase().retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "), artic, false);
-            if (family != "kick" && family != "snare" && family != "tom")
+            if (cymbal)
                 add (piece, head + " CHOKE", bfd3Choke, false);
         }
         for (int z = firstZone; z < m.zones.size(); ++z)
