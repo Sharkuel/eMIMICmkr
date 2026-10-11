@@ -1537,8 +1537,21 @@ const std::vector<std::pair<KontaktLibrary, juce::String>>& kontaktLibraryTable(
               "Crash 3|CRASH3 EDGE|G#2|1\nCrash 3|CRASH3 CHOKE|A2|0\nCrash 4|CRASH4 EDGE|A#2|1\nCrash 4|CRASH4 CHOKE|B2|0\n"
               "China 1|CHINA1 EDGE|F3|1\nChina 1|CHINA1 CHOKE|F#3|0\nChina 2|CHINA2 EDGE|G3|1\nChina 2|CHINA2 CHOKE|G#3|0\n"
               "Splash 1|SPLASH1 EDGE|C#4|1\nSplash 1|SPLASH1 CHOKE|D4|0\nSplash 2|SPLASH2 EDGE|D#4|1\nSplash 2|SPLASH2 CHOKE|E4|0\n" },
-        // Odeholm's default map uses other notes than the rest; its open hat is one sound per opening.
+        // Odeholm's maps use other notes than the rest; its open hat is one sound per opening.
         { { "Odeholm Drums", "Odeholm Drums", nullptr },
+          juce::String ("Kick|KICK1|C1|1\nKick 2|KICK2|B0|0\nSnare|SNARE1 CENTER|D1|1\nSnare|SNARE1 FLAM|D#1|0\n"
+              "Tom 1|TOM1 CENTER|B1|1\nTom 2|TOM2 CENTER|A1|1\nTom 3|TOM3 CENTER|G1|1\nTom 4|TOM4 CENTER|F1|1\n"
+              "Hi-Hat|HATS BOW CLOSED|D#2|1\nHi-Hat|HATS EDGE CLOSED|E2|1\nHi-Hat|HATS PEDAL CLOSED|F2|1\n"
+              "Hi-Hat|HATS EDGE OPEN1|D2|1\nHi-Hat|HATS BOW OPEN1|D2|1\nHi-Hat|HATS EDGE OPEN2|C#2|1\nHi-Hat|HATS BOW OPEN2|C#2|1\n"
+              "Hi-Hat|HATS EDGE OPEN3|C2|1\nHi-Hat|HATS BOW OPEN3|C2|1\n"
+              "Ride|RIDE1 BOW|A#2|1\nRide|RIDE1 BELL|B2|1\nRide|RIDE1 EDGE|C3|1\n"
+              "Crash 1|CRASH1 EDGE|F#2|1\nCrash 1|CRASH1 CHOKE|G2|0\nCrash 2|CRASH2 EDGE|G#2|1\nCrash 2|CRASH2 CHOKE|A2|0\n"
+              "Crash 3|CRASH3 EDGE|C#3|1\nCrash 3|CRASH3 CHOKE|D3|0\n"
+              "China 1|CHINA1 EDGE|D#3|1\nChina 1|CHINA1 CHOKE|E3|0\nChina 2|CHINA2 EDGE|F3|1\nChina 2|CHINA2 CHOKE|F#3|0\n"
+              "Stack|STACK1 EDGE|G3|1\n"
+              "Splash 1|SPLASH1 EDGE|G#3|1\nSplash 1|SPLASH1 CHOKE|A3|0\nSplash 2|SPLASH2 EDGE|A#3|1\nSplash 2|SPLASH2 CHOKE|B3|0\n"
+              "Bell|PERC 1 HEAD|C4|0\n") },
+        { { "Odeholm Drums (other map)", "Odeholm Drums", nullptr },
           juce::String ("Kick|KICK1|C1|1\nKick 2|KICK2|B0|0\nSnare|SNARE1 CENTER|D1|1\nSnare|SNARE1 FLAM|D#1|0\n"
               "Tom 1|TOM1 CENTER|C2|1\nTom 2|TOM2 CENTER|B1|1\nTom 3|TOM3 CENTER|A1|1\nTom 4|TOM4 CENTER|G1|1\n"
               "Hi-Hat|HATS BOW CLOSED|D#3|1\nHi-Hat|HATS EDGE CLOSED|C#3|1\nHi-Hat|HATS PEDAL CLOSED|A-1|1\n"
