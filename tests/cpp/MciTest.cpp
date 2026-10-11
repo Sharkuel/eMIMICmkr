@@ -150,8 +150,11 @@ void checkContainer()
     mci::Samples loud (20000, 0);
     loud[10] = 3 * mci::fullScale;
     loud[11] = -mci::fullScale;
-    const auto k = mci::buildInstrument ("Test Kick", "Kick", { mci::Articulation { "Kick", 36, { { loud }, { s } } } },
-                                         WavToMci::thumbnail());
+    mci::Articulation kick;
+    kick.name = "Kick";
+    kick.zoneType = 36;
+    kick.layers = { { loud }, { s } };
+    const auto k = mci::buildInstrument ("Test Kick", "Kick", { kick }, WavToMci::thumbnail());
     const auto* blob = static_cast<const juce::uint8*> (k.data.getData());
     bool narrow = false;
     for (size_t off = 0; off < k.data.getSize(); off += (size_t) mci::blockSize)
