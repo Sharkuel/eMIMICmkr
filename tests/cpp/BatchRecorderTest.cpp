@@ -255,6 +255,83 @@ bool bfd3KitReads()
     return ok && empty.isNotEmpty();
 }
 
+/** Drums in BFD3 slots its MIDI map leaves out get free notes, then groove notes; the state
+    keeps everything else (BFD3_STATE names a real state file to try it on). */
+bool bfd3MapsEveryDrum()
+{
+    auto wrap = [] (const juce::String& xml)
+    {
+        juce::MemoryBlock inner;
+        inner.append ("BFDstate\x0c\0\0\0\0\0\0\0\x01\0\0\0\0\0\0\0\0\0\0\0\x01", 29);
+        inner.append (xml.toRawUTF8(), xml.getNumBytesAsUTF8());
+        inner.append ("\r\n\0JUCEPrivateData", 18);
+        const auto outer = "<?xml version=\"1.0\" encoding=\"UTF-8\"?> <VST3PluginState><IComponent>"
+                           + inner.toBase64Encoding() + "</IComponent></VST3PluginState>";
+        juce::MemoryBlock state;
+        const auto size = (juce::uint32) outer.getNumBytesAsUTF8();
+        state.append ("VC2!", 4);
+        state.append (&size, 4);
+        state.append (outer.toRawUTF8(), size);
+        state.append ("\0", 1);
+        return state;
+    };
+    const juce::String xml = "<root SourceEngine=\"BFD3\"><BFD2Kit>"
+        "<VString name=\"kit_slot_0\">Crush Drums/Kick No Reso Slam Pad</VString>"
+        "<VString name=\"kit_slot_48\">Sabian/Crash 18 Evolution oZone</VString>"
+        "<VString name=\"kit_slot_54\">Bosphorus Stanton Moore/Ride 22 Wide</VString>"
+        "<BFD2KitPiece name=\"kp_slot_0\"><BFD2Artic name=\"artic_0_Hit\" artic_name=\"Hit\"/></BFD2KitPiece>"
+        "<BFD2KitPiece name=\"kp_slot_48\"><BFD2Artic name=\"artic_0_Hit\" artic_name=\"Hit\"/>"
+        "<BFD2Artic name=\"artic_1_Bell\" artic_name=\"Bell\"/><BFD2Artic name=\"artic_2_Bow\" artic_name=\"Bow\"/></BFD2KitPiece>"
+        "<BFD2KitPiece name=\"kp_slot_54\"><BFD2Artic name=\"artic_0_Hit\" artic_name=\"Hit\"/>"
+        "<BFD2Artic name=\"artic_1_Bell\" artic_name=\"Bell\"/></BFD2KitPiece></BFD2Kit>"
+        "<BFD2MidiMap info_name=\"BFD 3.0\">"
+        "<VObjectArray name=\"midi_note_1\"/>"
+        "<VObjectArray name=\"midi_note_10\"><MIDIMapElement note=\"10\" isgrv=\"true\" grvid=\"1\"/></VObjectArray>"
+        "<VObjectArray name=\"midi_note_11\"><MIDIMapElement note=\"11\" isgrv=\"true\" grvid=\"2\"/></VObjectArray>"
+        "<VObjectArray name=\"midi_note_12\"><MIDIMapElement note=\"12\" isgrv=\"true\" grvid=\"3\"/></VObjectArray>"
+        "<VObjectArray name=\"midi_note_13\"><MIDIMapElement note=\"13\" isgrv=\"true\" grvid=\"4\"/></VObjectArray>"
+        "<VObjectArray name=\"midi_note_36\"><MIDIMapElement note=\"36\" isgrv=\"false\">"
+        "<RequestedArticulationID name=\"req_artic\" slot=\"0\" artic=\"0\"/></MIDIMapElement></VObjectArray>"
+        "</BFD2MidiMap></root>";
+    const auto state = wrap (xml);
+    int mapped = 0;
+    const auto everyDrum = emk::KitMap::bfd3WithEveryDrumMapped (state, mapped);
+    juce::String error;
+    const auto m = emk::KitMap::fromBfd3 (emk::KitMap::bfd3TextIn (everyDrum), error);
+    auto noteOf = [&] (const char* label)
+    {
+        for (const auto& z : m.zones)
+            if (z.label == label)
+                return z.note;
+        return -1;
+    };
+    // Crash: Hit (its edge) on the free note 1, then Bell and Bow on groove notes; the ride's
+    // Hit is its bow. The kick keeps its own note and nothing is mapped twice.
+    int again = -1;
+    emk::KitMap::bfd3WithEveryDrumMapped (everyDrum, again);
+    bool ok = mapped == 5 && error.isEmpty() && noteOf ("KICK1") == 36 && noteOf ("CRASH1 EDGE") == 1
+              && noteOf ("CRASH1 BELL") == 10 && noteOf ("CRASH1 BOW") == 11 && noteOf ("RIDE1 BOW") == 12
+              && noteOf ("RIDE1 BELL") == 13 && again == 0
+              && emk::KitMap::bfd3TextIn (everyDrum).contains ("grvid=\"1\"") == false
+              && everyDrum.getSize() > 8 && static_cast<const char*> (everyDrum.getData())[everyDrum.getSize() - 1] == 0;
+
+    if (const auto real = juce::SystemStats::getEnvironmentVariable ("BFD3_STATE", {}); real.isNotEmpty())
+    {
+        juce::MemoryBlock data;
+        juce::File (real).loadFileAsData (data);
+        int realMapped = 0;
+        const auto realEvery = emk::KitMap::bfd3WithEveryDrumMapped (data, realMapped);
+        juce::String realError;
+        const auto r = emk::KitMap::fromBfd3 (emk::KitMap::bfd3TextIn (realEvery.isEmpty() ? data : realEvery), realError);
+        std::printf ("BFD3 every drum: %d notes given, %d zones, error '%s'\n", realMapped, r.zones.size(), realError.toRawUTF8());
+        for (const auto& z : r.zones)
+            std::printf ("  %-12s %-24s %3d %s %s\n", z.piece.toRawUTF8(), z.label.toRawUTF8(), z.note, z.enabled ? "on " : "off", z.name.toRawUTF8());
+    }
+    if (! ok)
+        std::printf ("bfd3MapsEveryDrum failed (mapped %d, again %d, error '%s')\n", mapped, again, error.toRawUTF8());
+    return ok;
+}
+
 /** An ML Drums kit, as a VST3 host saves its state: the plugin's own XML in base64 under
     IComponent (ML_DRUMS_STATE names a real state file). */
 bool mlDrumsKitReads()
@@ -953,7 +1030,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

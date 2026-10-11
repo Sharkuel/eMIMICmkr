@@ -1337,7 +1337,17 @@ void MainComponent::readNoteNames()
     // Superior Drummer 3 and BFD3 keep their whole kit (slots, articulations, their notes) in their state.
     juce::MemoryBlock state;
     plugin->getStateInformation (state);
-    juce::String sd3Note;
+    juce::String sd3Note, bfd3Mapped;
+    // Drums loaded into BFD3 slots its MIDI map leaves out get free notes, so they can be recorded.
+    int newNotes = 0;
+    if (auto everyDrum = emk::KitMap::bfd3WithEveryDrumMapped (state, newNotes); newNotes > 0)
+    {
+        plugin->setStateInformation (everyDrum.getData(), (int) everyDrum.getSize());
+        state.reset();
+        plugin->getStateInformation (state);
+        bfd3Mapped = "Gave " + juce::String (newNotes) + " notes in BFD3's MIDI map to drums that had none "
+                     "(free notes first, then groove notes). ";
+    }
     juce::String error;
     bool pluginKit = false;
     if (auto map = kitFromPluginData (state, error, pluginKit); pluginKit)
@@ -1349,7 +1359,7 @@ void MainComponent::readNoteNames()
             map.kitName = kitMap.kitName;
         mapChoice.setSelectedId (0, juce::dontSendNotification);
         useMap (std::move (map));
-        sd3Note = "Read the kit's map from " + plugin->getName() + ": each instrument and the notes it plays. ";
+        sd3Note = bfd3Mapped + "Read the kit's map from " + plugin->getName() + ": each instrument and the notes it plays. ";
     }
 
     // VST3 plugins can name their notes (Cubase shows them in its drum editor); not all do.
