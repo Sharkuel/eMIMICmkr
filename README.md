@@ -106,7 +106,7 @@ them as VST3 plugins the app can load.
      toms, both hi-hats, two rides and the chinas, crashes and splashes come in with their main
      articulations ticked; chokes, the tight hat, the second hat and the second kick are there to tick.
      Other Kontakt libraries keep their kit encrypted in Kontakt's state, so their default maps are
-     built in: pick Eloy Drums (CasaGroove, CasaGrande), Trivium Drums, Krimh Drums, GGD Invasion or Odeholm Drums in the note map
+     built in: pick Eloy Drums (CasaGroove, CasaGrande), Trivium Drums, Krimh Drums, GGD Invasion or Odeholm Drums (its default map, or the other one some videos show) in the note map
      list. They follow each library's default Mapping page; if you changed it there, fix the notes here
      or with Learn.
    - **Piece** groups rows into one Mimic instrument. Typing a piece name changes that row only:
