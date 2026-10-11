@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <functional>
+#include <iterator>
 
 namespace emk
 {
@@ -1280,6 +1281,115 @@ KitMap KitMap::fromSoundworks (const juce::String& text, juce::String& error)
     }
     if (m.zones.isEmpty())
         error = "The DW Soundworks kit has no notes mapped.";
+    return m;
+}
+
+juce::String KitMap::mlDrumsTextIn (const juce::MemoryBlock& data)
+{
+    return findInState (data, [] (const char* bytes, size_t size) -> juce::String
+    {
+        static const std::string open = "<PARAMS ", close = "</PARAMS>", key = "midikey___0Kick1Key";
+        const auto at = std::search (bytes, bytes + size, open.begin(), open.end());
+        if (at == bytes + size)
+            return {};
+        const auto end = std::search (at, bytes + size, close.begin(), close.end());
+        if (end == bytes + size || std::search (at, end, key.begin(), key.end()) == end)
+            return {};
+        return juce::String::fromUTF8 (at, (int) (end - at) + (int) close.size());
+    });
+}
+
+KitMap KitMap::fromMlDrums (const juce::String& text, juce::String& error)
+{
+    const auto xml = juce::parseXML (text);
+    if (xml == nullptr || ! xml->hasTagName ("PARAMS") || ! xml->hasAttribute ("midikey___0Kick1Key"))
+    {
+        error = "This isn't an ML Drums state.";
+        return {};
+    }
+    // Each articulation has two keys ("...1Key", "...2Key"); -1 = none.
+    auto noteOf = [&] (const juce::String& name)
+    {
+        const auto first = xml->getIntAttribute ("midikey___0" + name + "1Key", -1);
+        return first >= 0 ? first : xml->getIntAttribute ("midikey___0" + name + "2Key", -1);
+    };
+
+    // The slots in the order of the state's instrument0..18, each holding the ID of the drum
+    // it plays. That order is inferred from the MIDI map's own order (19 slots, 19 IDs).
+    struct Slot
+    {
+        const char* key;    // ML Drums' name in its MIDI map
+        const char* piece;
+        const char* head;   // zone label start
+    };
+    static const Slot slots[] = {
+        { "Kick", "Kick", "KICK1" }, { "Snare", "Snare", "SNARE1" },
+        { "RackTom1", "Tom 1", "TOM1" }, { "RackTom2", "Tom 2", "TOM2" }, { "RackTom3", "Tom 3", "TOM3" },
+        { "FloorTom1", "Tom 4", "TOM4" }, { "FloorTom2", "Tom 5", "TOM5" },
+        { "Hihat", "Hi-Hat", "HATS" }, { "Ride", "Ride", "RIDE1" },
+        { "Crash1", "Crash 1", "CRASH1" }, { "Crash2", "Crash 2", "CRASH2" }, { "Crash3", "Crash 3", "CRASH3" },
+        { "ChinaL", "China 1", "CHINA1" }, { "ChinaR", "China 2", "CHINA2" },
+        { "Splash1", "Splash 1", "SPLASH1" }, { "Splash2", "Splash 2", "SPLASH2" },
+        { "Stax", "Stack 1", "STACK1" }, { "MiniChina", "China 3", "CHINA3" }, { "Bell", "Bell", "BELL1" },
+    };
+
+    KitMap m;
+    m.kitName = "ML Drums";
+    for (int s = 0; s < (int) std::size (slots); ++s)
+    {
+        const auto& slot = slots[s];
+        const juce::String key (slot.key), head (slot.head);
+        const int firstZone = m.zones.size();
+        auto add = [&] (const juce::String& label, const juce::String& noteName, bool on = true)
+        {
+            const auto note = noteOf (noteName);
+            if (note >= 0)
+                m.zones.add ({ slot.piece, label, note, -1, on });
+        };
+
+        if (key == "Kick")
+            add (head, "Kick");
+        else if (key == "Snare")
+        {
+            add (head + " CENTER", "Snare");
+            add (head + " SIDESTICK", "SnareSideStick");
+        }
+        else if (key.contains ("Tom"))
+            add (head + " CENTER", key);
+        else if (key == "Hihat")
+        {
+            // Openness is a note of its own in ML Drums, not the pedal (CC4).
+            add ("HATS BOW CLOSED", "HihatTip");
+            add ("HATS EDGE CLOSED", "HihatEdge");
+            add ("HATS EDGE OPEN1", "HihatSemiOpen");
+            add ("HATS EDGE OPEN2", "HihatSemiOpen2");
+            add ("HATS EDGE OPEN3", "HihatSemiOpen3");
+            add ("HATS EDGE OPEN4", "HihatOpen");
+            add ("HATS PEDAL CLOSED", "HihatPedal");
+        }
+        else if (key == "Ride")
+        {
+            add (head + " BOW", "Ride");
+            add (head + " BELL", "RideBell");
+            add (head + " EDGE", "RideEdge");
+        }
+        else
+        {
+            const auto name = key == "Crash3" ? juce::String ("Crash3Midi") : key;   // as ML Drums spells it
+            add (head + " EDGE", name, key != "Bell");
+            add (head + " CHOKE", key + "Choke", false);
+        }
+
+        const auto id = xml->getStringAttribute ("instrument" + juce::String (s));
+        for (int z = firstZone; z < m.zones.size(); ++z)
+        {
+            auto& zone = m.zones.getReference (z);
+            zone.instrument = "ML Drums/" + key + (id.isNotEmpty() ? "#" + id : juce::String());
+            zone.library = "ML Drums";
+        }
+    }
+    if (m.zones.isEmpty())
+        error = "The ML Drums MIDI map has no notes.";
     return m;
 }
 

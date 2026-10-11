@@ -100,6 +100,16 @@ public:
         "value" line each. */
     static juce::String addictiveTextIn (const juce::MemoryBlock&);
 
+    /** The kit ML Drums plays, from its plugin state: its 19 slots (Kick, Snare, five toms,
+        Hi-Hat, Ride, three crashes, two chinas, two splashes, Stax, Mini China, Bell) and the
+        notes its MIDI map plays each articulation from. The state names no drums, only an ID
+        for each slot's, so the names you give them are kept by slot and ID. Empty, with error
+        set, when the text isn't ML Drums'. */
+    static KitMap fromMlDrums (const juce::String& text, juce::String& error);
+
+    /** Finds ML Drums' parameter XML inside a plugin state. */
+    static juce::String mlDrumsTextIn (const juce::MemoryBlock&);
+
     /** The map MDL Tone's Ultimate Heavy Drums (Kontakt) uses, from the .nka its MIDI Mapping
         page exports: "%mapping", then each articulation's note in the library's own order
         (Kick 1, Snare, Tom 1-6, China L Choke...), -1 for none. Empty, with error set, when

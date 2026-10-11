@@ -109,6 +109,8 @@ emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& erro
         return emk::KitMap::fromSoundworks (soundworks, error);
     if (const auto addictive = emk::KitMap::addictiveTextIn (data); addictive.isNotEmpty())
         return emk::KitMap::fromAddictive (addictive, error);
+    if (const auto ml = emk::KitMap::mlDrumsTextIn (data); ml.isNotEmpty())
+        return emk::KitMap::fromMlDrums (ml, error);
     if (const auto text = data.toString(); text.trimStart().startsWith ("%mapping"))
         return emk::KitMap::fromMdlTone (text, error);
     found = false;

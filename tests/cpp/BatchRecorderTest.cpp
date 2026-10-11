@@ -255,6 +255,68 @@ bool bfd3KitReads()
     return ok && empty.isNotEmpty();
 }
 
+/** An ML Drums kit, as a VST3 host saves its state: the plugin's own XML in base64 under
+    IComponent (ML_DRUMS_STATE names a real state file). */
+bool mlDrumsKitReads()
+{
+    const juce::String params = "<?xml version=\"1.0\"?> <PARAMS instrument0=\"1\" instrument1=\"27\" "
+        "midikey___0Kick1Key=\"36\" midikey___0Kick2Key=\"-1\" midikey___0Snare1Key=\"38\" "
+        "midikey___0SnareSideStick1Key=\"37\" midikey___0RackTom11Key=\"-1\" midikey___0RackTom12Key=\"48\" "
+        "midikey___0HihatTip1Key=\"66\" midikey___0HihatEdge1Key=\"42\" midikey___0HihatSemiOpen21Key=\"69\" "
+        "midikey___0HihatOpen1Key=\"46\" midikey___0HihatPedal1Key=\"44\" midikey___0RideBell1Key=\"53\" "
+        "midikey___0Crash3Midi1Key=\"51\" midikey___0Crash3Choke1Key=\"63\" midikey___0Bell1Key=\"72\">"
+        "<PARAM id=\"gain______0\" value=\"0.0\"/></PARAMS>";
+    juce::MemoryBlock inner;
+    inner.append ("VC2!\0\0\0\0", 8);
+    inner.append (params.toRawUTF8(), params.getNumBytesAsUTF8());
+    const auto outerXml = "<?xml version=\"1.0\"?> <VST3PluginState><IComponent>" + inner.toBase64Encoding()
+                          + "</IComponent></VST3PluginState>";
+    juce::MemoryBlock state;
+    const auto size = (juce::uint32) outerXml.getNumBytesAsUTF8();
+    state.append ("VC2!", 4);
+    state.append (&size, 4);
+    state.append (outerXml.toRawUTF8(), size);
+
+    juce::String error;
+    const auto m = emk::KitMap::fromMlDrums (emk::KitMap::mlDrumsTextIn (state), error);
+    auto find = [&m] (const char* label) -> const emk::KitZone*
+    {
+        for (const auto& z : m.zones)
+            if (z.label == label)
+                return &z;
+        return nullptr;
+    };
+    auto noteOf = [&] (const char* label) { const auto* z = find (label); return z != nullptr ? z->note : -2; };
+    bool ok = error.isEmpty() && m.kitName == "ML Drums" && noteOf ("KICK1") == 36 && noteOf ("SNARE1 SIDESTICK") == 37
+              && noteOf ("TOM1 CENTER") == 48                       // only the second key is set
+              && noteOf ("HATS BOW CLOSED") == 66 && noteOf ("HATS EDGE OPEN2") == 69 && noteOf ("HATS EDGE OPEN4") == 46
+              && noteOf ("HATS PEDAL CLOSED") == 44 && find ("HATS EDGE OPEN1") == nullptr
+              && noteOf ("RIDE1 BELL") == 53 && noteOf ("CRASH3 EDGE") == 51 && noteOf ("CRASH3 CHOKE") == 63
+              && ! find ("CRASH3 CHOKE")->enabled && ! find ("BELL1 EDGE")->enabled
+              && find ("KICK1")->instrument == "ML Drums/Kick#1" && find ("SNARE1 CENTER")->instrument == "ML Drums/Snare#27"
+              && find ("KICK1")->library == "ML Drums" && find ("KICK1")->cc4 == -1;
+
+    juce::String notMl;
+    emk::KitMap::fromMlDrums ("<PARAMS/>", notMl);
+    ok = ok && notMl.isNotEmpty() && emk::KitMap::mlDrumsTextIn (juce::MemoryBlock ("PlugVersion 3", 13)).isEmpty();
+
+    if (const auto path = juce::SystemStats::getEnvironmentVariable ("ML_DRUMS_STATE", {}); path.isNotEmpty())
+    {
+        juce::MemoryBlock real;
+        juce::File (path).loadFileAsData (real);
+        juce::String realError;
+        const auto r = emk::KitMap::fromMlDrums (emk::KitMap::mlDrumsTextIn (real), realError);
+        std::printf ("ML Drums state: %d zones, error '%s'\n", r.zones.size(), realError.toRawUTF8());
+        for (const auto& z : r.zones)
+            std::printf ("  %-10s %-20s %3d %s %s\n", z.piece.toRawUTF8(), z.label.toRawUTF8(), z.note, z.enabled ? "on " : "off",
+                         z.instrument.toRawUTF8());
+        ok = ok && realError.isEmpty();
+    }
+    if (! ok)
+        std::printf ("mlDrumsKitReads failed (%s)\n", error.toRawUTF8());
+    return ok;
+}
+
 /** An Ugritone kit, as its plugin state holds it (UGRITONE_STATE names a real state file). */
 bool ugritoneKitReads()
 {
@@ -891,7 +953,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
