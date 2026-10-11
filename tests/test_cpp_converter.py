@@ -184,6 +184,34 @@ def test_three_zone_ride(tmp_path, flags):
     convert_both(tmp_path, tmp_path / "in" / "14 Test Crash", *flags)
 
 
+def write_float_wav(path, samples, extensible=False):
+    """Mono 32-bit float, as the recorder writes it (values may pass full scale)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = struct.pack(f"<{len(samples)}f", *samples)
+    if extensible:
+        guid = struct.pack("<H", 3) + bytes([0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71])
+        fmt = struct.pack("<HHIIHHHHI", 0xFFFE, 1, 44100, 44100 * 4, 4, 32, 22, 32, 4) + guid
+    else:
+        fmt = struct.pack("<HHIIHH", 3, 1, 44100, 44100 * 4, 4, 32)
+    body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(data)) + data
+    path.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+
+def test_float_recordings_past_full_scale(tmp_path):
+    rnd = random.Random(7)
+    piece = tmp_path / "in" / "Hot Kit" / "16 Hot Crash_C1"
+    for z, zone in enumerate(["CRASH1 EDGE", "CRASH1 BOW"]):
+        for i, v in enumerate([127, 90, 40], 1):
+            hit = [v / 127 * 1.6 * math.exp(-k / 3000) * (rnd.random() * 2 - 1) for k in range(12000)]
+            write_float_wav(piece.parent / f"16 Hot Crash_C1 - {zone}" / f"16 Hot Crash_C1 - {zone} - {i:03d}v{v}.wav",
+                            hit, extensible=bool(z))
+    py_out, _, _ = convert_both(tmp_path, piece.parent)
+    f = mci.read_mci(str(py_out / "16 Hot Crash.mci"))
+    loudest = max(abs(v) for i in range(f.get("INST0pool0psz")) for v in mci.sample(f, i))
+    assert loudest == mci.FULL_SCALE        # turned down to fit, not clipped
+    assert f.get("INST0pool0nchn")[0] == 2
+
+
 def test_cell_limits_thin_out_big_zones(tmp_path):
     render(tmp_path / "in", ["BOW", "EDGE"], list(range(127, 0, -1)) + list(range(127, 50, -1)))
     py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "14 Test Crash")

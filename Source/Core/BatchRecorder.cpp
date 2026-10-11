@@ -58,7 +58,8 @@ bool BatchRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<fl
     auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}
                                                    .withSampleRate (sampleRate)
                                                    .withNumChannels (1)
-                                                   .withBitsPerSample (24));
+                                                   .withBitsPerSample (32)   // float: a hit past full scale isn't clipped
+                                                   .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
     return writer != nullptr && writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples());
 }
 
@@ -77,7 +78,7 @@ juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const Kit
             progress.total += hits;
         }
 
-    int written = 0, clipped = 0;
+    int written = 0;
     juce::StringArray silent, failed;
 
     HitRenderer renderer (plugin, settings.render);
@@ -99,8 +100,6 @@ juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const Kit
                 ++silentHits;
                 continue;
             }
-            if (hit.getMagnitude (0, 0, hit.getNumSamples()) > 1.0f)
-                ++clipped;
             const auto file = fileFor (root, map.kitName, zone, i + 1, vels[i]);
             if (writeWav (file, hit, settings.render.sampleRate))
                 ++written;
@@ -141,8 +140,6 @@ juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const Kit
                           + root.getChildFile (safeName (map.kitName)).getFullPathName() + ".";
     if (! silent.isEmpty())
         report << "\nNo sound from: " << silent.joinIntoString (", ") << ".";
-    if (clipped > 0)
-        report << "\n" << clipped << " hits went over full scale; turn the plugin's master down a little.";
     if (! failed.isEmpty())
         report << "\nCould not write to: " << failed.joinIntoString (", ") << ".";
     return report;

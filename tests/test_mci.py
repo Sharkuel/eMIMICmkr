@@ -158,3 +158,29 @@ def test_hat_layout_matches_factory_hi_hat():
     for c in range(3):
         for k in ["ctrzone", "stznsz", "trzone"]:
             assert built.get(f"INST0hctrlzn{c}{k}") == f.get(f"INST0hctrlzn{c}{k}"), (c, k)
+
+
+def test_blocks_never_narrower_than_pearls():
+    # Silence would fit 1-bit blocks of 8128 frames; Pearl's files never go below 4 bits.
+    blob, frames = mci.encode_blocks([0] * 20000 + [256, -256] * 10)
+    assert min(blob[o] for o in range(0, len(blob), mci.BLOCK_SIZE)) == mci.MIN_BLOCK_BITS
+    assert max(frames) == mci.PAYLOAD_BITS // mci.MIN_BLOCK_BITS
+    assert mci.decode_blocks(blob) == [0] * 20000 + [256, -256] * 10
+
+
+def test_cymbals_are_stereo_and_hot_hits_turn_the_instrument_down():
+    s = [int(math.sin(i / 9) * 3000) * 256 for i in range(5000)]
+    hot = [v * 12 for v in s]                      # past full scale
+    f = mci.read_mci(mci.write_mci(mci.build_instrument(
+        "t", "Cymbal", mci.cymbal_articulations([[s], [hot]], [[s]]), b"", mic="Cymbal")))
+    assert f.get("INST0pool0nchn") == [2] * f.get("INST0pool0psz")
+    assert f.get("INST0micinf0isst") == 1
+    peak = max(abs(v) for v in hot)
+    left, right = mci.channels(f, 1)
+    assert left == right == [v * mci.FULL_SCALE // peak for v in hot]
+    assert f.get("INST0pool0fcnt")[0] == 2 * len(s)
+    assert f.get("INST0pool0rmsenv0rmsl") == len(s) // 1024
+
+    kick = mci.build_instrument("k", "Kick", [mci.Articulation("Kick", 0, [[s]])], b"")
+    assert kick.get("INST0pool0nchn") == [1] and kick.get("INST0micinf0isst") == 0
+    assert mci.sample(kick, 0) == s

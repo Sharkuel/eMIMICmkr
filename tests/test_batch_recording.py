@@ -7,7 +7,6 @@ import glob
 import os
 import subprocess
 import sys
-import wave
 
 import pytest
 
@@ -27,8 +26,9 @@ def test_recorded_kit_converts(tmp_path):
     kit = tmp_path / "rec" / "Test Kit"
     bell = sorted((kit / "Test Kit Ride" / "RIDE1 BELL").iterdir())
     assert bell[0].name == "Test Kit Ride - RIDE1 BELL - 001v127.wav"
-    with wave.open(str(bell[0])) as w:
-        assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 3, 44100)
+    # 32-bit float, so a hit past full scale isn't clipped
+    channels, rate, _ = wav2mci._float_wav(bell[0].read_bytes())
+    assert (channels, rate) == (1, 44100)
 
     out = tmp_path / "out"
     assert wav2mci.main([str(kit), "--out", str(out)]) == 0

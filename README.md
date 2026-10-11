@@ -161,7 +161,7 @@ the way the Mimic stores its own. The Mimic finds a slot's instrument by its nam
 so keep the `.mci` files as they were made, and copy them to the Mimic along with the kit.
 
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
-and saved as 24-bit WAVs under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
+and saved as 32-bit float WAVs (so a hit louder than full scale isn't clipped) under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
 the layout the converter reads (below). The hi-hat is recorded at five pedal positions
 (CC4 127, 96, 64, 32, 0) on both bow and edge, plus the pedal chick.
 
