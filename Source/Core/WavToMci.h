@@ -21,6 +21,7 @@ public:
     {
         bool choke = true;        // make a Choke Ring from the hardest edge hit when none was recorded
         bool hatAsRide = false;   // also write each hi-hat as a 3-zone ride-type instrument
+        int cellsPercent = 100;   // share of each instrument's wave-cell limit used (lighter instruments)
         bool fullLength = false;  // keep every tail as recorded instead of cutting it (maxSeconds)
         juce::String name;        // instrument name, used only when the input holds one piece
     };
@@ -167,6 +168,7 @@ public:
 
     static mci::MciFile build (const Piece&, const Input&, const juce::String& name, bool choke, bool hatAsRide,
                                const std::function<void (const juce::String&)>& log,
-                               const std::function<void()>& onWavRead = {}, bool fullLength = false);
+                               const std::function<void()>& onWavRead = {}, bool fullLength = false,
+                               int cellsPercent = 100);
 };
 } // namespace emk

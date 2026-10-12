@@ -370,8 +370,11 @@ def fit_length(x: list[int], max_frames: int, fade_frames: int = round(FADE_SECO
 
 
 def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
-          hat_as_ride: bool = False, full_length: bool = False) -> mci.MciFile:
+          hat_as_ride: bool = False, full_length: bool = False, cells_percent: int = 100) -> mci.MciFile:
     max_frames = None if full_length else round(max_seconds(piece) * SAMPLE_RATE)
+
+    def cells(kind):     # the instrument's wave-cell budget, cut to cells_percent
+        return max(2, CELL_LIMITS[kind] * cells_percent // 100)
 
     def read(h):
         x = read_wav(src.read(h.path))
@@ -405,10 +408,10 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         return load(layers), min_velocities(layers)
 
     if piece.family == "hat":
-        return build_hat(piece, zone, name, hat_as_ride, log)
+        return build_hat(piece, zone, name, hat_as_ride, log, hat_hits=max(1, HAT_HITS * cells_percent // 100))
 
     if piece.family == "kick":
-        audio, vel = zone("kick", max_hits=CELL_LIMITS["Kick"], rr=round_robins("kick", "kick"))
+        audio, vel = zone("kick", max_hits=cells("Kick"), rr=round_robins("kick", "kick"))
         arts = [mci.Articulation("Kick", mci.ZONE_TYPES["kick"], audio, vel)]
         return mci.build_instrument(name, "Kick", arts, thumbnail(), mic="Kick")
 
@@ -426,7 +429,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
                 f"{bow_key if bow_key == 'edge' else edge_key} for that zone")
         has_bell = "bell" in z and not bell_only
         kind = "Ride" if has_bell else "Cymbal"
-        shares = share_cells(CELL_LIMITS[kind] - 1, {"edge": len(z[edge_key]), "bow": len(z[bow_key]),
+        shares = share_cells(cells(kind) - 1, {"edge": len(z[edge_key]), "bow": len(z[bow_key]),
                                                      **({"bell": len(z["bell"])} if has_bell else {})})
         edge, edge_vel = zone(edge_key, max_hits=shares["edge"], rr=round_robins("cymbal", "edge"))
         bow, bow_vel = zone(bow_key, max_hits=shares["bow"], rr=round_robins("cymbal", "bow"))
@@ -457,7 +460,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
     kind = "Snare" if piece.family == "snare" else "Tom"
     keys = [k for k in ["center", "rimclick", "rimshot", "rimshotside", "sidestick"]
             if k in zones and (k not in ("sidestick", "rimshotside") or piece.family == "snare")]
-    shares = share_cells(CELL_LIMITS[kind], {k: len(zones[k]) for k in keys})
+    shares = share_cells(cells(kind), {k: len(zones[k]) for k in keys})
     arts = []
     for key in keys:
         audio, vel = zone(key, max_hits=shares[key], rr=round_robins(piece.family, key))
@@ -470,7 +473,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
 HAT_LAYERS, HAT_HITS = 8, 32     # per articulation; 17 of them would otherwise run to gigabytes
 
 
-def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print) -> mci.MciFile:
+def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print, hat_hits: int = HAT_HITS) -> mci.MciFile:
     """SDSE hi-hat folders -> the factory Hat layout, or a ride-style 3-zone instrument.
 
     Mapping (inferred, not from Pearl): the Mimic's tip zone plays BOW, its shank
@@ -491,7 +494,7 @@ def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print) -> mci.Mc
     def steps(area):
         levels = pick_openness(areas[area])
         log(f"  {name}: {area} closed->open uses {', '.join(l.upper() for l in levels)}")
-        return [zone(f"{area}:{l}", HAT_LAYERS, HAT_HITS)[0] for l in levels]
+        return [zone(f"{area}:{l}", HAT_LAYERS, hat_hits)[0] for l in levels]
 
     if as_ride:
         def closed(area):
@@ -506,8 +509,8 @@ def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print) -> mci.Mc
         return mci.build_instrument(name, "Ride", arts, thumbnail(), mic="Ride")
 
     tip, shank, edge = steps(tip_area), steps(shank_area), steps(third_area)
-    pedal = zone("pedal", HAT_LAYERS, HAT_HITS)[0] if "pedal" in piece.zones else []
-    splash = zone("footsplash", HAT_LAYERS, HAT_HITS)[0] if "footsplash" in piece.zones else []
+    pedal = zone("pedal", HAT_LAYERS, hat_hits)[0] if "pedal" in piece.zones else []
+    splash = zone("footsplash", HAT_LAYERS, hat_hits)[0] if "footsplash" in piece.zones else []
     for missing, got in (("pedal", pedal), ("foot splash", splash)):
         if not got:
             log(f"  {name}: no {missing} recording, that zone stays silent")
@@ -524,6 +527,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-choke", action="store_true", help="leave the Choke Ring empty")
     ap.add_argument("--hat-as-ride", action="store_true",
                     help="also build each hi-hat as a 3-zone ride-type instrument (closed; bow, bell, edge)")
+    ap.add_argument("--cells-percent", type=int, default=100,
+                    help="use this percentage of each instrument's wave-cell limit (fewer hits, lighter instruments)")
     ap.add_argument("--full-length", action="store_true",
                     help="keep every hit's whole tail instead of cutting it to suit the piece")
     args = ap.parse_args(argv)
@@ -550,7 +555,7 @@ def main(argv=None) -> int:
             builds.append((f"{name} 3-zone", True))
         for title, as_ride in builds:
             f = build(piece, src, title, choke=not args.no_choke, hat_as_ride=as_ride,
-                      full_length=args.full_length)
+                      full_length=args.full_length, cells_percent=args.cells_percent)
             path = os.path.join(out_dir, f"{title}.mci")
             with open(path, "wb") as fh:
                 fh.write(mci.write_mci(f))

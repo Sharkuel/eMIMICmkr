@@ -349,6 +349,8 @@ int convert (const juce::StringArray& args)
             options.choke = false;
         else if (a == "--hat-as-ride")
             options.hatAsRide = true;
+        else if (a == "--cells-percent" && i + 1 < args.size())
+            options.cellsPercent = juce::jlimit (1, 100, args[++i].getIntValue());
         else if (a == "--full-length")
             options.fullLength = true;
         else if (! a.startsWith ("--"))

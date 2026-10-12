@@ -49,7 +49,7 @@ private:
     void chooseOutputFolder();
     void showOutputFolder();
     void savePluginState();
-    juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides,
+    juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides, bool lighter,
                                   juce::ThreadWithProgressWindow&);
     void setLive (bool on);
     int maxHits() const;
@@ -103,7 +103,8 @@ private:
         namesButton { "Read plugin" }, captureButton { "Capture..." },
         convertButton { "Convert WAV folder..." }, kitButton { "Build Mimic kit..." }, saveToButton { "Change..." }, stateButton { "Save state..." };
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
-    juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" };
+    juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" },
+                     lighter { "Lighter instruments (half the hits)" };
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
     juce::TextEditor kitName, hitsPerZone, pluginSearch;

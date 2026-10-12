@@ -241,13 +241,13 @@ def test_mixed_formats_kit_zip_with_name(tmp_path):
     convert_both(tmp_path / "b", single, "--name", "My Crash", expect=["My Crash.mci"])
 
 
-@pytest.mark.parametrize("flags", [[], ["--hat-as-ride"]])
+@pytest.mark.parametrize("flags", [[], ["--hat-as-ride"], ["--cells-percent", "50"]])
 def test_hi_hat_folders(tmp_path, flags):
     folders = (["BOW CLOSED", "BOW OPEN1", "BOW OPEN2", "BOW OPEN3", "BOW OPEN4"]
                + ["EDGE CLOSED", "EDGE OPEN1", "EDGE OPEN2", "EDGE OPEN3", "EDGE OPEN4"]
                + ["PEDAL CLOSED"])
     src = hat_folders(tmp_path / "in", folders, list(range(127, 0, -3)))   # 43 hits: more than 32
-    expect = ["14 Test Hat.mci"] + (["14 Test Hat 3-zone.mci"] if flags else [])
+    expect = ["14 Test Hat.mci"] + (["14 Test Hat 3-zone.mci"] if "--hat-as-ride" in flags else [])
     py_out, _, _ = convert_both(tmp_path, src, *flags, expect=expect)
     f = mci.read_mci(str(py_out / "14 Test Hat.mci"))
     assert f.get("INST0instyp") == "Hat" and f.get("INST0numart") == 17
@@ -356,3 +356,12 @@ def test_long_tails_are_cut_to_suit_the_piece(tmp_path, flags):
     assert {len(x) for x in frames} == ({110250} if flags else {88200})
     if not flags:
         assert all(x[-1] == 0 for x in frames)
+
+
+def test_lighter_instruments_use_fewer_cells(tmp_path):
+    ride = ride_folders(tmp_path / "in", velocities=range(127, 0, -1))   # 127 hits per zone
+    full, _, _ = convert_both(tmp_path / "full", ride)
+    half, _, _ = convert_both(tmp_path / "half", ride, "--cells-percent", "50")
+    n_full = mci.read_mci(str(full / "My Kit Ride.mci")).get("INST0pool0psz")
+    n_half = mci.read_mci(str(half / "My Kit Ride.mci")).get("INST0pool0psz")
+    assert n_full == 300 and n_half == 150
