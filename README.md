@@ -14,14 +14,19 @@ specially if you want to use one of your sound libraries, without the trouble of
 with a VST, loaded through a DAW. 
 
 The open sound architecture of the Pearl Mimic allows for the user to pretty much use any sound on the module, 
-and it is common sense that drummers use tools to record the sample velocities of their VST libraries, 
-and use them on their kit, but the process was painfully slow, and could take hours to build your dream kit on the Mimic: 
-Load up your VST in your preferred (or compatible) DAW, load up the plugin, setup the zones and velocities, 
-render the audio, and then open up the MIMIC Instrument Editor, and build your kit piece by piece. 
+and it is common knowledge that drummers use tools to record the sample velocities of their VST libraries to 
+use them on their kit, but the process was painfully slow, and could take hours to build your dream kit on the Mimic: 
+  1. Load up your VST in your preferred (or compatible) DAW;
+  2. Load up the plugin;
+  3. Setup the zones and velocities;
+  4. Render the audio
+  5. Open up the MIMIC Instrument Editor, and build your kit piece by piece;
+  6. Save the instrument on a .mci file
+  7. Transfer the files to a USB pendrive to load them up on the Mimic.  
 
-The eMIMICmkr basically covers all those steps with a couple of clicks, and does it at lightning fast speeds, specially on solid state drives. 
+The eMIMICmkr basically covers all those steps above with a couple of clicks, and does it at lightning fast speeds, specially on solid state drives. 
 
-You can load your VST, have the tool recognize most of the keys, tweak a thing or two, and let it record the samples offline, 
+You can load your VST, have the eMIMICmkr recognize most of the keys, tweak a thing or two, and let it record the samples offline, 
 build the .mci files, and load them directly on a USB drive, within a few minutes. 
 
 eMIMICmkr hosts a drum plugin (Superior Drummer 3, BFD3, Addictive Drums and others)
