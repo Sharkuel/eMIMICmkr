@@ -21,8 +21,9 @@ use them on their kit, but the process was painfully slow, and could take hours 
   3. Setup the zones and velocities;
   4. Render the audio
   5. Open up the MIMIC Instrument Editor, and build your kit piece by piece;
-  6. Save the instrument on a .mci file
-  7. Transfer the files to a USB pendrive to load them up on the Mimic.  
+  6. Save the instrument on a .mci file;
+  7. Package the .mic files on a .kit file;
+  8. Transfer the files to a USB pen-drive to load them up on the Mimic.  
 
 The eMIMICmkr basically covers all those steps above with a couple of clicks, and does it at lightning fast speeds, specially on solid state drives. 
 
