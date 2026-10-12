@@ -241,13 +241,13 @@ def test_mixed_formats_kit_zip_with_name(tmp_path):
     convert_both(tmp_path / "b", single, "--name", "My Crash", expect=["My Crash.mci"])
 
 
-@pytest.mark.parametrize("flags", [[], ["--hat-as-ride"]])
+@pytest.mark.parametrize("flags", [[], ["--hat-as-ride"], ["--cells-percent", "50"]])
 def test_hi_hat_folders(tmp_path, flags):
     folders = (["BOW CLOSED", "BOW OPEN1", "BOW OPEN2", "BOW OPEN3", "BOW OPEN4"]
                + ["EDGE CLOSED", "EDGE OPEN1", "EDGE OPEN2", "EDGE OPEN3", "EDGE OPEN4"]
                + ["PEDAL CLOSED"])
     src = hat_folders(tmp_path / "in", folders, list(range(127, 0, -3)))   # 43 hits: more than 32
-    expect = ["14 Test Hat.mci"] + (["14 Test Hat 3-zone.mci"] if flags else [])
+    expect = ["14 Test Hat.mci"] + (["14 Test Hat 3-zone.mci"] if "--hat-as-ride" in flags else [])
     py_out, _, _ = convert_both(tmp_path, src, *flags, expect=expect)
     f = mci.read_mci(str(py_out / "14 Test Hat.mci"))
     assert f.get("INST0instyp") == "Hat" and f.get("INST0numart") == 17
@@ -343,3 +343,25 @@ def test_cpp_reader_and_writer_round_trip_editor_files(tmp_path, path):
     run = subprocess.run([EXE, "--rewrite", str(path), str(out)], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     assert out.read_bytes() == path.read_bytes()
+
+
+@pytest.mark.parametrize("flags", [[], ["--full-length"]])
+def test_long_tails_are_cut_to_suit_the_piece(tmp_path, flags):
+    for i, v in enumerate([40, 90, 127], 1):    # 2.5 s kick hits: past the kick's 2 s
+        write_wav(tmp_path / "in" / "Long Kick" / f"Long Kick - KICK - {i:03d}v{v}.wav",
+                  noisy_hit(v, 110250, 3, 1, i))
+    py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "Long Kick", *flags, expect=["Long Kick.mci"])
+    f = mci.read_mci(str(py_out / "Long Kick.mci"))
+    frames = [mci.sample(f, i) for i in range(f.get("INST0pool0psz"))]
+    assert {len(x) for x in frames} == ({110250} if flags else {88200})
+    if not flags:
+        assert all(x[-1] == 0 for x in frames)
+
+
+def test_lighter_instruments_use_fewer_cells(tmp_path):
+    ride = ride_folders(tmp_path / "in", velocities=range(127, 0, -1))   # 127 hits per zone
+    full, _, _ = convert_both(tmp_path / "full", ride)
+    half, _, _ = convert_both(tmp_path / "half", ride, "--cells-percent", "50")
+    n_full = mci.read_mci(str(full / "My Kit Ride.mci")).get("INST0pool0psz")
+    n_half = mci.read_mci(str(half / "My Kit Ride.mci")).get("INST0pool0psz")
+    assert n_full == 300 and n_half == 150

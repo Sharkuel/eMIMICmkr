@@ -231,6 +231,15 @@ choke sound is made from the hardest edge hit when none was recorded. Kicks, sna
 toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--hat-as-ride` for
 a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
+Long tails make the Mimic glitch once several instruments are loaded, so each hit is cut to
+a length that suits its piece and faded out to silence over its last half second: kicks 2 s;
+snares, toms, hi-hats and percussion 3 s; cymbals 6 s; ride-type cymbals (with a bell) 8 s.
+Shorter hits are left as they are. `--full-length` keeps every tail as recorded.
+
+"Lighter instruments (half the hits)" in the app, or `--cells-percent 50`, builds each
+instrument with that share of its wave-cell limit (and of the 32 hits per hi-hat
+articulation), for kits that glitch when many instruments are loaded.
+
 A snare's shallow rimshots (zone labels with `SHALLOW`, or `RIMSHOT SIDE`) fill the Mimic's
 Rim Shot Side zone. Most libraries have none; then each rimshot is mixed 50/50 with the rim
 click (or, without one, the head hit) nearest its velocity, so that zone still plays.
@@ -244,7 +253,7 @@ build/eMIMICmkr_mci_tests_artefacts/Release/eMIMICmkr_mci_tests --convert "My Ki
 ```
 
 Options: `--out DIR` (default: next to the input, or for several, the folder holding them all), `--name NAME` (only when the input holds
-one piece), `--no-choke` (leave the Choke Ring empty) and `--hat-as-ride`. Run with no
+one piece), `--no-choke` (leave the Choke Ring empty), `--hat-as-ride`, `--full-length` and `--cells-percent N`. Run with no
 arguments, the tool checks the codec and builders instead.
 
 `tools/mci/wav2mci.py` stays as the reference implementation and takes the same options:

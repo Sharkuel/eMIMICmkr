@@ -753,10 +753,35 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
 }
 
 //==============================================================================
+double WavToMci::maxSeconds (const juce::String& family, bool hasBell)
+{
+    if (family == "kick")
+        return 2.0;
+    if (family == "snare" || family == "tom" || family == "hat" || family == "perc")
+        return 3.0;
+    return family == "cymbal" && hasBell ? 8.0 : 6.0;
+}
+
+void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
+{
+    if ((int) x.size() <= maxFrames)
+        return;
+    x.resize ((size_t) maxFrames);
+    const auto fade = std::min (fadeFrames, maxFrames);
+    const auto start = maxFrames - fade;
+    for (int i = 0; i < fade; ++i)
+        x[(size_t) (start + i)] = (int) floorDiv ((juce::int64) x[(size_t) (start + i)] * (fade - 1 - i), fade);
+}
+
 mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::String& name, bool choke, bool hatAsRide,
                               const std::function<void (const juce::String&)>& log,
-                              const std::function<void()>& onWavRead)
+                              const std::function<void()>& onWavRead, bool fullLength,
+                              int cellsPercent)
 {
+    // The instrument's wave-cell budget, cut to cellsPercent.
+    auto cells = [cellsPercent] (const juce::String& kind) { return std::max (2, cellLimit (kind) * cellsPercent / 100); };
+    const auto hatHitsUsed = std::max (1, hatHits * cellsPercent / 100);
+    const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (piece.family, piece.find ("bell") != nullptr) * sampleRate);
     auto readOne = [&] (const Hit& h)
     {
         if (onWavRead)
@@ -823,7 +848,11 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         {
             z.audio.emplace_back();
             for (const auto& h : layer)
+            {
                 z.audio.back().push_back (readOne (h));
+                if (maxFrames > 0)
+                    fitLength (z.audio.back().back(), maxFrames);
+            }
         }
         z.velocities = minVelocities (split);
         return z;
@@ -886,7 +915,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             log ("  " + name + ": " + area + " closed->open uses " + levels.joinIntoString (", ").toUpperCase());
             std::vector<mci::Layers> out;
             for (const auto& l : levels)
-                out.push_back (zone (keyFor (area, l), hatLayers, hatHits).audio);
+                out.push_back (zone (keyFor (area, l), hatLayers, hatHitsUsed).audio);
             return out;
         };
         auto tip = steps (tipArea);
@@ -894,9 +923,9 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         auto edge = steps (thirdArea);
         mci::Layers pedal, splash;
         if (has ("pedal"))
-            pedal = zone ("pedal", hatLayers, hatHits).audio;
+            pedal = zone ("pedal", hatLayers, hatHitsUsed).audio;
         if (has ("footsplash"))
-            splash = zone ("footsplash", hatLayers, hatHits).audio;
+            splash = zone ("footsplash", hatLayers, hatHitsUsed).audio;
         if (pedal.empty())
             log ("  " + name + ": no pedal recording, that zone stays silent");
         if (splash.empty())
@@ -932,7 +961,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         for (const auto* slot : slots)
             if (keyFor.count (slot) > 0)
                 available.emplace_back (slot, (int) hitsOf (keyFor[slot]).size());
-        const auto shares = shareCells (cellLimit ("Perc"), available);
+        const auto shares = shareCells (cells ("Perc"), available);
         std::vector<mci::Articulation> arts;
         for (int i = 0; i < 4; ++i)
         {
@@ -951,7 +980,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
 
     if (piece.family == "kick")
     {
-        auto z = zone ("kick", maxLayers, cellLimit ("Kick"), roundRobins ("kick", "kick"));
+        auto z = zone ("kick", maxLayers, cells ("Kick"), roundRobins ("kick", "kick"));
         mci::Articulation a;
         a.name = "Kick";
         a.zoneType = mci::zoneType ("kick");
@@ -979,7 +1008,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         Shares available { { "edge", (int) hitsOf (edgeKey).size() }, { "bow", (int) hitsOf (bowKey).size() } };
         if (hasBell)
             available.emplace_back ("bell", (int) hitsOf ("bell").size());
-        const auto shares = shareCells (cellLimit (kind) - 1, available);   // one cell is the choke ring's
+        const auto shares = shareCells (cells (kind) - 1, available);   // one cell is the choke ring's
 
         auto edge = zone (edgeKey, maxLayers, shareOf (shares, "edge"), roundRobins ("cymbal", "edge"));
         auto bow = zone (bowKey, maxLayers, shareOf (shares, "bow"), roundRobins ("cymbal", "bow"));
@@ -1032,7 +1061,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     for (const auto& dz : drumZones)
         if (has (dz.key) && (! snareOnly (dz.key) || snare))
             available.emplace_back (dz.key, (int) hitsOf (dz.key).size());
-    const auto shares = shareCells (cellLimit (kind), available);
+    const auto shares = shareCells (cells (kind), available);
     std::vector<mci::Articulation> arts;
     for (const auto& dz : drumZones)
     {
@@ -1179,7 +1208,7 @@ WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juc
         {
             try
             {
-                auto f = build (piece, src, title, options.choke, asRide, log, onWavRead);
+                auto f = build (piece, src, title, options.choke, asRide, log, onWavRead, options.fullLength, options.cellsPercent);
                 if (info.library.isNotEmpty())
                     f.set ("INST0libnam", mci::Value::ofString (info.library));
                 if (info.image.getSize() > 0)
