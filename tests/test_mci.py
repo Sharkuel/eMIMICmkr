@@ -184,3 +184,18 @@ def test_cymbals_are_stereo_and_hot_hits_turn_the_instrument_down():
     kick = mci.build_instrument("k", "Kick", [mci.Articulation("Kick", 0, [[s]])], b"")
     assert kick.get("INST0pool0nchn") == [1] and kick.get("INST0micinf0isst") == 0
     assert mci.sample(kick, 0) == s
+
+
+def test_blocks_take_the_width_that_holds_the_most_frames():
+    # 715 deltas that fit 11 bits, then wide ones: the Editor writes an 11-bit block of 715
+    # frames rather than a full 12-bit block of 677.
+    x, v = [0], 0
+    for k in range(715):
+        v += 1000 if k % 2 else -1000
+        x.append(v)
+    for k in range(2000):
+        v += 2000 if k % 2 else -2000
+        x.append(v)
+    blob, frames = mci.encode_blocks(x)
+    assert blob[0] == 11 and frames[0] == 715
+    assert mci.decode_blocks(blob) == x
