@@ -246,13 +246,17 @@ frame 0 = x; frame k+1 = frame k + delta k
 The block stores n deltas, not n − 1. The last delta bridges to the first frame of the
 next block, so n × bits ≤ 8128. Unused bits are zero.
 
-The Editor sizes a delta as |d| < 2^(bits−1). It picks `bits` from about the next
-580 frames and cuts a block short when a later delta would not fit. Our encoder
-instead picks the smallest `bits` that fits a full block, but never less than 4. That
-gives a different but equally valid stream: the decoder only reads the headers. The floor
-matters: without it, silence packs into 1-bit blocks of 8128 frames, which Pearl's files
-never contain (theirs stop at 4 bits, 2032 frames), and are the likely cause of the
-clicks heard on the Mimic from instruments full of them.
+The Editor sizes a delta as |d| < 2^(bits−1). On Alexandre's SDSE kits it takes, at
+each block, the width that holds the most frames (the narrowest on a tie), and our encoder
+does the same: re-encoding those kits gives their blocks byte for byte, except a final
+1-frame block. Some older Editor files instead take the narrowest width that fills a whole
+block; the decoder only reads the headers, so both play.
+
+Our encoder never goes below 10 bits (812 frames a block). Rendered hits fade into
+near-silence, which would otherwise pack into long low-bit blocks (8128 frames at 1 bit,
+2032 at 4). The Editor kits that play clean with many instruments loaded never hold
+those; ours with 1-3-bit blocks clicked, and ours with 4-bit blocks glitched once several
+were loaded (2026-10-12; the 10-bit floor is the fix being tested).
 
 ### RAM heads
 

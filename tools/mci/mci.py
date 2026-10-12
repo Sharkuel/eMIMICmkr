@@ -31,7 +31,7 @@ PAYLOAD_BITS = (BLOCK_SIZE - BLOCK_HEADER) * 8
 HEAD_PAD = 63              # zero frames in front of every RAM head
 HEAD_MAX_FRAMES = 32768    # a head never exceeds this many frames
 HEAD_MAX_BLOCKS = 64       # ...nor this many compressed blocks
-MIN_BLOCK_BITS = 4         # Pearl never packs deltas narrower than this (see encode_blocks)
+MIN_BLOCK_BITS = 10        # no narrower blocks (at most 812 frames), as in the Editor kits that play clean
 FULL_SCALE = 2 ** 23 - 1   # largest value a block header (and the Mimic) can hold
 
 MAX_ROUND_ROBINS = 16      # length of every veloLay#smpidx array
@@ -252,8 +252,9 @@ def encode_blocks(x: list[int]) -> tuple[bytes, list[int]]:
     while p < total:
         # The width that gives the longest block, the narrowest on a tie: what the Editor did
         # on Alexandre's SDSE kits (byte for byte; some older Editor files instead take the
-        # narrowest width that fills a block). Never below 4 bits: Pearl's files don't go lower, and
-        # 1-3-bit blocks (silence) were the likely cause of clicks heard on the Mimic.
+        # narrowest width that fills a block). Never below 10 bits: quiet tails would otherwise
+        # pack into long low-bit blocks (up to 2032 frames at 4 bits) that Alexandre's
+        # Editor-made kits never hold, and with many of our instruments loaded the Mimic glitched.
         bits = n = 0
         for b in range(MIN_BLOCK_BITS, 33):
             most = min(PAYLOAD_BITS // b, total - p)

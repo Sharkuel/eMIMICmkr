@@ -437,8 +437,8 @@ std::vector<int> encodeBlocks (const Samples& x, juce::MemoryOutputStream& out)
             widest[k] = std::max (need[(size_t) p + k], k > 0 ? widest[k - 1] : juce::uint8 (1));
 
         // The width that gives the longest block, the narrowest on a tie, as mci.py picks it (what
-        // the Editor did on Alexandre's SDSE kits). Never below 4 bits: Pearl's files don't go lower, and 1-3-bit blocks
-        // (silence) were the likely cause of clicks heard on the Mimic.
+        // the Editor did on Alexandre's SDSE kits). Never below 10 bits: quiet tails would otherwise pack
+        // into long low-bit blocks that his Editor-made kits never hold, and the Mimic glitched on them.
         int bits = 0, n = 0;
         for (int b = minBlockBits; b <= 32; ++b)
         {
