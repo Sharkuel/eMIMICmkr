@@ -349,6 +349,8 @@ int convert (const juce::StringArray& args)
             options.choke = false;
         else if (a == "--hat-as-ride")
             options.hatAsRide = true;
+        else if (a == "--full-length")
+            options.fullLength = true;
         else if (! a.startsWith ("--"))
             inputs.add (juce::File::getCurrentWorkingDirectory().getChildFile (a));
         else

@@ -21,6 +21,7 @@ public:
     {
         bool choke = true;        // make a Choke Ring from the hardest edge hit when none was recorded
         bool hatAsRide = false;   // also write each hi-hat as a 3-zone ride-type instrument
+        bool fullLength = false;  // keep every tail as recorded instead of cutting it (maxSeconds)
         juce::String name;        // instrument name, used only when the input holds one piece
     };
 
@@ -64,6 +65,14 @@ public:
     static constexpr int maxLayers = 20;       // what the Editor's and Pearl's cymbal files use
     static constexpr int maxRoundRobins = 6;   // per velocity layer, for kicks, snares, toms and cymbals
     static constexpr int hatLayers = 8, hatHits = 32;   // per hi-hat articulation, or it runs to gigabytes
+
+    static constexpr double fadeSeconds = 0.5;   // fade-out at the end of a hit that had to be cut
+
+    /** Longest hit kept for a piece: kick 2 s; snare, tom, hi-hat, percussion 3 s; cymbal 6 s,
+        ride-type (with a bell) 8 s. Long tails make the Mimic glitch with several instruments loaded. */
+    static double maxSeconds (const juce::String& family, bool hasBell);
+    /** x cut to maxFrames with its last fadeFrames faded out linearly to 0; unchanged when shorter. */
+    static void fitLength (mci::Samples& x, int maxFrames, int fadeFrames = (int) (fadeSeconds * sampleRate + 0.5));
 
     /** Wave cells the Mimic allows per instrument, shared by its zones; 0 = no limit known. */
     static int cellLimit (const juce::String& instrumentType);
@@ -158,6 +167,6 @@ public:
 
     static mci::MciFile build (const Piece&, const Input&, const juce::String& name, bool choke, bool hatAsRide,
                                const std::function<void (const juce::String&)>& log,
-                               const std::function<void()>& onWavRead = {});
+                               const std::function<void()>& onWavRead = {}, bool fullLength = false);
 };
 } // namespace emk

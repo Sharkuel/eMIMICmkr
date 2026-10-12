@@ -343,3 +343,16 @@ def test_cpp_reader_and_writer_round_trip_editor_files(tmp_path, path):
     run = subprocess.run([EXE, "--rewrite", str(path), str(out)], capture_output=True, text=True)
     assert run.returncode == 0, run.stderr
     assert out.read_bytes() == path.read_bytes()
+
+
+@pytest.mark.parametrize("flags", [[], ["--full-length"]])
+def test_long_tails_are_cut_to_suit_the_piece(tmp_path, flags):
+    for i, v in enumerate([40, 90, 127], 1):    # 2.5 s kick hits: past the kick's 2 s
+        write_wav(tmp_path / "in" / "Long Kick" / f"Long Kick - KICK - {i:03d}v{v}.wav",
+                  noisy_hit(v, 110250, 3, 1, i))
+    py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "Long Kick", *flags, expect=["Long Kick.mci"])
+    f = mci.read_mci(str(py_out / "Long Kick.mci"))
+    frames = [mci.sample(f, i) for i in range(f.get("INST0pool0psz"))]
+    assert {len(x) for x in frames} == ({110250} if flags else {88200})
+    if not flags:
+        assert all(x[-1] == 0 for x in frames)

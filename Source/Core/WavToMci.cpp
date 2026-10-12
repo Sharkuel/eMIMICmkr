@@ -753,10 +753,31 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
 }
 
 //==============================================================================
+double WavToMci::maxSeconds (const juce::String& family, bool hasBell)
+{
+    if (family == "kick")
+        return 2.0;
+    if (family == "snare" || family == "tom" || family == "hat" || family == "perc")
+        return 3.0;
+    return family == "cymbal" && hasBell ? 8.0 : 6.0;
+}
+
+void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
+{
+    if ((int) x.size() <= maxFrames)
+        return;
+    x.resize ((size_t) maxFrames);
+    const auto fade = std::min (fadeFrames, maxFrames);
+    const auto start = maxFrames - fade;
+    for (int i = 0; i < fade; ++i)
+        x[(size_t) (start + i)] = (int) floorDiv ((juce::int64) x[(size_t) (start + i)] * (fade - 1 - i), fade);
+}
+
 mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::String& name, bool choke, bool hatAsRide,
                               const std::function<void (const juce::String&)>& log,
-                              const std::function<void()>& onWavRead)
+                              const std::function<void()>& onWavRead, bool fullLength)
 {
+    const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (piece.family, piece.find ("bell") != nullptr) * sampleRate);
     auto readOne = [&] (const Hit& h)
     {
         if (onWavRead)
@@ -823,7 +844,11 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         {
             z.audio.emplace_back();
             for (const auto& h : layer)
+            {
                 z.audio.back().push_back (readOne (h));
+                if (maxFrames > 0)
+                    fitLength (z.audio.back().back(), maxFrames);
+            }
         }
         z.velocities = minVelocities (split);
         return z;
@@ -1179,7 +1204,7 @@ WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juc
         {
             try
             {
-                auto f = build (piece, src, title, options.choke, asRide, log, onWavRead);
+                auto f = build (piece, src, title, options.choke, asRide, log, onWavRead, options.fullLength);
                 if (info.library.isNotEmpty())
                     f.set ("INST0libnam", mci::Value::ofString (info.library));
                 if (info.image.getSize() > 0)

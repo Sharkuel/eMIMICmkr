@@ -22,6 +22,10 @@ become a Mimic hi-hat: five openness steps per playing area, picked evenly from
 closed to the most open recording, with 8 layers of up to 32 hits each.
 --hat-as-ride also writes a 3-zone ride-type version (closed bow, bell, edge)
 for 3-zone hi-hat pads.
+
+Each hit is cut to a length that suits its piece (see max_seconds) and faded out
+over its last half second, because long tails make the Mimic glitch once several
+instruments are loaded. --full-length keeps every tail as recorded.
 """
 from __future__ import annotations
 
@@ -46,6 +50,9 @@ MAX_ROUND_ROBINS = 6     # per velocity layer, for kicks, snares, toms and cymba
 # Wave cells the Mimic allows per instrument, shared by its zones (Alexandre, 2026-10-07).
 # Cymbals and rides keep one of theirs for the choke ring. Hi-hats: not known yet.
 CELL_LIMITS = {"Kick": 64, "Snare": 300, "Tom": 200, "Cymbal": 200, "Ride": 300, "Perc": 200}
+# Longest hit kept per piece, in seconds; ride-type cymbals (with a bell) get more.
+MAX_SECONDS = {"kick": 2.0, "snare": 3.0, "tom": 3.0, "hat": 3.0, "perc": 3.0, "cymbal": 6.0, "ride": 8.0}
+FADE_SECONDS = 0.5       # fade-out at the end of a hit that had to be cut
 HIT_NAME = re.compile(r"^(?P<piece>.+?) - (?P<zone>[^-]+?) - (?P<hit>\d+)v(?P<vel>\d+)\.wav$", re.I)
 
 CYMBAL_WORDS = ("RIDE", "CRASH", "SPLASH", "CHINA", "STACK", "CYMBAL", "BELL")
@@ -344,8 +351,28 @@ def piece_title(piece: Piece, src: Source) -> str:
     return short
 
 
+def max_seconds(piece: Piece) -> float:
+    if piece.family == "cymbal" and "bell" in piece.zones:
+        return MAX_SECONDS["ride"]
+    return MAX_SECONDS.get(piece.family, MAX_SECONDS["cymbal"])
+
+
+def fit_length(x: list[int], max_frames: int, fade_frames: int = round(FADE_SECONDS * SAMPLE_RATE)) -> list[int]:
+    """x cut to max_frames, its last fade_frames faded out linearly to 0; x itself when shorter."""
+    if len(x) <= max_frames:
+        return x
+    x = x[:max_frames]
+    fade = min(fade_frames, max_frames)
+    start = max_frames - fade
+    for i in range(fade):
+        x[start + i] = x[start + i] * (fade - 1 - i) // fade
+    return x
+
+
 def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
-          hat_as_ride: bool = False) -> mci.MciFile:
+          hat_as_ride: bool = False, full_length: bool = False) -> mci.MciFile:
+    max_frames = None if full_length else round(max_seconds(piece) * SAMPLE_RATE)
+
     def read(h):
         x = read_wav(src.read(h.path))
         if h.blend is None:
@@ -356,7 +383,9 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         return [(a + (y[i] if i < len(y) else 0)) // 2 for i, a in enumerate(x)]
 
     def load(hits_layers):
-        return [[read(h) for h in layer] for layer in hits_layers]
+        if max_frames is None:
+            return [[read(h) for h in layer] for layer in hits_layers]
+        return [[fit_length(read(h), max_frames) for h in layer] for layer in hits_layers]
 
     zones = dict(piece.zones)
     if piece.family == "snare" and "rimshotside" not in zones and "rimshot" in zones:
@@ -495,6 +524,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-choke", action="store_true", help="leave the Choke Ring empty")
     ap.add_argument("--hat-as-ride", action="store_true",
                     help="also build each hi-hat as a 3-zone ride-type instrument (closed; bow, bell, edge)")
+    ap.add_argument("--full-length", action="store_true",
+                    help="keep every hit's whole tail instead of cutting it to suit the piece")
     args = ap.parse_args(argv)
 
     src = Source(args.input)
@@ -518,7 +549,8 @@ def main(argv=None) -> int:
         if piece.family == "hat" and args.hat_as_ride:
             builds.append((f"{name} 3-zone", True))
         for title, as_ride in builds:
-            f = build(piece, src, title, choke=not args.no_choke, hat_as_ride=as_ride)
+            f = build(piece, src, title, choke=not args.no_choke, hat_as_ride=as_ride,
+                      full_length=args.full_length)
             path = os.path.join(out_dir, f"{title}.mci")
             with open(path, "wb") as fh:
                 fh.write(mci.write_mci(f))

@@ -129,3 +129,16 @@ def test_missing_side_rimshot_is_blended(tmp_path):
     names = [f.get(f"INST0artic{a}artn") for a in range(f.get("INST0numart"))]
     assert names == ["Snare Center", "Snare Rimclick", "Snare Rimshot", "Snare Rimshot Side"]
     assert 5 in [f.get(f"INST0zoneType{z}") for z in range(f.get("INST0zonecnt"))]   # Rim Shot Side
+
+
+def test_fit_length_cuts_and_fades():
+    assert wav2mci.fit_length([5, 6], 4) == [5, 6]
+    assert wav2mci.fit_length([100] * 10, 6, fade_frames=4) == [100, 100, 75, 50, 25, 0]
+    assert wav2mci.fit_length([-100] * 3, 2, fade_frames=4) == [-50, 0]
+
+
+def test_max_seconds_per_piece():
+    ride = wav2mci.Piece("R", "cymbal", {"bell": [], "bow": []})
+    crash = wav2mci.Piece("C", "cymbal", {"edge": []})
+    assert wav2mci.max_seconds(ride) == 8.0 and wav2mci.max_seconds(crash) == 6.0
+    assert wav2mci.max_seconds(wav2mci.Piece("K", "kick")) == 2.0
