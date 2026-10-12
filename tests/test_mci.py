@@ -160,8 +160,8 @@ def test_hat_layout_matches_factory_hi_hat():
             assert built.get(f"INST0hctrlzn{c}{k}") == f.get(f"INST0hctrlzn{c}{k}"), (c, k)
 
 
-def test_blocks_never_narrower_than_pearls():
-    # Silence would fit 1-bit blocks of 8128 frames; Pearl's files never go below 4 bits.
+def test_blocks_never_narrower_than_the_floor():
+    # Silence would fit 1-bit blocks of 8128 frames; the Editor kits that play clean never go below 10 bits.
     blob, frames = mci.encode_blocks([0] * 20000 + [256, -256] * 10)
     assert min(blob[o] for o in range(0, len(blob), mci.BLOCK_SIZE)) == mci.MIN_BLOCK_BITS
     assert max(frames) == mci.PAYLOAD_BITS // mci.MIN_BLOCK_BITS
