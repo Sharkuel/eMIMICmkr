@@ -5,6 +5,25 @@ Tool to record samples from your VST libraries, and convert them into the Pearl 
 
 Pronunciation (e-MIMIC-maker)
 
+Why was it created? 
+
+Simply: Convenience for the Drummer. 
+
+Any Pearl Mimic user is aware of the painful process of creating kit pieces, and full blown drum kits, 
+specially if you want to use one of your sound libraries, without the trouble of setting up a PC/Laptop 
+with a VST, loaded through a DAW. 
+
+The open sound architecture of the Pearl Mimic allows for the user to pretty much use any sound on the module, 
+and it is common sense that drummers use tools to record the sample velocities of their VST libraries, 
+and use them on their kit, but the process was painfully slow, and could take hours to build your dream kit on the Mimic: 
+Load up your VST in your preferred (or compatible) DAW, load up the plugin, setup the zones and velocities, 
+render the audio, and then open up the MIMIC Instrument Editor, and build your kit piece by piece. 
+
+The eMIMICmkr basically covers all those steps with a couple of clicks, and does it at lightning fast speeds, specially on solid state drives. 
+
+You can load your VST, have the tool recognize most of the keys, tweak a thing or two, and let it record the samples offline, 
+build the .mci files, and load them directly on a USB drive, within a few minutes. 
+
 eMIMICmkr hosts a drum plugin (Superior Drummer 3, BFD3, Addictive Drums and others)
 and works out which MIDI note plays which kit piece and zone. It records every zone
 at several velocities and builds Pearl Mimic instruments (.mci) with the layers
