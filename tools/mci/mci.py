@@ -250,13 +250,21 @@ def encode_blocks(x: list[int]) -> tuple[bytes, list[int]]:
     p, total = 0, len(x)
     need = [_bits_for(x[k + 1] - x[k]) for k in range(total - 1)]
     while p < total:
-        # Silence would fit 1-bit blocks of 8128 frames. Pearl's own files never go below 4 bits
-        # (2032 frames); narrower ones are the likely cause of clicks heard on the Mimic.
-        for bits in range(MIN_BLOCK_BITS, 33):
-            n = min(PAYLOAD_BITS // bits, total - p)
-            if max(need[p:p + n], default=1) <= bits:
+        # The width that gives the longest block, the narrowest on a tie: what the Editor did
+        # on Alexandre's SDSE kits (byte for byte; some older Editor files instead take the
+        # narrowest width that fills a block). Never below 4 bits: Pearl's files don't go lower, and
+        # 1-3-bit blocks (silence) were the likely cause of clicks heard on the Mimic.
+        bits = n = 0
+        for b in range(MIN_BLOCK_BITS, 33):
+            most = min(PAYLOAD_BITS // b, total - p)
+            k = 0
+            while k < most and (p + k >= len(need) or need[p + k] <= b):
+                k += 1
+            if k > n:
+                bits, n = b, k
+            if k == most:      # a full block: wider ones only hold fewer frames
                 break
-        else:
+        if n == 0:
             raise MciError("delta does not fit in 32 bits")
         deltas = [x[p + k + 1] - x[p + k] for k in range(n) if p + k + 1 < total]
         v = 0
