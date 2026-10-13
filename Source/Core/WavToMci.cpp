@@ -767,6 +767,11 @@ double WavToMci::maxSeconds (const juce::String& family, bool hasBell)
     return family == "cymbal" && hasBell ? 8.0 : 6.0;
 }
 
+double WavToMci::fadeSeconds (const juce::String& family)
+{
+    return family == "cymbal" ? 2.0 : shortFadeSeconds;
+}
+
 void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
 {
     if ((int) x.size() <= maxFrames)
@@ -775,7 +780,10 @@ void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
     const auto fade = std::min (fadeFrames, maxFrames);
     const auto start = maxFrames - fade;
     for (int i = 0; i < fade; ++i)
-        x[(size_t) (start + i)] = (int) floorDiv ((juce::int64) x[(size_t) (start + i)] * (fade - 1 - i), fade);
+    {
+        const auto left = (juce::int64) (fade - 1 - i);
+        x[(size_t) (start + i)] = (int) floorDiv ((juce::int64) x[(size_t) (start + i)] * left * left, (juce::int64) fade * fade);
+    }
 }
 
 mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::String& name, bool choke, bool hatAsRide,
@@ -787,6 +795,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     auto cells = [cellsPercent] (const juce::String& kind) { return std::max (2, cellLimit (kind) * cellsPercent / 100); };
     const auto hatHitsUsed = std::max (1, hatHits * cellsPercent / 100);
     const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (piece.family, piece.find ("bell") != nullptr) * sampleRate);
+    const auto fadeFrames = (int) std::lround (fadeSeconds (piece.family) * sampleRate);
     auto readOne = [&] (const Hit& h)
     {
         if (onWavRead)
@@ -856,7 +865,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             {
                 z.audio.back().push_back (readOne (h));
                 if (maxFrames > 0)
-                    fitLength (z.audio.back().back(), maxFrames);
+                    fitLength (z.audio.back().back(), maxFrames, fadeFrames);
             }
         }
         z.velocities = minVelocities (split);

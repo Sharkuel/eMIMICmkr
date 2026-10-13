@@ -232,7 +232,8 @@ toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--h
 a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
 Long tails make the Mimic glitch once several instruments are loaded, so each hit is cut to
-a length that suits its piece and faded out to silence over its last half second: kicks 2 s;
+a length that suits its piece and faded out to silence (over its last 2 s for cymbals and
+rides, which are still ringing when cut, and its last half second for the rest): kicks 2 s;
 snares, toms, hi-hats and percussion 3 s; cymbals 6 s; ride-type cymbals (with a bell) 8 s.
 Shorter hits are left as they are. `--full-length` keeps every tail as recorded.
 

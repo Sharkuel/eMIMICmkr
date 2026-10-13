@@ -133,8 +133,8 @@ def test_missing_side_rimshot_is_blended(tmp_path):
 
 def test_fit_length_cuts_and_fades():
     assert wav2mci.fit_length([5, 6], 4) == [5, 6]
-    assert wav2mci.fit_length([100] * 10, 6, fade_frames=4) == [100, 100, 75, 50, 25, 0]
-    assert wav2mci.fit_length([-100] * 3, 2, fade_frames=4) == [-50, 0]
+    assert wav2mci.fit_length([100] * 10, 6, fade_frames=4) == [100, 100, 56, 25, 6, 0]
+    assert wav2mci.fit_length([-100] * 3, 2, fade_frames=4) == [-25, 0]
 
 
 def test_max_seconds_per_piece():
@@ -142,3 +142,5 @@ def test_max_seconds_per_piece():
     crash = wav2mci.Piece("C", "cymbal", {"edge": []})
     assert wav2mci.max_seconds(ride) == 8.0 and wav2mci.max_seconds(crash) == 6.0
     assert wav2mci.max_seconds(wav2mci.Piece("K", "kick")) == 2.0
+    assert wav2mci.fade_seconds(ride) == wav2mci.fade_seconds(crash) == 2.0
+    assert wav2mci.fade_seconds(wav2mci.Piece("K", "kick")) == 0.5

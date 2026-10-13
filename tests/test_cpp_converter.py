@@ -358,6 +358,18 @@ def test_long_tails_are_cut_to_suit_the_piece(tmp_path, flags):
         assert all(x[-1] == 0 for x in frames)
 
 
+def test_long_cymbal_tails_fade_over_two_seconds(tmp_path):
+    for i, v in enumerate([40, 90, 127], 1):    # 7 s crash hits: past the cymbal's 6 s
+        write_wav(tmp_path / "in" / "Long Crash" / "EDGE" / f"Long Crash - CRASH1 EDGE - {i:03d}v{v}.wav",
+                  noisy_hit(v, 308700, 3, 1, i))
+    py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "Long Crash", expect=["Long Crash.mci"])
+    f = mci.read_mci(str(py_out / "Long Crash.mci"))
+    x = mci.channels(f, 0)[0]
+    assert len(x) == 264600 and x[-1] == 0
+    level = lambda part: sum(abs(v) for v in part) / len(part)
+    assert level(x[-44100:]) < 0.1 * level(x[-132300:-88200])   # last second well faded: a 2 s fade
+
+
 def test_lighter_instruments_use_fewer_cells(tmp_path):
     ride = ride_folders(tmp_path / "in", velocities=range(127, 0, -1))   # 127 hits per zone
     full, _, _ = convert_both(tmp_path / "full", ride)
