@@ -167,8 +167,8 @@ them as VST3 plugins the app can load.
    Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.
 4. Set **Most hits per zone** (default 127, spread from velocity 127 down to 1) and **Record kit**.
    With **Fit Mimic limits** on, each piece records only as many hits as the Mimic can hold
-   (kick 64, snare 300, toms 200, 2-zone cymbals 200, rides 300, shared across the piece's
-   zones); the **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
+   (kick 64, snare 300, toms 200, cymbals and rides 120, shared across the piece's
+   zones; stereo cymbals with more crash the Mimic); the **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
    count yourself (marked *); the piece's other ticked zones share what is left.
 5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
    **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;

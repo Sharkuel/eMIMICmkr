@@ -216,7 +216,7 @@ def test_cell_limits_thin_out_big_zones(tmp_path):
     render(tmp_path / "in", ["BOW", "EDGE"], list(range(127, 0, -1)) + list(range(127, 50, -1)))
     py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "14 Test Crash")
     f = mci.read_mci(str(py_out / "14 Test Crash.mci"))
-    assert f.get("INST0pool0psz") == 200
+    assert f.get("INST0pool0psz") == 120     # stereo cymbals are capped
 
 
 def test_mixed_formats_kit_folder(tmp_path):
@@ -276,7 +276,7 @@ def test_several_zone_folders_convert_like_their_parent(tmp_path):
     picked, _, log = convert_both(tmp_path / "picked", zones, expect=["My Kit Ride.mci"])
     assert (whole / "My Kit Ride.mci").read_bytes() == (picked / "My Kit Ride.mci").read_bytes()
     f = mci.read_mci(str(picked / "My Kit Ride.mci"))
-    assert f.get("INST0instyp") == "Ride" and f.get("INST0artic0numlay") == 16   # 64 hits, 4 round robins
+    assert f.get("INST0instyp") == "Ride" and f.get("INST0artic0numlay") == 10   # 40 of 64 hits, 4 round robins
 
     # a folder given inside another one adds nothing; a zip among several inputs is skipped
     z = tmp_path / "bell.zip"
@@ -364,4 +364,4 @@ def test_lighter_instruments_use_fewer_cells(tmp_path):
     half, _, _ = convert_both(tmp_path / "half", ride, "--cells-percent", "50")
     n_full = mci.read_mci(str(full / "My Kit Ride.mci")).get("INST0pool0psz")
     n_half = mci.read_mci(str(half / "My Kit Ride.mci")).get("INST0pool0psz")
-    assert n_full == 300 and n_half == 150
+    assert n_full == 120 and n_half == 60

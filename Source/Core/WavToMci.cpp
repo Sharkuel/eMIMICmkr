@@ -161,11 +161,16 @@ int WavToMci::cellLimit (const juce::String& type)
 {
     // Wave cells the Mimic allows per instrument, shared by its zones (Alexandre, 2026-10-07).
     // Cymbals and rides keep one of theirs for the choke ring. Hi-hats: not known yet.
+    // Cymbals and rides are written in stereo, and a stereo cymbal with the full 200 cells
+    // crashed the Mimic while 120 played clean (Alexandre, 2026-10-13), so they get 120,
+    // like the purchased Meinl stereo rides (77-125).
     if (type == "Kick")
         return 64;
-    if (type == "Snare" || type == "Ride")
+    if (type == "Snare")
         return 300;
-    if (type == "Tom" || type == "Cymbal" || type == "Perc")
+    if (type == "Cymbal" || type == "Ride")
+        return 120;
+    if (type == "Tom" || type == "Perc")
         return 200;
     return 0;
 }
