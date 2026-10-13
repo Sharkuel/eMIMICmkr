@@ -166,9 +166,10 @@ them as VST3 plugins the app can load.
      (`piece,zone,note,cc4,record,hits,instrument,name,library,image`), which a spreadsheet can edit too.
    Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.
 4. Set **Most hits per zone** (default 127, spread from velocity 127 down to 1) and **Record kit**.
-   With **Fit Mimic limits** on, each piece records only as many hits as the Mimic can hold
-   (kick 64, snare 300, toms 200, cymbals and rides 120, shared across the piece's
-   zones; stereo cymbals with more crash the Mimic); the **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
+   With **Fit Mimic limits** on, each piece records only as many hits as Pearl's own
+   instruments use (kick 48, snare 140, toms 70, crashes 64, rides 112, shared across the
+   piece's zones): the Mimic keeps part of every hit in memory, and kits with more glitch
+   once several instruments are loaded. The **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
    count yourself (marked *); the piece's other ticked zones share what is left.
 5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
    **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;
@@ -231,9 +232,10 @@ choke sound is made from the hardest edge hit when none was recorded. Kicks, sna
 toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--hat-as-ride` for
 a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
-Long tails make the Mimic glitch once several instruments are loaded, so each hit is cut to
-a length that suits its piece and faded out to silence over its last half second: kicks 2 s;
-snares, toms, hi-hats and percussion 3 s; cymbals 6 s; ride-type cymbals (with a bell) 8 s.
+Each hit is cut to about the length of Pearl's own hits for that piece and faded out to
+silence (over its last 2 s for cymbals and rides, which are still ringing when cut, and its
+last half second for the rest): kicks 2.5 s; snares, hi-hats and percussion 3 s; toms 5 s;
+cymbals 12 s; ride-type cymbals (with a bell) 14 s.
 Shorter hits are left as they are. `--full-length` keeps every tail as recorded.
 
 "Lighter instruments (half the hits)" in the app, or `--cells-percent 50`, builds each

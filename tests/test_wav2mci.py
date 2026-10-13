@@ -36,9 +36,9 @@ def test_two_zone_crash_becomes_a_cymbal(tmp_path):
     f = mci.read_mci(str(tmp_path / "14 Test Crash.mci"))
     assert f.get("INST0instyp") == "Cymbal"
     assert [f.get(f"INST0artic{a}artn") for a in range(3)] == ["Edge", "Bow", "Choke Ring"]
-    assert f.get("INST0artic0numlay") == 11          # 43 hits, about 4 round robins each
-    vel = [f.get(f"INST0artic0veloLay{l}minvel") for l in range(11)]
-    assert vel[0] == 0 and vel == sorted(vel) and len(set(vel)) == 11
+    assert f.get("INST0artic0numlay") == 8           # 32 of 43 hits (63 cells shared), 4 round robins
+    vel = [f.get(f"INST0artic0veloLay{l}minvel") for l in range(8)]
+    assert vel[0] == 0 and vel == sorted(vel) and len(set(vel)) == 8
     assert f.get("INST0artic2numlay") == 1          # generated choke
 
 
@@ -133,12 +133,14 @@ def test_missing_side_rimshot_is_blended(tmp_path):
 
 def test_fit_length_cuts_and_fades():
     assert wav2mci.fit_length([5, 6], 4) == [5, 6]
-    assert wav2mci.fit_length([100] * 10, 6, fade_frames=4) == [100, 100, 75, 50, 25, 0]
-    assert wav2mci.fit_length([-100] * 3, 2, fade_frames=4) == [-50, 0]
+    assert wav2mci.fit_length([100] * 10, 6, fade_frames=4) == [100, 100, 56, 25, 6, 0]
+    assert wav2mci.fit_length([-100] * 3, 2, fade_frames=4) == [-25, 0]
 
 
 def test_max_seconds_per_piece():
     ride = wav2mci.Piece("R", "cymbal", {"bell": [], "bow": []})
     crash = wav2mci.Piece("C", "cymbal", {"edge": []})
-    assert wav2mci.max_seconds(ride) == 8.0 and wav2mci.max_seconds(crash) == 6.0
-    assert wav2mci.max_seconds(wav2mci.Piece("K", "kick")) == 2.0
+    assert wav2mci.max_seconds(ride) == 14.0 and wav2mci.max_seconds(crash) == 12.0
+    assert wav2mci.max_seconds(wav2mci.Piece("K", "kick")) == 2.5
+    assert wav2mci.fade_seconds(ride) == wav2mci.fade_seconds(crash) == 2.0
+    assert wav2mci.fade_seconds(wav2mci.Piece("K", "kick")) == 0.5

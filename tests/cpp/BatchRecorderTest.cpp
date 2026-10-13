@@ -988,11 +988,11 @@ int main (int argc, char** argv)
                 return map.hitsFor (i, 127);
         return -1;
     };
-    const bool limitsOk = hitsOf ("KICK1") == 64 && hitsOf ("SNARE1 CENTER") == 100 && hitsOf ("TOM1 RIMSHOT") == 100
-                          && hitsOf ("CRASH1 EDGE") == 59 && hitsOf ("RIDE1 BELL") == 39 && hitsOf ("HATS BOW OPEN2") == 32;
+    const bool limitsOk = hitsOf ("KICK1") == 48 && hitsOf ("SNARE1 CENTER") == 46 && hitsOf ("TOM1 RIMSHOT") == 35
+                          && hitsOf ("CRASH1 EDGE") == 31 && hitsOf ("RIDE1 BELL") == 37 && hitsOf ("HATS BOW OPEN2") == 32;
     std::printf ("limits %s\n", limitsOk ? "ok" : "WRONG");
 
-    // A count set by hand: the snare's other ticked zones share what's left of its 300.
+    // A count set by hand: the snare's other ticked zones share what's left of its 140.
     auto chosen = map;
     int sidestick = -1;
     for (int i = 0; i < chosen.zones.size(); ++i)
@@ -1008,8 +1008,8 @@ int main (int argc, char** argv)
         return -1;
     };
     juce::String err;
-    const bool setOk = set == 30 && hitsIn ("SNARE1 SIDESTICK", 127) == 30 && hitsIn ("SNARE1 CENTER", 200) == 135
-                       && hitsIn ("SNARE1 CENTER", 127) == 127 && tooMany == 298
+    const bool setOk = set == 30 && hitsIn ("SNARE1 SIDESTICK", 127) == 30 && hitsIn ("SNARE1 CENTER", 200) == 55
+                       && hitsIn ("SNARE1 CENTER", 40) == 40 && tooMany == 138
                        && emk::KitMap::fromCsv (chosen.toCsv(), err).toCsv() == chosen.toCsv()
                        && emk::KitMap::fromValueTree (chosen.toValueTree()).zones[sidestick].hits == 30;
     std::printf ("chosen hits %s (sidestick %d, center %d, at most %d)\n", setOk ? "ok" : "WRONG", set,
