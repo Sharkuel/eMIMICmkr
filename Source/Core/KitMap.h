@@ -157,9 +157,9 @@ public:
     static juce::MemoryBlock bfd3WithEveryDrumMapped (const juce::MemoryBlock& state, int& mapped);
 
     /** How many hits to record for zones[index] so the piece fits the Mimic's wave-cell limit
-        for its instrument type (kick 64, snare 300, tom 200, cymbal and ride 120, percussion 200,
-        shared by the piece's ticked zones; one cymbal cell goes to the choke ring). Hi-hat
-        positions get 32, what the converter keeps. Never more than maxHits.
+        for its instrument type (kick 48, snare 140, tom 70, cymbal 64, ride 112, percussion 64,
+        as in Pearl's factory library), shared by the piece's ticked zones; one cymbal cell goes
+        to the choke ring. Hi-hat positions get 32, what the converter keeps. Never more than maxHits.
         A zone the user gave a count keeps it; the piece's other ticked zones share what's left.
         With fitLimits off, every zone gets its own count or maxHits. */
     int hitsFor (int index, int maxHits, bool fitLimits = true) const;

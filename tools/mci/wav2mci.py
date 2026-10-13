@@ -24,8 +24,7 @@ closed to the most open recording, with 8 layers of up to 32 hits each.
 for 3-zone hi-hat pads.
 
 Each hit is cut to a length that suits its piece (see max_seconds) and faded out
-(see fade_seconds), because long tails make the Mimic glitch once several
-instruments are loaded. --full-length keeps every tail as recorded.
+(see fade_seconds), close to Pearl's own hits. --full-length keeps every tail as recorded.
 """
 from __future__ import annotations
 
@@ -47,14 +46,17 @@ import mci  # noqa: E402
 SAMPLE_RATE = 44100      # the Mimic's rate, judging by Pearl's factory content
 MAX_LAYERS = 20          # what the Editor's and Pearl's cymbal files use
 MAX_ROUND_ROBINS = 6     # per velocity layer, for kicks, snares, toms and cymbals
-# Wave cells the Mimic allows per instrument, shared by its zones (Alexandre, 2026-10-07).
-# Cymbals and rides keep one of theirs for the choke ring. Hi-hats: not known yet.
-# Cymbals and rides are written in stereo, and a stereo cymbal with the full 200 cells
-# crashed the Mimic while 120 played clean (Alexandre, 2026-10-13), so they get 120,
-# like the purchased Meinl stereo rides (77-125).
-CELL_LIMITS = {"Kick": 64, "Snare": 300, "Tom": 200, "Cymbal": 120, "Ride": 120, "Perc": 200}
-# Longest hit kept per piece, in seconds; ride-type cymbals (with a bell) get more.
-MAX_SECONDS = {"kick": 2.0, "snare": 3.0, "tom": 3.0, "hat": 3.0, "perc": 3.0, "cymbal": 6.0, "ride": 8.0}
+# Wave cells per instrument, shared by its zones. The Mimic preloads about 0.1 MB of RAM
+# per cell whatever the hit length, and kits built to the Editor's limits (snare 300,
+# toms 200...) glitched once several were loaded, while Pearl's own instruments play clean.
+# So these follow Pearl's factory library (2026-10-13): kicks 12-45 cells, snares 84-140,
+# toms 49-70, crashes/splashes/chinas 32-65, rides 74-112, percussion 30. Cymbals and
+# rides keep one cell for the choke ring. Hi-hats: see HAT_HITS.
+CELL_LIMITS = {"Kick": 48, "Snare": 140, "Tom": 70, "Cymbal": 64, "Ride": 112, "Perc": 64}
+# Longest hit kept per piece, in seconds, close to Pearl's factory hits (kicks 1.5-2.5 s,
+# snares 1.5-3.5, toms 2-6, crashes and chinas 12, splashes 6-8, rides 12-14).
+# Length costs disk reads, not RAM; ride-type cymbals (with a bell) get the ride's.
+MAX_SECONDS = {"kick": 2.5, "snare": 3.0, "tom": 5.0, "hat": 3.0, "perc": 3.0, "cymbal": 12.0, "ride": 14.0}
 # Fade-out at the end of a hit that had to be cut. Cymbals are cut while still ringing
 # loud, so they fade over longer, or the end sounds abrupt (Alexandre, 2026-10-13).
 FADE_SECONDS = {"cymbal": 2.0}   # rides included

@@ -159,19 +159,22 @@ void walk (const juce::File& root, const juce::File& dir, juce::StringArray& out
 //==============================================================================
 int WavToMci::cellLimit (const juce::String& type)
 {
-    // Wave cells the Mimic allows per instrument, shared by its zones (Alexandre, 2026-10-07).
-    // Cymbals and rides keep one of theirs for the choke ring. Hi-hats: not known yet.
-    // Cymbals and rides are written in stereo, and a stereo cymbal with the full 200 cells
-    // crashed the Mimic while 120 played clean (Alexandre, 2026-10-13), so they get 120,
-    // like the purchased Meinl stereo rides (77-125).
+    // Wave cells per instrument, shared by its zones. The Mimic preloads about 0.1 MB of RAM
+    // per cell whatever the hit length, and kits built to the Editor's limits (snare 300,
+    // toms 200...) glitched once several were loaded, while Pearl's own instruments play clean.
+    // So these follow Pearl's factory library (2026-10-13): kicks 12-45 cells, snares 84-140,
+    // toms 49-70, crashes/splashes/chinas 32-65, rides 74-112, percussion 30. Cymbals and
+    // rides keep one cell for the choke ring. Hi-hats: see hatHits.
     if (type == "Kick")
-        return 64;
+        return 48;
     if (type == "Snare")
-        return 300;
-    if (type == "Cymbal" || type == "Ride")
-        return 120;
-    if (type == "Tom" || type == "Perc")
-        return 200;
+        return 140;
+    if (type == "Tom")
+        return 70;
+    if (type == "Cymbal" || type == "Perc")
+        return 64;
+    if (type == "Ride")
+        return 112;
     return 0;
 }
 
@@ -760,11 +763,15 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
 //==============================================================================
 double WavToMci::maxSeconds (const juce::String& family, bool hasBell)
 {
+    // Close to Pearl's factory hits: kicks 1.5-2.5 s, snares 1.5-3.5, toms 2-6, crashes and
+    // chinas 12, splashes 6-8, rides 12-14. Length costs disk reads, not RAM.
     if (family == "kick")
-        return 2.0;
-    if (family == "snare" || family == "tom" || family == "hat" || family == "perc")
+        return 2.5;
+    if (family == "snare" || family == "hat" || family == "perc")
         return 3.0;
-    return family == "cymbal" && hasBell ? 8.0 : 6.0;
+    if (family == "tom")
+        return 5.0;
+    return family == "cymbal" && hasBell ? 14.0 : 12.0;
 }
 
 double WavToMci::fadeSeconds (const juce::String& family)

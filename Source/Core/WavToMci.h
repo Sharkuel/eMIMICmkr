@@ -73,8 +73,8 @@ public:
         loud (a short fade sounds abrupt, Alexandre 2026-10-13); everything else shortFadeSeconds. */
     static double fadeSeconds (const juce::String& family);
 
-    /** Longest hit kept for a piece: kick 2 s; snare, tom, hi-hat, percussion 3 s; cymbal 6 s,
-        ride-type (with a bell) 8 s. Long tails make the Mimic glitch with several instruments loaded. */
+    /** Longest hit kept for a piece, close to Pearl's factory hits: kick 2.5 s; snare, hi-hat,
+        percussion 3 s; tom 5 s; cymbal 12 s, ride-type (with a bell) 14 s. */
     static double maxSeconds (const juce::String& family, bool hasBell);
     /** x cut to maxFrames with its last fadeFrames faded out to 0 along the square of a straight
         line (falls fast, then trails off like a ringing tail); unchanged when shorter. */

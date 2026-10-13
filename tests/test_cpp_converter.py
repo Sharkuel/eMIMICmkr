@@ -216,7 +216,7 @@ def test_cell_limits_thin_out_big_zones(tmp_path):
     render(tmp_path / "in", ["BOW", "EDGE"], list(range(127, 0, -1)) + list(range(127, 50, -1)))
     py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "14 Test Crash")
     f = mci.read_mci(str(py_out / "14 Test Crash.mci"))
-    assert f.get("INST0pool0psz") == 120     # stereo cymbals are capped
+    assert f.get("INST0pool0psz") == 64      # as many as Pearl's crashes
 
 
 def test_mixed_formats_kit_folder(tmp_path):
@@ -276,7 +276,7 @@ def test_several_zone_folders_convert_like_their_parent(tmp_path):
     picked, _, log = convert_both(tmp_path / "picked", zones, expect=["My Kit Ride.mci"])
     assert (whole / "My Kit Ride.mci").read_bytes() == (picked / "My Kit Ride.mci").read_bytes()
     f = mci.read_mci(str(picked / "My Kit Ride.mci"))
-    assert f.get("INST0instyp") == "Ride" and f.get("INST0artic0numlay") == 10   # 40 of 64 hits, 4 round robins
+    assert f.get("INST0instyp") == "Ride" and f.get("INST0artic0numlay") == 9    # 37 of 64 hits, 4 round robins
 
     # a folder given inside another one adds nothing; a zip among several inputs is skipped
     z = tmp_path / "bell.zip"
@@ -347,25 +347,25 @@ def test_cpp_reader_and_writer_round_trip_editor_files(tmp_path, path):
 
 @pytest.mark.parametrize("flags", [[], ["--full-length"]])
 def test_long_tails_are_cut_to_suit_the_piece(tmp_path, flags):
-    for i, v in enumerate([40, 90, 127], 1):    # 2.5 s kick hits: past the kick's 2 s
+    for i, v in enumerate([40, 90, 127], 1):    # 3 s kick hits: past the kick's 2.5 s
         write_wav(tmp_path / "in" / "Long Kick" / f"Long Kick - KICK - {i:03d}v{v}.wav",
-                  noisy_hit(v, 110250, 3, 1, i))
+                  noisy_hit(v, 132300, 3, 1, i))
     py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "Long Kick", *flags, expect=["Long Kick.mci"])
     f = mci.read_mci(str(py_out / "Long Kick.mci"))
     frames = [mci.sample(f, i) for i in range(f.get("INST0pool0psz"))]
-    assert {len(x) for x in frames} == ({110250} if flags else {88200})
+    assert {len(x) for x in frames} == ({132300} if flags else {110250})
     if not flags:
         assert all(x[-1] == 0 for x in frames)
 
 
 def test_long_cymbal_tails_fade_over_two_seconds(tmp_path):
-    for i, v in enumerate([40, 90, 127], 1):    # 7 s crash hits: past the cymbal's 6 s
+    for i, v in enumerate([40, 90, 127], 1):    # 13 s crash hits: past the cymbal's 12 s
         write_wav(tmp_path / "in" / "Long Crash" / "EDGE" / f"Long Crash - CRASH1 EDGE - {i:03d}v{v}.wav",
-                  noisy_hit(v, 308700, 3, 1, i))
+                  noisy_hit(v, 573300, 3, 1, i))
     py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "Long Crash", expect=["Long Crash.mci"])
     f = mci.read_mci(str(py_out / "Long Crash.mci"))
     x = mci.channels(f, 0)[0]
-    assert len(x) == 264600 and x[-1] == 0
+    assert len(x) == 529200 and x[-1] == 0
     level = lambda part: sum(abs(v) for v in part) / len(part)
     assert level(x[-44100:]) < 0.1 * level(x[-132300:-88200])   # last second well faded: a 2 s fade
 
@@ -376,4 +376,4 @@ def test_lighter_instruments_use_fewer_cells(tmp_path):
     half, _, _ = convert_both(tmp_path / "half", ride, "--cells-percent", "50")
     n_full = mci.read_mci(str(full / "My Kit Ride.mci")).get("INST0pool0psz")
     n_half = mci.read_mci(str(half / "My Kit Ride.mci")).get("INST0pool0psz")
-    assert n_full == 120 and n_half == 60
+    assert n_full == 112 and n_half == 56
