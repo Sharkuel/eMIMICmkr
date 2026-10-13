@@ -989,7 +989,7 @@ int main (int argc, char** argv)
         return -1;
     };
     const bool limitsOk = hitsOf ("KICK1") == 64 && hitsOf ("SNARE1 CENTER") == 100 && hitsOf ("TOM1 RIMSHOT") == 100
-                          && hitsOf ("CRASH1 EDGE") == 99 && hitsOf ("RIDE1 BELL") == 99 && hitsOf ("HATS BOW OPEN2") == 32;
+                          && hitsOf ("CRASH1 EDGE") == 59 && hitsOf ("RIDE1 BELL") == 39 && hitsOf ("HATS BOW OPEN2") == 32;
     std::printf ("limits %s\n", limitsOk ? "ok" : "WRONG");
 
     // A count set by hand: the snare's other ticked zones share what's left of its 300.

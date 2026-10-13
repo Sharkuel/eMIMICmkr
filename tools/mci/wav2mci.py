@@ -49,7 +49,10 @@ MAX_LAYERS = 20          # what the Editor's and Pearl's cymbal files use
 MAX_ROUND_ROBINS = 6     # per velocity layer, for kicks, snares, toms and cymbals
 # Wave cells the Mimic allows per instrument, shared by its zones (Alexandre, 2026-10-07).
 # Cymbals and rides keep one of theirs for the choke ring. Hi-hats: not known yet.
-CELL_LIMITS = {"Kick": 64, "Snare": 300, "Tom": 200, "Cymbal": 200, "Ride": 300, "Perc": 200}
+# Cymbals and rides are written in stereo, and a stereo cymbal with the full 200 cells
+# crashed the Mimic while 120 played clean (Alexandre, 2026-10-13), so they get 120,
+# like the purchased Meinl stereo rides (77-125).
+CELL_LIMITS = {"Kick": 64, "Snare": 300, "Tom": 200, "Cymbal": 120, "Ride": 120, "Perc": 200}
 # Longest hit kept per piece, in seconds; ride-type cymbals (with a bell) get more.
 MAX_SECONDS = {"kick": 2.0, "snare": 3.0, "tom": 3.0, "hat": 3.0, "perc": 3.0, "cymbal": 6.0, "ride": 8.0}
 FADE_SECONDS = 0.5       # fade-out at the end of a hit that had to be cut
