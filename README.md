@@ -194,7 +194,8 @@ so keep the `.mci` files as they were made, and copy them to the Mimic along wit
 
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 32-bit float WAVs (so a hit louder than full scale isn't clipped) under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
-the layout the converter reads (below). The hi-hat is recorded at five pedal positions
+the layout the converter reads (below). Each hit runs until it has rung down to 90 dB below
+its own peak (or to -100 dBFS), up to 30 s, so soft hits keep their whole tail too. The hi-hat is recorded at five pedal positions
 (CC4 127, 96, 64, 32, 0) on both bow and edge, plus the pedal chick.
 
 `cmake --build build --target eMIMICmkr_tests` builds a check of the recorder against a
@@ -232,11 +233,15 @@ choke sound is made from the hardest edge hit when none was recorded. Kicks, sna
 toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--hat-as-ride` for
 a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
-Each hit is cut to about the length of Pearl's own hits for that piece and faded out to
-silence (over its last 2 s for cymbals and rides, which are still ringing when cut, and its
-last half second for the rest): kicks 2.5 s; snares, hi-hats and percussion 3 s; toms 5 s;
-cymbals 12 s; ride-type cymbals (with a bell) 14 s.
+Each hit is cut to a length that suits the piece and faded out to silence: kicks 2.5 s;
+snares, hi-hats and percussion 3 s; toms 5 s; cymbals 16 s; ride-type cymbals (with a bell)
+20 s. Cymbals and rides fade over the second half of that length, so the fade blends into
+their own ring instead of sounding like a cutoff; the rest fade over their last half second.
 Shorter hits are left as they are. `--full-length` keeps every tail as recorded.
+
+Each instrument is then turned up (or down) as a whole so its loudest hit peaks at -1 dBFS,
+as SDSE's are. Quiet libraries play as loud as the rest, and the balance between soft and
+hard hits stays as recorded.
 
 "Lighter instruments (half the hits)" in the app, or `--cells-percent 50`, builds each
 instrument with that share of its wave-cell limit (and of the 32 hits per hi-hat

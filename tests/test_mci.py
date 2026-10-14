@@ -177,13 +177,24 @@ def test_cymbals_are_stereo_and_hot_hits_turn_the_instrument_down():
     assert f.get("INST0micinf0isst") == 1
     peak = max(abs(v) for v in hot)
     left, right = mci.channels(f, 1)
-    assert left == right == [v * mci.FULL_SCALE // peak for v in hot]
+    assert left == right == [v * mci.TARGET_PEAK // peak for v in hot]
     assert f.get("INST0pool0fcnt")[0] == 2 * len(s)
     assert f.get("INST0pool0rmsenv0rmsl") == len(s) // 1024
 
     kick = mci.build_instrument("k", "Kick", [mci.Articulation("Kick", 0, [[s]])], b"")
     assert kick.get("INST0pool0nchn") == [1] and kick.get("INST0micinf0isst") == 0
-    assert mci.sample(kick, 0) == s
+    assert mci.sample(kick, 0) == [v * mci.TARGET_PEAK // max(s) for v in s]
+
+
+def test_quiet_instruments_are_turned_up_to_minus_1_db():
+    s = [int(math.sin(i / 9) * 3000) for i in range(5000)]     # peaks near -69 dBFS
+    soft = [v // 10 for v in s]
+    f = mci.read_mci(mci.write_mci(mci.build_instrument(
+        "k", "Kick", [mci.Articulation("Kick", 0, [[soft], [s]])], b"")))
+    peak = max(abs(v) for v in s)
+    assert mci.sample(f, 1) == [v * mci.TARGET_PEAK // peak for v in s]
+    assert max(abs(v) for v in mci.sample(f, 1)) == mci.TARGET_PEAK
+    assert mci.sample(f, 0) == [v * mci.TARGET_PEAK // peak for v in soft]   # balance kept
 
 
 def test_blocks_take_the_width_that_holds_the_most_frames():

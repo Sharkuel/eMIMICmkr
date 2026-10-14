@@ -870,14 +870,15 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
         }
     }
 
-    // A hit recorded past full scale turns the whole instrument down, so the balance between
-    // layers and zones stays and nothing clips (or overflows a block header).
+    // The whole instrument is scaled so its loudest sample peaks at targetPeak (-1 dBFS): a quiet
+    // recording is turned up, as SDSE's are (Alexandre 2026-10-14), and one past full scale is
+    // turned down instead of clipped. One gain keeps the balance between layers and zones.
     int peak = 0;
     for (const auto* s : pool)
         for (auto v : *s)
             peak = std::max (peak, std::abs (v));
     std::vector<Samples> scaled;
-    if (peak > fullScale)
+    if (peak != 0 && peak != targetPeak)
     {
         scaled.reserve (pool.size());   // no reallocation: pool points into it
         for (size_t i = 0; i < pool.size(); ++i)
@@ -885,7 +886,7 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
             Samples t (pool[i]->size());
             for (size_t k = 0; k < t.size(); ++k)
             {
-                const auto v = (juce::int64) (*pool[i])[k] * fullScale;   // Python's floor division
+                const auto v = (juce::int64) (*pool[i])[k] * targetPeak;   // Python's floor division
                 t[k] = (int) (v / peak - (v % peak != 0 && v < 0 ? 1 : 0));
             }
             scaled.push_back (std::move (t));

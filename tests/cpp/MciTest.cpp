@@ -134,10 +134,14 @@ void checkContainer()
     const auto again = mci::readMci (bytes.getData(), bytes.getSize());
     check (mci::writeMci (again) == bytes, "container round trip");
     check (again.getString ("INST0artic2artn") == "Choke Ring" && again.getInt ("INST0pool0psz") == 5, "metadata read back");
-    // Cymbals are stored as two identical channels, so they play centred on the overhead mic.
+    // Cymbals are stored as two identical channels, so they play centred on the overhead mic,
+    // turned up so the loudest sample peaks at -1 dBFS.
+    int peak = 0;
+    for (auto v : s)
+        peak = std::max (peak, std::abs (v));
     mci::Samples stereo;
     for (auto v : s)
-        stereo.insert (stereo.end(), 2, v);
+        stereo.insert (stereo.end(), 2, (int) std::floor ((double) v * mci::targetPeak / peak));
     for (int i = 0; i < again.getInt ("INST0pool0psz"); ++i)
         check (mci::sample (again, i) == stereo, "audio read back");
     check (again.getInts ("INST0pool0nchn") == std::vector<int> (5, 2) && again.getInt ("INST0micinf0isst") == 1
@@ -146,7 +150,7 @@ void checkContainer()
            "cymbal written in stereo");
 
     // Silence never packs into blocks narrower than Pearl's 4 bits, and a hit past full scale
-    // turns the whole instrument down instead of clipping.
+    // turns the whole instrument down to -1 dBFS instead of clipping.
     mci::Samples loud (20000, 0);
     loud[10] = 3 * mci::fullScale;
     loud[11] = -mci::fullScale;
@@ -160,8 +164,8 @@ void checkContainer()
     for (size_t off = 0; off < k.data.getSize(); off += (size_t) mci::blockSize)
         narrow = narrow || blob[off] < mci::minBlockBits;
     const auto quieter = mci::sample (k, 0);
-    check (! narrow && quieter[10] == mci::fullScale && quieter[11] == -mci::fullScale / 3 - 1
-               && mci::sample (k, 1)[1] == (int) std::floor ((double) s[1] / 3.0)
+    check (! narrow && quieter[10] == mci::targetPeak && quieter[11] == -mci::targetPeak / 3   // exact: targetPeak divides by 3
+               && mci::sample (k, 1)[1] == (int) std::floor ((double) s[1] * mci::targetPeak / (3.0 * mci::fullScale))
                && k.getInts ("INST0pool0nchn") == std::vector<int> { 1, 1 },
            "minimum block width and full-scale fit");
 

@@ -29,6 +29,7 @@ constexpr int headMaxFrames = 32768;
 constexpr int headMaxBlocks = 64;
 constexpr int minBlockBits = 10;    // no narrower blocks (at most 812 frames), as in the Editor kits that play clean
 constexpr int fullScale = (1 << 23) - 1;   // largest value a block header (and the Mimic) can hold
+constexpr int targetPeak = 7476354;        // an instrument's loudest sample: fullScale at -1 dB
 constexpr int maxRoundRobins = 16;   // length of every veloLay#smpidx array
 constexpr int rtArrayLen = 8;        // length of every release-time array
 
