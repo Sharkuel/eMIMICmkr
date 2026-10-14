@@ -183,6 +183,7 @@ def test_cymbals_are_stereo_and_hot_hits_turn_the_instrument_down():
 
     kick = mci.build_instrument("k", "Kick", [mci.Articulation("Kick", 0, [[s]])], b"")
     assert kick.get("INST0pool0nchn") == [1] and kick.get("INST0micinf0isst") == 0
+    assert mci.sample(kick, 0) == [v * mci.TARGET_PEAK // max(s) for v in s]
 
 
 def test_quiet_instruments_are_turned_up_to_minus_1_db():
@@ -194,7 +195,6 @@ def test_quiet_instruments_are_turned_up_to_minus_1_db():
     assert mci.sample(f, 1) == [v * mci.TARGET_PEAK // peak for v in s]
     assert max(abs(v) for v in mci.sample(f, 1)) == mci.TARGET_PEAK
     assert mci.sample(f, 0) == [v * mci.TARGET_PEAK // peak for v in soft]   # balance kept
-    assert mci.sample(kick, 0) == s
 
 
 def test_blocks_take_the_width_that_holds_the_most_frames():

@@ -52,8 +52,9 @@ def test_bell_makes_a_three_zone_ride_and_keeps_24_bit(tmp_path):
     assert f.get("INST0artic0numlay") == 1           # 4 hits: one layer of 4 round robins
     want = write_hit(tmp_path / "check.wav", 127)
     idx = f.get("INST0artic0veloLay0smpidx")[3]
-    left, right = mci.channels(f, idx)              # rides are stored in stereo
-    assert left == right == want
+    left, right = mci.channels(f, idx)              # rides are stored in stereo, the loudest hit at -1 dBFS
+    peak = max(abs(v) for v in want)
+    assert left == right == [v * mci.TARGET_PEAK // peak for v in want]
 
 
 def test_split_layers_spreads_hits():

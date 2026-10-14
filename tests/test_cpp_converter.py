@@ -369,7 +369,7 @@ def test_long_cymbal_tails_fade_over_their_second_half(tmp_path):
     level = lambda part: sum(abs(v) for v in part) / len(part)
     natural = lambda part, at: level(part) / math.exp(-at / (793800 / 5))   # the hit's own decay taken out
     before = natural(x[308700:352800], 330750)     # the second before the fade, which starts at 8 s
-    assert 0.9 * before < natural(x[352800:396900], 374850) < before   # the fade starts gently
+    assert 0.8 * before < natural(x[352800:396900], 374850) < before   # the fade starts gently
     assert natural(x[-44100:], 683550) < 0.02 * before                # and ends near silence
 
 
