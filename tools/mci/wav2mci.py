@@ -54,12 +54,14 @@ MAX_ROUND_ROBINS = 6     # per velocity layer, for kicks, snares, toms and cymba
 # rides keep one cell for the choke ring. Hi-hats: see HAT_HITS.
 CELL_LIMITS = {"Kick": 48, "Snare": 140, "Tom": 70, "Cymbal": 64, "Ride": 112, "Perc": 64}
 # Longest hit kept per piece, in seconds, close to Pearl's factory hits (kicks 1.5-2.5 s,
-# snares 1.5-3.5, toms 2-6, crashes and chinas 12, splashes 6-8, rides 12-14).
-# Length costs disk reads, not RAM; ride-type cymbals (with a bell) get the ride's.
-MAX_SECONDS = {"kick": 2.5, "snare": 3.0, "tom": 5.0, "hat": 3.0, "perc": 3.0, "cymbal": 12.0, "ride": 14.0}
-# Fade-out at the end of a hit that had to be cut. Cymbals are cut while still ringing
-# loud, so they fade over longer, or the end sounds abrupt (Alexandre, 2026-10-13).
-FADE_SECONDS = {"cymbal": 2.0}   # rides included
+# snares 1.5-3.5, toms 2-6). Cymbals ring longer than Pearl's 12-14 s: SDSE keeps crashes
+# up to 24 s and those play fine, and length costs disk reads, not RAM. Ride-type cymbals
+# (with a bell) get the ride's.
+MAX_SECONDS = {"kick": 2.5, "snare": 3.0, "tom": 5.0, "hat": 3.0, "perc": 3.0, "cymbal": 16.0, "ride": 20.0}
+# Fade-out at the end of a hit that had to be cut. A cut cymbal is still ringing, and a
+# 2 s fade still sounded like a cutoff (Alexandre, 2026-10-14), so cymbals and rides fade
+# over the second half of their length, which blends into their own decay.
+CYMBAL_FADE_SHARE = 0.5
 SHORT_FADE_SECONDS = 0.5
 HIT_NAME = re.compile(r"^(?P<piece>.+?) - (?P<zone>[^-]+?) - (?P<hit>\d+)v(?P<vel>\d+)\.wav$", re.I)
 
@@ -366,7 +368,7 @@ def max_seconds(piece: Piece) -> float:
 
 
 def fade_seconds(piece: Piece) -> float:
-    return FADE_SECONDS.get(piece.family, SHORT_FADE_SECONDS)
+    return max_seconds(piece) * CYMBAL_FADE_SHARE if piece.family == "cymbal" else SHORT_FADE_SECONDS
 
 
 def fit_length(x: list[int], max_frames: int, fade_frames: int = round(SHORT_FADE_SECONDS * SAMPLE_RATE)) -> list[int]:

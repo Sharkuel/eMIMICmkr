@@ -140,7 +140,7 @@ def test_fit_length_cuts_and_fades():
 def test_max_seconds_per_piece():
     ride = wav2mci.Piece("R", "cymbal", {"bell": [], "bow": []})
     crash = wav2mci.Piece("C", "cymbal", {"edge": []})
-    assert wav2mci.max_seconds(ride) == 14.0 and wav2mci.max_seconds(crash) == 12.0
+    assert wav2mci.max_seconds(ride) == 20.0 and wav2mci.max_seconds(crash) == 16.0
     assert wav2mci.max_seconds(wav2mci.Piece("K", "kick")) == 2.5
-    assert wav2mci.fade_seconds(ride) == wav2mci.fade_seconds(crash) == 2.0
+    assert wav2mci.fade_seconds(ride) == 10.0 and wav2mci.fade_seconds(crash) == 8.0
     assert wav2mci.fade_seconds(wav2mci.Piece("K", "kick")) == 0.5

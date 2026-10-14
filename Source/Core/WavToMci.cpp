@@ -763,20 +763,21 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
 //==============================================================================
 double WavToMci::maxSeconds (const juce::String& family, bool hasBell)
 {
-    // Close to Pearl's factory hits: kicks 1.5-2.5 s, snares 1.5-3.5, toms 2-6, crashes and
-    // chinas 12, splashes 6-8, rides 12-14. Length costs disk reads, not RAM.
+    // Close to Pearl's factory hits: kicks 1.5-2.5 s, snares 1.5-3.5, toms 2-6. Cymbals ring
+    // longer than Pearl's 12-14 s: SDSE keeps crashes up to 24 s and those play fine, and
+    // length costs disk reads, not RAM.
     if (family == "kick")
         return 2.5;
     if (family == "snare" || family == "hat" || family == "perc")
         return 3.0;
     if (family == "tom")
         return 5.0;
-    return family == "cymbal" && hasBell ? 14.0 : 12.0;
+    return family == "cymbal" && hasBell ? 20.0 : 16.0;
 }
 
-double WavToMci::fadeSeconds (const juce::String& family)
+double WavToMci::fadeSeconds (const juce::String& family, bool hasBell)
 {
-    return family == "cymbal" ? 2.0 : shortFadeSeconds;
+    return family == "cymbal" ? maxSeconds (family, hasBell) * 0.5 : shortFadeSeconds;
 }
 
 void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
@@ -802,7 +803,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     auto cells = [cellsPercent] (const juce::String& kind) { return std::max (2, cellLimit (kind) * cellsPercent / 100); };
     const auto hatHitsUsed = std::max (1, hatHits * cellsPercent / 100);
     const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (piece.family, piece.find ("bell") != nullptr) * sampleRate);
-    const auto fadeFrames = (int) std::lround (fadeSeconds (piece.family) * sampleRate);
+    const auto fadeFrames = (int) std::lround (fadeSeconds (piece.family, piece.find ("bell") != nullptr) * sampleRate);
     auto readOne = [&] (const Hit& h)
     {
         if (onWavRead)

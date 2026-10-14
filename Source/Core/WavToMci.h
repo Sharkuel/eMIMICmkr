@@ -69,12 +69,13 @@ public:
 
     static constexpr double shortFadeSeconds = 0.5;   // fade-out at the end of a hit that had to be cut
 
-    /** Fade-out for a cut hit: cymbals and rides 2 s, since they are cut while still ringing
-        loud (a short fade sounds abrupt, Alexandre 2026-10-13); everything else shortFadeSeconds. */
-    static double fadeSeconds (const juce::String& family);
+    /** Fade-out for a cut hit: cymbals and rides over the second half of maxSeconds, since they
+        are cut while still ringing and a 2 s fade still sounded like a cutoff (Alexandre
+        2026-10-14); everything else shortFadeSeconds. */
+    static double fadeSeconds (const juce::String& family, bool hasBell);
 
     /** Longest hit kept for a piece, close to Pearl's factory hits: kick 2.5 s; snare, hi-hat,
-        percussion 3 s; tom 5 s; cymbal 12 s, ride-type (with a bell) 14 s. */
+        percussion 3 s; tom 5 s; cymbal 16 s, ride-type (with a bell) 20 s. */
     static double maxSeconds (const juce::String& family, bool hasBell);
     /** x cut to maxFrames with its last fadeFrames faded out to 0 along the square of a straight
         line (falls fast, then trails off like a ringing tail); unchanged when shorter. */

@@ -33,6 +33,7 @@ HEAD_MAX_FRAMES = 32768    # a head never exceeds this many frames
 HEAD_MAX_BLOCKS = 64       # ...nor this many compressed blocks
 MIN_BLOCK_BITS = 10        # no narrower blocks (at most 812 frames), as in the Editor kits that play clean
 FULL_SCALE = 2 ** 23 - 1   # largest value a block header (and the Mimic) can hold
+TARGET_PEAK = 7476354      # an instrument's loudest sample: FULL_SCALE at -1 dB, round(FULL_SCALE / 10 ** (1 / 20))
 
 MAX_ROUND_ROBINS = 16      # length of every veloLay#smpidx array
 RT_ARRAY_LEN = 8           # length of every release-time array
@@ -361,15 +362,16 @@ def interleave(samples: list[int], channels: int) -> list[int]:
 
 
 def fit_full_scale(pool: list[list[int]]) -> list[list[int]]:
-    """Turns the whole instrument down when any sample goes past full scale.
+    """Scales the whole instrument so its loudest sample peaks at TARGET_PEAK (-1 dBFS).
 
-    One gain for every sample keeps the balance between layers and zones; a hit recorded
-    too hot is not clipped (and would not fit a block header).
+    A quiet recording is turned up, as SDSE's are (Alexandre, 2026-10-14), and one recorded
+    too hot is turned down instead of clipped (it would not fit a block header). One gain for
+    every sample keeps the balance between layers and zones.
     """
     peak = max((abs(v) for s in pool for v in s), default=0)
-    if peak <= FULL_SCALE:
+    if peak == 0 or peak == TARGET_PEAK:
         return pool
-    return [[v * FULL_SCALE // peak for v in s] for s in pool]
+    return [[v * TARGET_PEAK // peak for v in s] for s in pool]
 
 
 def _cymbal_zones(zones, choke, release_bottom, release_top) -> list[Articulation]:

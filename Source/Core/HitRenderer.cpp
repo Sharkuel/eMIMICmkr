@@ -40,7 +40,7 @@ void HitRenderer::waitForSilence()
     const int channels = juce::jmax (plugin.getTotalNumInputChannels(), plugin.getTotalNumOutputChannels());
     juce::AudioBuffer<float> buffer (channels, settings.blockSize);
     juce::MidiBuffer midi;
-    const float threshold = juce::Decibels::decibelsToGain ((float) settings.silenceDb);
+    const float threshold = juce::Decibels::decibelsToGain ((float) settings.floorDb);
     const int maxBlocks = (int) (settings.maxSeconds * settings.sampleRate / settings.blockSize);
     for (int i = 0; i < maxBlocks; ++i)
     {
@@ -81,6 +81,12 @@ juce::AudioBuffer<float> HitRenderer::renderHit (int note, int velocity, int cc4
     const int noteOffAt = (int) (settings.noteLengthSeconds * settings.sampleRate);
     const int silentNeeded = (int) (settings.silenceSeconds * settings.sampleRate);
     const float threshold = juce::Decibels::decibelsToGain ((float) settings.silenceDb);
+    // The tail is kept down to tailDb below the hit's peak, like SDSE's hits, so a soft hit's
+    // ring isn't cut off where a loud one's would still be ringing (Alexandre 2026-10-14);
+    // never above the start threshold, never below floorDb.
+    const float tailGain = juce::Decibels::decibelsToGain ((float) settings.tailDb);
+    const float floor = juce::Decibels::decibelsToGain ((float) settings.floorDb);
+    float peak = 0.0f;
 
     juce::AudioBuffer<float> recorded (1, maxSamples);
     recorded.clear();
@@ -100,7 +106,10 @@ juce::AudioBuffer<float> HitRenderer::renderHit (int note, int velocity, int cc4
 
         for (int i = 0; i < n; ++i)
         {
-            if (std::abs (recorded.getSample (0, written + i)) >= threshold)
+            const float level = std::abs (recorded.getSample (0, written + i));
+            peak = juce::jmax (peak, level);
+            const float end = juce::jlimit (floor, threshold, peak * tailGain);
+            if (level >= (firstSound < 0 ? threshold : end))
             {
                 if (firstSound < 0)
                     firstSound = written + i;

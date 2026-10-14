@@ -11,8 +11,10 @@ public:
     {
         double sampleRate = 44100.0;  // the Mimic's rate
         int blockSize = 512;
-        double maxSeconds = 20.0;       // longest tail kept (rides, gongs)
-        double silenceDb = -80.0;       // a hit ends once it stays below this...
+        double maxSeconds = 30.0;       // longest tail kept (rides, gongs); the converter cuts and fades it
+        double silenceDb = -80.0;       // a hit starts at the first sound above this
+        double tailDb = -90.0;          // and ends once it stays this far below its peak...
+        double floorDb = -100.0;        // ...or below this, whichever is louder (plugin noise)...
         double silenceSeconds = 0.25;   // ...for this long
         double noteLengthSeconds = 0.1; // time between note-on and note-off
         double giveUpSeconds = 1.0;     // a note still silent after this plays nothing

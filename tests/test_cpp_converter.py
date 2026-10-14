@@ -208,7 +208,7 @@ def test_float_recordings_past_full_scale(tmp_path):
     py_out, _, _ = convert_both(tmp_path, piece.parent)
     f = mci.read_mci(str(py_out / "16 Hot Crash.mci"))
     loudest = max(abs(v) for i in range(f.get("INST0pool0psz")) for v in mci.sample(f, i))
-    assert loudest == mci.FULL_SCALE        # turned down to fit, not clipped
+    assert loudest == mci.TARGET_PEAK       # turned down to -1 dBFS, not clipped
     assert f.get("INST0pool0nchn")[0] == 2
 
 
@@ -358,16 +358,19 @@ def test_long_tails_are_cut_to_suit_the_piece(tmp_path, flags):
         assert all(x[-1] == 0 for x in frames)
 
 
-def test_long_cymbal_tails_fade_over_two_seconds(tmp_path):
-    for i, v in enumerate([40, 90, 127], 1):    # 13 s crash hits: past the cymbal's 12 s
+def test_long_cymbal_tails_fade_over_their_second_half(tmp_path):
+    for i, v in enumerate([40, 90, 127], 1):    # 18 s crash hits: past the cymbal's 16 s
         write_wav(tmp_path / "in" / "Long Crash" / "EDGE" / f"Long Crash - CRASH1 EDGE - {i:03d}v{v}.wav",
-                  noisy_hit(v, 573300, 3, 1, i))
+                  noisy_hit(v, 793800, 3, 1, i))
     py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "Long Crash", expect=["Long Crash.mci"])
     f = mci.read_mci(str(py_out / "Long Crash.mci"))
     x = mci.channels(f, 0)[0]
-    assert len(x) == 529200 and x[-1] == 0
+    assert len(x) == 705600 and x[-1] == 0
     level = lambda part: sum(abs(v) for v in part) / len(part)
-    assert level(x[-44100:]) < 0.1 * level(x[-132300:-88200])   # last second well faded: a 2 s fade
+    natural = lambda part, at: level(part) / math.exp(-at / (793800 / 5))   # the hit's own decay taken out
+    before = natural(x[308700:352800], 330750)     # the second before the fade, which starts at 8 s
+    assert 0.9 * before < natural(x[352800:396900], 374850) < before   # the fade starts gently
+    assert natural(x[-44100:], 683550) < 0.02 * before                # and ends near silence
 
 
 def test_lighter_instruments_use_fewer_cells(tmp_path):
