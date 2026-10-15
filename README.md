@@ -250,6 +250,8 @@ articulation), for kits that glitch when many instruments are loaded.
 A snare's shallow rimshots (zone labels with `SHALLOW`, or `RIMSHOT SIDE`) fill the Mimic's
 Rim Shot Side zone. Most libraries have none; then each rimshot is mixed 50/50 with the rim
 click (or, without one, the head hit) nearest its velocity, so that zone still plays.
+A snare's `EDGE` hits (near the edge of the head) fill its Side zone. `OFF CENTER` hits have
+no Mimic zone and are left out, so they don't mix into the center hits.
 
 The converter also runs headless, from the `eMIMICmkr_mci_tests` console tool:
 
