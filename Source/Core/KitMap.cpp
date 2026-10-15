@@ -549,10 +549,12 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
         struct Code { const char* code; const char* zone; bool on; };
         static const std::map<juce::String, std::vector<Code>> codes {
             { "kick", { { "R", "", true }, { "O", "OPEN", false } } },
-            { "snare", { { "R", "CENTER", true }, { "RO", "RIMSHOT", true }, { "SL", "SIDESTICK", true },
-                         { "FX", "RIMCLICK", false }, { "FO", "EDGE", false }, { "MC", "OFF CENTER", false },
+            // FX is the rimshot (snareFX sits on GM's rimshot note 40) and RO the rim only: with
+            // them the other way round, SD3 rimshots played as rim hits (Alexandre, 2026-10-15).
+            { "snare", { { "R", "CENTER", true }, { "FX", "RIMSHOT", true }, { "SL", "SIDESTICK", true },
+                         { "RO", "RIMCLICK", true }, { "FO", "EDGE", false }, { "MC", "OFF CENTER", false },
                          { "MR", "RIMSHOT EDGE", false }, { "BZ", "BUZZ", false }, { "FL", "FLAM", false } } },
-            { "tom", { { "R", "CENTER", true }, { "RO", "RIMSHOT", true }, { "FX", "RIMCLICK", false } } },
+            { "tom", { { "R", "CENTER", true }, { "FX", "RIMSHOT", true }, { "RO", "RIMCLICK", true } } },
             { "ride", { { "", "BOW", true }, { "BL", "BELL", true }, { "PU", "EDGE", true }, { "M", "CHOKE", false } } },
             { "crash", { { "", "EDGE", true }, { "RT", "BOW", true }, { "BL", "BELL", false }, { "M", "CHOKE", false } } },
         };
