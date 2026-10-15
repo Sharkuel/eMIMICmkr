@@ -426,6 +426,8 @@ std::pair<juce::String, juce::String> WavToMci::classify (const juce::String& zo
         { "RIMSHOT", "rimshot" }, { "RIM", "rimshot" }, { "RIMCLICK", "rimclick" }, { "CROSSSTICK", "sidestick" },
         { "SIDESTICK", "sidestick" }, { "XSTICK", "sidestick" }
     };
+    if ((family == "snare" || family == "tom") && words.contains ("OFF"))
+        return { family, "offcenter" };   // an off-center head hit: no Mimic zone, left out
     juce::String zone;
     for (int i = 1; i < words.size() && zone.isEmpty(); ++i)
         if (const auto it = zoneWords.find (words[i]); it != zoneWords.end())
@@ -433,6 +435,8 @@ std::pair<juce::String, juce::String> WavToMci::classify (const juce::String& zo
     // A shallow rimshot, which the Mimic's snare plays from its Rim Shot Side zone.
     if (family == "snare" && (words.contains ("SHALLOW") || (zone == "rimshot" && words.contains ("SIDE"))))
         return { family, "rimshotside" };
+    if (family == "snare" && zone == "edge")
+        return { family, "side" };        // a hit near the edge of the head: the Mimic's Side zone
     return { family, zone.isNotEmpty() ? zone : family == "cymbal" ? "bow" : "center" };
 }
 
@@ -517,7 +521,7 @@ std::vector<WavToMci::Hits> WavToMci::splitLayers (Hits hits, int layersWanted)
 
 int WavToMci::roundRobins (const juce::String& family, const juce::String& zone)
 {
-    if ((zone == "center" || zone == "rimshot" || zone == "rimshotside") && (family == "snare" || family == "tom"))
+    if ((zone == "center" || zone == "side" || zone == "rimshot" || zone == "rimshotside") && (family == "snare" || family == "tom"))
         return family == "snare" ? 6 : 5;
     return 4;
 }
@@ -1073,12 +1077,20 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     const bool snare = piece.family == "snare";
     const juce::String kind = snare ? "Snare" : "Tom";
     struct DrumZone { const char* key; const char* zoneType; const char* label; };
-    const DrumZone drumZones[] = { { "center", "drum center", "Center" }, { "rimclick", "drum rimclick", "Rimclick" },
+    const DrumZone drumZones[] = { { "center", "drum center", "Center" }, { "side", "snare side", "Side" },
+                                   { "rimclick", "drum rimclick", "Rimclick" },
                                    { "rimshot", "drum rimshot", "Rimshot" }, { "rimshotside", "snare rimshot side", "Rimshot Side" },
                                    { "sidestick", "snare sidestick", "Sidestick" } };
-    auto snareOnly = [] (const juce::String& key) { return key == "sidestick" || key == "rimshotside"; };
+    auto snareOnly = [] (const juce::String& key) { return key == "side" || key == "sidestick" || key == "rimshotside"; };
     if (! sideRimshots.empty())
         log ("  " + name + ": no side rimshot recording, blending rimshot and " + sideFrom + " for it");
+    juce::StringArray leftOut;
+    for (const auto& [key, hits] : piece.zones)
+        if (std::none_of (std::begin (drumZones), std::end (drumZones), [&] (const DrumZone& dz) { return key == dz.key && (! snareOnly (key) || snare); }))
+            leftOut.addIfNotAlreadyThere (key);
+    leftOut.sort (false);
+    for (const auto& key : leftOut)
+        log ("  " + name + ": " + key + " recordings have no " + kind.toLowerCase() + " zone on the Mimic, left out");
     Shares available;
     for (const auto& dz : drumZones)
         if (has (dz.key) && (! snareOnly (dz.key) || snare))

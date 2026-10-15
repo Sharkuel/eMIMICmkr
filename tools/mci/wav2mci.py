@@ -253,9 +253,13 @@ def classify(zone_label: str) -> tuple[str, str]:
               else "tom" if head in ("TOM", "FLOORTOM", "RACKTOM") else None)
     if family is None:
         raise ValueError(f"unknown instrument in zone {zone_label!r}")
+    if family in ("snare", "tom") and "OFF" in words:
+        return family, "offcenter"     # an off-center head hit: no Mimic zone, left out
     zone = next((ZONE_WORDS[w] for w in words[1:] if w in ZONE_WORDS), None)
     if family == "snare" and ("SHALLOW" in words or (zone == "rimshot" and "SIDE" in words)):
         zone = "rimshotside"
+    if family == "snare" and zone == "edge":
+        zone = "side"                  # a hit near the edge of the head: the Mimic's Side zone
     if zone is None:
         zone = "bow" if family == "cymbal" else "center"
     return family, zone
@@ -311,7 +315,7 @@ def split_layers(hits: list[Hit], max_layers: int = MAX_LAYERS) -> list[list[Hit
 def round_robins(family: str, zone: str) -> int:
     """Round robins wanted per velocity layer: 6 on snare heads and rims, 5 on toms', 4
     elsewhere (kick, sidestick, rimclick, cymbals)."""
-    if zone in ("center", "rimshot", "rimshotside") and family in ("snare", "tom"):
+    if zone in ("center", "side", "rimshot", "rimshotside") and family in ("snare", "tom"):
         return 6 if family == "snare" else 5
     return 4
 
@@ -472,13 +476,15 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
             art.min_velocities = v
         return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind)
 
-    zone_ids = ({"center": "drum center", "rimshot": "drum rimshot", "rimclick": "drum rimclick",
+    zone_ids = ({"center": "drum center", "side": "snare side", "rimshot": "drum rimshot", "rimclick": "drum rimclick",
                  "rimshotside": "snare rimshot side", "sidestick": "snare sidestick"})
-    names = {"center": "Center", "rimshot": "Rimshot", "rimclick": "Rimclick", "rimshotside": "Rimshot Side",
-             "sidestick": "Sidestick"}
+    names = {"center": "Center", "side": "Side", "rimshot": "Rimshot", "rimclick": "Rimclick",
+             "rimshotside": "Rimshot Side", "sidestick": "Sidestick"}
     kind = "Snare" if piece.family == "snare" else "Tom"
-    keys = [k for k in ["center", "rimclick", "rimshot", "rimshotside", "sidestick"]
-            if k in zones and (k not in ("sidestick", "rimshotside") or piece.family == "snare")]
+    keys = [k for k in ["center", "side", "rimclick", "rimshot", "rimshotside", "sidestick"]
+            if k in zones and (k not in ("side", "sidestick", "rimshotside") or piece.family == "snare")]
+    for k in sorted(set(zones) - set(keys)):
+        log(f"  {name}: {k} recordings have no {kind.lower()} zone on the Mimic, left out")
     shares = share_cells(cells(kind), {k: len(zones[k]) for k in keys})
     arts = []
     for key in keys:

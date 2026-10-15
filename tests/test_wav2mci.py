@@ -145,3 +145,17 @@ def test_max_seconds_per_piece():
     assert wav2mci.max_seconds(wav2mci.Piece("K", "kick")) == 2.5
     assert wav2mci.fade_seconds(ride) == 10.0 and wav2mci.fade_seconds(crash) == 8.0
     assert wav2mci.fade_seconds(wav2mci.Piece("K", "kick")) == 0.5
+
+
+def test_snare_edge_fills_the_side_zone_and_off_center_is_left_out(tmp_path):
+    assert wav2mci.classify("SNARE1 EDGE") == ("snare", "side")
+    assert wav2mci.classify("SNARE1 OFF CENTER") == ("snare", "offcenter")
+    assert wav2mci.classify("TOM1 OFF CENTER") == ("tom", "offcenter")
+    render(tmp_path, ["CENTER", "OFF CENTER", "EDGE", "RIMSHOT"], [127, 64, 20], piece="14 Snare_S1", family="SNARE1")
+    assert wav2mci.main([str(tmp_path / "14 Test Crash"), "--out", str(tmp_path), "--name", "Snare"]) == 0
+    f = mci.read_mci(str(tmp_path / "Snare.mci"))
+    names = [f.get(f"INST0artic{a}artn") for a in range(f.get("INST0numart"))]
+    assert names == ["Snare Center", "Snare Side", "Snare Rimshot", "Snare Rimshot Side"]
+    assert f.get("INST0zoneType1") == 6                                  # the Mimic's Side zone
+    center = [i for l in range(f.get("INST0artic0numlay")) for i in f.get(f"INST0artic0veloLay{l}smpidx") if i >= 0]
+    assert len(center) == 3                                              # off-center hits not mixed in

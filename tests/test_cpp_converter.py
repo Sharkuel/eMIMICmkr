@@ -380,3 +380,14 @@ def test_lighter_instruments_use_fewer_cells(tmp_path):
     n_full = mci.read_mci(str(full / "My Kit Ride.mci")).get("INST0pool0psz")
     n_half = mci.read_mci(str(half / "My Kit Ride.mci")).get("INST0pool0psz")
     assert n_full == 112 and n_half == 56
+
+
+def test_snare_edge_and_off_center(tmp_path):
+    for zone, seed in [("CENTER", 1), ("OFF CENTER", 2), ("EDGE", 3), ("RIMSHOT", 4)]:
+        for i, v in enumerate([127, 64, 20], 1):
+            write_wav(tmp_path / "in" / "14 Snare" / zone / f"14 Snare - SNARE1 {zone} - {i:03d}v{v}.wav",
+                      noisy_hit(v, 4000, 3, 1, seed * 10 + i))
+    py_out, _, log = convert_both(tmp_path, tmp_path / "in" / "14 Snare", expect=["14 Snare.mci"])
+    f = mci.read_mci(str(py_out / "14 Snare.mci"))
+    assert [f.get(f"INST0zoneType{z}") for z in range(f.get("INST0zonecnt"))][:2] == [1, 6]
+    assert "offcenter recordings have no snare zone on the Mimic, left out" in log
