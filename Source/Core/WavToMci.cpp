@@ -765,8 +765,15 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
 }
 
 //==============================================================================
-double WavToMci::maxSeconds (const juce::String& family, bool hasBell)
+static bool ringsOpen (const juce::String& family, const juce::String& zone)
 {
+    return family == "hat" && (zone.contains ("open") || zone == "footsplash");
+}
+
+double WavToMci::maxSeconds (const juce::String& family, bool hasBell, const juce::String& zone)
+{
+    if (ringsOpen (family, zone))
+        return 8.0;
     // Close to Pearl's factory hits: kicks 1.5-2.5 s, snares 1.5-3.5, toms 2-6. Cymbals ring
     // longer than Pearl's 12-14 s: SDSE keeps crashes up to 24 s and those play fine, and
     // length costs disk reads, not RAM.
@@ -779,9 +786,9 @@ double WavToMci::maxSeconds (const juce::String& family, bool hasBell)
     return family == "cymbal" && hasBell ? 20.0 : 16.0;
 }
 
-double WavToMci::fadeSeconds (const juce::String& family, bool hasBell)
+double WavToMci::fadeSeconds (const juce::String& family, bool hasBell, const juce::String& zone)
 {
-    return family == "cymbal" ? maxSeconds (family, hasBell) * 0.5 : shortFadeSeconds;
+    return family == "cymbal" || ringsOpen (family, zone) ? maxSeconds (family, hasBell, zone) * 0.5 : shortFadeSeconds;
 }
 
 void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
@@ -806,8 +813,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     // The instrument's wave-cell budget, cut to cellsPercent.
     auto cells = [cellsPercent] (const juce::String& kind) { return std::max (2, cellLimit (kind) * cellsPercent / 100); };
     const auto hatHitsUsed = std::max (1, hatHits * cellsPercent / 100);
-    const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (piece.family, piece.find ("bell") != nullptr) * sampleRate);
-    const auto fadeFrames = (int) std::lround (fadeSeconds (piece.family, piece.find ("bell") != nullptr) * sampleRate);
+    const bool pieceHasBell = piece.find ("bell") != nullptr;
     auto readOne = [&] (const Hit& h)
     {
         if (onWavRead)
@@ -869,6 +875,8 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         if (maxHits > 0 && (int) hits.size() > maxHits)   // keep an even spread of velocities
             hits = evenSpread (std::move (hits), maxHits);
         const auto split = rr > 0 ? roundRobinLayers (std::move (hits), rr) : splitLayers (std::move (hits), layers);
+        const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (piece.family, pieceHasBell, key) * sampleRate);
+        const auto fadeFrames = (int) std::lround (fadeSeconds (piece.family, pieceHasBell, key) * sampleRate);
         Zone z;
         for (const auto& layer : split)
         {

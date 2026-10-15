@@ -72,11 +72,12 @@ public:
     /** Fade-out for a cut hit: cymbals and rides over the second half of maxSeconds, since they
         are cut while still ringing and a 2 s fade still sounded like a cutoff (Alexandre
         2026-10-14); everything else shortFadeSeconds. */
-    static double fadeSeconds (const juce::String& family, bool hasBell);
+    static double fadeSeconds (const juce::String& family, bool hasBell, const juce::String& zone = {});
 
     /** Longest hit kept for a piece, close to Pearl's factory hits: kick 2.5 s; snare, hi-hat,
-        percussion 3 s; tom 5 s; cymbal 16 s, ride-type (with a bell) 20 s. */
-    static double maxSeconds (const juce::String& family, bool hasBell);
+        percussion 3 s; tom 5 s; cymbal 16 s, ride-type (with a bell) 20 s; an open or
+        half-open hi-hat zone, or its foot splash, 8 s (they all hit 3 s, Alexandre 2026-10-15). */
+    static double maxSeconds (const juce::String& family, bool hasBell, const juce::String& zone = {});
     /** x cut to maxFrames with its last fadeFrames faded out to 0 along the square of a straight
         line (falls fast, then trails off like a ringing tail); unchanged when shorter. */
     static void fitLength (mci::Samples& x, int maxFrames, int fadeFrames = (int) (shortFadeSeconds * sampleRate + 0.5));

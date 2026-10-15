@@ -391,3 +391,16 @@ def test_snare_edge_and_off_center(tmp_path):
     f = mci.read_mci(str(py_out / "14 Snare.mci"))
     assert [f.get(f"INST0zoneType{z}") for z in range(f.get("INST0zonecnt"))][:2] == [1, 6]
     assert "offcenter recordings have no snare zone on the Mimic, left out" in log
+
+
+def test_open_hi_hats_ring_longer_than_closed_ones(tmp_path):
+    for folder in ["BOW CLOSED", "BOW OPEN4", "PEDAL CLOSED"]:   # 10 s hits
+        d = tmp_path / "in" / "Hat" / f"14 Hat - HATS {folder}"
+        for k, v in enumerate([127, 60], 1):
+            write_wav(d / f"14 Hat - HATS {folder} - {k:03d}v{v}.wav", noisy_hit(v, 441000, 3, 1, k))
+    py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "Hat", expect=["14 Hat.mci"])
+    f = mci.read_mci(str(py_out / "14 Hat.mci"))
+    lengths = {f.get(f"INST0artic{a}artn"): f.get("INST0pool0fcnt")[f.get(f"INST0artic{a}veloLay0smpidx")[0]]
+               for a in range(f.get("INST0numart")) if f.get(f"INST0artic{a}numlay")}
+    assert lengths["Hi-Hat Tip Open"] == 352800 and lengths["Hi-Hat Tip Closed"] == 132300
+    assert lengths["Hi-Hat Pedal"] == 132300

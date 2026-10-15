@@ -62,6 +62,10 @@ MAX_SECONDS = {"kick": 2.5, "snare": 3.0, "tom": 5.0, "hat": 3.0, "perc": 3.0, "
 # 2 s fade still sounded like a cutoff (Alexandre, 2026-10-14), so cymbals and rides fade
 # over the second half of their length, which blends into their own decay.
 CYMBAL_FADE_SHARE = 0.5
+# Open (and half-open) hi-hats and foot splashes ring well past the closed hat's 3 s, and
+# every one of them hit that cap (Alexandre's hats, 2026-10-15); Pearl's hats run up to
+# 10 s. They keep 8 s and fade like cymbals. Length costs no RAM.
+OPEN_HAT_SECONDS = 8.0
 SHORT_FADE_SECONDS = 0.5
 HIT_NAME = re.compile(r"^(?P<piece>.+?) - (?P<zone>[^-]+?) - (?P<hit>\d+)v(?P<vel>\d+)\.wav$", re.I)
 
@@ -365,14 +369,23 @@ def piece_title(piece: Piece, src: Source) -> str:
     return short
 
 
-def max_seconds(piece: Piece) -> float:
+def rings_open(piece: Piece, key: str | None) -> bool:
+    """An open or half-open hi-hat zone ('bow:open2'), or its foot splash."""
+    return piece.family == "hat" and key is not None and ("open" in key or key == "footsplash")
+
+
+def max_seconds(piece: Piece, key: str | None = None) -> float:
+    if rings_open(piece, key):
+        return OPEN_HAT_SECONDS
     if piece.family == "cymbal" and "bell" in piece.zones:
         return MAX_SECONDS["ride"]
     return MAX_SECONDS.get(piece.family, MAX_SECONDS["cymbal"])
 
 
-def fade_seconds(piece: Piece) -> float:
-    return max_seconds(piece) * CYMBAL_FADE_SHARE if piece.family == "cymbal" else SHORT_FADE_SECONDS
+def fade_seconds(piece: Piece, key: str | None = None) -> float:
+    if piece.family == "cymbal" or rings_open(piece, key):
+        return max_seconds(piece, key) * CYMBAL_FADE_SHARE
+    return SHORT_FADE_SECONDS
 
 
 def fit_length(x: list[int], max_frames: int, fade_frames: int = round(SHORT_FADE_SECONDS * SAMPLE_RATE)) -> list[int]:
@@ -393,8 +406,6 @@ def fit_length(x: list[int], max_frames: int, fade_frames: int = round(SHORT_FAD
 
 def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
           hat_as_ride: bool = False, full_length: bool = False, cells_percent: int = 100) -> mci.MciFile:
-    max_frames = None if full_length else round(max_seconds(piece) * SAMPLE_RATE)
-    fade_frames = round(fade_seconds(piece) * SAMPLE_RATE)
 
     def cells(kind):     # the instrument's wave-cell budget, cut to cells_percent
         return max(2, CELL_LIMITS[kind] * cells_percent // 100)
@@ -408,9 +419,11 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
             x, y = y, x
         return [(a + (y[i] if i < len(y) else 0)) // 2 for i, a in enumerate(x)]
 
-    def load(hits_layers):
-        if max_frames is None:
+    def load(hits_layers, key):
+        if full_length:
             return [[read(h) for h in layer] for layer in hits_layers]
+        max_frames = round(max_seconds(piece, key) * SAMPLE_RATE)
+        fade_frames = round(fade_seconds(piece, key) * SAMPLE_RATE)
         return [[fit_length(read(h), max_frames, fade_frames) for h in layer] for layer in hits_layers]
 
     zones = dict(piece.zones)
@@ -428,7 +441,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         if max_hits and len(hits) > max_hits:     # keep an even spread of velocities
             hits = even_spread(hits, max_hits)
         layers = round_robin_layers(hits, rr) if rr else split_layers(hits, max_layers)
-        return load(layers), min_velocities(layers)
+        return load(layers, key), min_velocities(layers)
 
     if piece.family == "hat":
         return build_hat(piece, zone, name, hat_as_ride, log, hat_hits=max(1, HAT_HITS * cells_percent // 100))
