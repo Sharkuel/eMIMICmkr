@@ -142,13 +142,14 @@ bool sd3KitReads()
         for (const auto& z : realMap.zones)
             std::cout << "  " << z.piece << " | " << z.label << " | " << z.note << " | " << (z.enabled ? "on" : "off") << " | " << z.instrument << "\n";
     }
-    bool rimclickOn = true;
+    bool rimclickOn = false;
     const bool ok = error.isEmpty() && vst3Ok
                     && noteOf ("Kick", "KICK1") == 36 && noteOf ("Snare", "SNARE1 CENTER") == 38
-                    && noteOf ("Snare", "SNARE1 SIDESTICK") == 37 && noteOf ("Snare", "SNARE1 RIMSHOT") == 76
+                    && noteOf ("Snare", "SNARE1 SIDESTICK") == 37 && noteOf ("Snare", "SNARE1 RIMSHOT") == 40
+                    && noteOf ("Snare", "SNARE1 RIMCLICK") == 76
                     && noteOf ("Snare 2", "SNARE2 CENTER") == 67 && noteOf ("Tom 1", "TOM1 CENTER") == 48
-                    && noteOf ("Tom 1", "TOM1 RIMSHOT") == 81 && noteOf ("Tom 1", "TOM1 RIMCLICK", &rimclickOn) == 82
-                    && ! rimclickOn && noteOf ("Tom 5", "TOM5 CENTER") == 41
+                    && noteOf ("Tom 1", "TOM1 RIMSHOT") == 82 && noteOf ("Tom 1", "TOM1 RIMCLICK", &rimclickOn) == 81
+                    && rimclickOn && noteOf ("Tom 5", "TOM5 CENTER") == 41
                     && noteOf ("Ride 1", "RIDE1 BOW") == 51 && noteOf ("Ride 1", "RIDE1 BELL") == 53
                     && noteOf ("Ride 1", "RIDE1 EDGE") == 59 && noteOf ("Crash 2", "CRASH2 EDGE") == 57
                     && noteOf ("Splash 1", "SPLASH1 EDGE") == 55 && noteOf ("Hi-Hat", "HATS EDGE OPEN2") == 7
