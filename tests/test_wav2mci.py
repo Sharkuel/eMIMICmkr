@@ -145,6 +145,11 @@ def test_max_seconds_per_piece():
     assert wav2mci.max_seconds(wav2mci.Piece("K", "kick")) == 2.5
     assert wav2mci.fade_seconds(ride) == 10.0 and wav2mci.fade_seconds(crash) == 8.0
     assert wav2mci.fade_seconds(wav2mci.Piece("K", "kick")) == 0.5
+    hat = wav2mci.Piece("H", "hat")
+    assert wav2mci.max_seconds(hat, "bow:open2") == wav2mci.max_seconds(hat, "footsplash") == 8.0
+    assert wav2mci.fade_seconds(hat, "edge:open4") == 4.0
+    assert wav2mci.max_seconds(hat, "bow:closed") == wav2mci.max_seconds(hat, "pedal") == 3.0
+    assert wav2mci.fade_seconds(hat, "bow:closed") == 0.5
 
 
 def test_snare_edge_fills_the_side_zone_and_off_center_is_left_out(tmp_path):
