@@ -404,3 +404,21 @@ def test_open_hi_hats_ring_longer_than_closed_ones(tmp_path):
                for a in range(f.get("INST0numart")) if f.get(f"INST0artic{a}numlay")}
     assert lengths["Hi-Hat Tip Open"] == 352800 and lengths["Hi-Hat Tip Closed"] == 132300
     assert lengths["Hi-Hat Pedal"] == 132300
+
+
+def test_tamtams_ring_like_cymbals_and_timp_toms_like_toms(tmp_path):
+    # Percussion is cut at 3 s, but a tam-tam rings 20-30 s and SD3 files its timp-tom
+    # ("LeftFloor") under percussion (Area 33 Origin, 2026-10-16).
+    for piece in ["Kit Tamtam", "Kit LeftFloor", "Kit Cowbell"]:
+        code = piece.split()[1].upper()
+        d = tmp_path / "in" / piece / f"PERC {code} MAIN"
+        for k, v in enumerate([127, 60], 1):
+            write_wav(d / f"{piece} - PERC {code} MAIN - {k:03d}v{v}.wav", noisy_hit(v, 20 * 44100, 3, 1, k))
+    lengths = {}
+    for piece in ["Kit Tamtam", "Kit LeftFloor", "Kit Cowbell"]:
+        out = tmp_path / "out" / piece
+        code, log = run_cpp(tmp_path / "in" / piece, out)
+        assert code == 0, log
+        f = mci.read_mci(str(out / f"{piece}.mci"))
+        lengths[piece] = max(f.get("INST0pool0fcnt"))
+    assert lengths == {"Kit Tamtam": 16 * 44100, "Kit LeftFloor": 5 * 44100, "Kit Cowbell": 3 * 44100}

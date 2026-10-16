@@ -235,7 +235,8 @@ a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
 Each hit is cut to a length that suits the piece and faded out to silence: kicks 2.5 s;
 snares, hi-hats and percussion 3 s; toms 5 s; cymbals 16 s; ride-type cymbals (with a bell)
-20 s; open and half-open hi-hats and foot splashes 8 s. Cymbals, rides and open hi-hats fade
+20 s; open and half-open hi-hats and foot splashes 8 s. Percussion that rings like something
+else takes its length: a tam-tam or gong 16 s like a cymbal, a timp-tom or floor 5 s like a tom. Cymbals, rides and open hi-hats fade
 over the second half of that length, so the fade blends into
 their own ring instead of sounding like a cutoff; the rest fade over their last half second.
 Shorter hits are left as they are. `--full-length` keeps every tail as recorded.
