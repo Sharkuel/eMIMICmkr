@@ -53,7 +53,7 @@ private:
     void showPluginRequestHelp();
     void openPluginRequest();
     void setAllRecorded (bool on);
-    juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides, bool lighter,
+    juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool lighter,
                                   juce::ThreadWithProgressWindow&);
     void setLive (bool on);
     int maxHits() const;
@@ -111,7 +111,7 @@ private:
     juce::Image logo;
     juce::Rectangle<int> logoArea;
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
-    juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" },
+    juce::ToggleButton fitLimits { "Fit Mimic limits" },
                      lighter { "Lighter instruments (half the hits)" };
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
