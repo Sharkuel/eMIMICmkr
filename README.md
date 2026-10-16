@@ -89,6 +89,9 @@ them as VST3 plugins the app can load.
 
 ## Recording a kit
 
+Not sure what a button does? Click **Help** (top right): while it's on, clicking any button, box or
+table column shows what it does instead of running it. Click **Help** again to leave.
+
 1. **Find plugins**, pick your drum plugin and **Load plugin**. Load a kit in the plugin window.
    Type in **Search plugins** to narrow a long list (any part of the name or maker). Drum plugins
    are listed first, other plugins below them. With yabridge, run `yabridgectl sync` after adding
