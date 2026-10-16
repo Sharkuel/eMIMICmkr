@@ -144,9 +144,6 @@ MainComponent::MainComponent()
                      &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &convertButton, &kitButton })
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
-    addAndMakeVisible (hatAsRide);
-    hatAsRide.setToggleState (settings->getBoolValue ("hatAsRide", false), juce::dontSendNotification);
-    hatAsRide.onClick = [this] { settings->setValue ("hatAsRide", hatAsRide.getToggleState()); };
     addAndMakeVisible (lighter);
     lighter.setToggleState (settings->getBoolValue ("lighterInstruments", false), juce::dontSendNotification);
     lighter.onClick = [this] { settings->setValue ("lighterInstruments", lighter.getToggleState()); };
@@ -383,8 +380,6 @@ void MainComponent::resized()
     row.removeFromLeft (6);
     kitButton.setBounds (row.removeFromLeft (140));
     row.removeFromLeft (12);
-    hatAsRide.setBounds (row.removeFromLeft (250));
-    row.removeFromLeft (6);
     lighter.setBounds (row.removeFromLeft (250));
 
     area.removeFromTop (12);
@@ -1086,10 +1081,9 @@ void MainComponent::recordKit()
         {
             auto convert = [this, report, kitFolder, kitName] (const juce::File& outDir)
             {
-                runJob ("Converting " + kitName, [this, kitFolder, outDir, hats = hatAsRide.getToggleState(),
-                                                    light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
+                runJob ("Converting " + kitName, [this, kitFolder, outDir, light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
                 {
-                    return buildMimicFiles ({ kitFolder }, outDir, hats, light, w);
+                    return buildMimicFiles ({ kitFolder }, outDir, light, w);
                 },
                 [this, report, outDir] (const juce::String& built)
                 {
@@ -1118,11 +1112,10 @@ void MainComponent::recordKit()
     });
 }
 
-juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides, bool light,
+juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool light,
                                              juce::ThreadWithProgressWindow& w)
 {
     emk::WavToMci::Options options;
-    options.hatAsRide = hatsAsRides;
     options.cellsPercent = light ? 50 : 100;
     w.setProgress (0.0);
     w.setStatusMessage ("Building Mimic instruments");
@@ -1188,10 +1181,9 @@ void MainComponent::convertWavFolder()
                 if (outDir == juce::File())
                     return;
                 player.setSource (nullptr);
-                runJob ("Converting " + title, [this, inputs, outDir, hats = hatAsRide.getToggleState(),
-                                                      light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
+                runJob ("Converting " + title, [this, inputs, outDir, light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
                 {
-                    return buildMimicFiles (inputs, outDir, hats, light, w);
+                    return buildMimicFiles (inputs, outDir, light, w);
                 },
                 [this] (const juce::String& report) { setStatus (report); });
             });
