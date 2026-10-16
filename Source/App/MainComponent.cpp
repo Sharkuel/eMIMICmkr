@@ -5,11 +5,13 @@
 #include "../Core/MimicImage.h"
 #include "../Core/MimicKit.h"
 #include "PluginScanner.h"
+#include <BinaryData.h>
 
 namespace
 {
 constexpr double sampleRate = 44100.0;   // the Mimic's rate
 constexpr int blockSize = 512;
+constexpr const char* requestPage = "https://github.com/Sharkuel/eMIMICmkr/issues/new";
 
 juce::File defaultOutputFolder()
 {
@@ -160,9 +162,21 @@ MainComponent::MainComponent()
     saveToButton.onClick = [this] { chooseOutputFolder(); };
     saveToPath.setMinimumHorizontalScale (0.5f);
     showOutputFolder();
-    stateButton.onClick = [this] { savePluginState(); };
-    stateButton.setTooltip ("Saves what the plugin stores about its kit to a file. Send it to us to help teach "
-                            "eMIMICmkr to read piece names (brand and model) from this plugin.");
+    stateButton.onClick = [this] { showPluginRequestHelp(); };
+    stateButton.setTooltip ("Saves what the plugin stores about its kit to a file and shows how to send it to us, "
+                            "to teach eMIMICmkr to read this plugin's kits.");
+    addAndMakeVisible (stateNote);
+    stateNote.setJustificationType (juce::Justification::centredRight);
+    stateNote.setFont (juce::FontOptions (13.0f));
+    stateNote.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.7f));
+    for (auto* b : { &allButton, &noneButton })
+        addAndMakeVisible (b);
+    allButton.onClick = [this] { setAllRecorded (true); };
+    noneButton.onClick = [this] { setAllRecorded (false); };
+    allButton.setTooltip ("Ticks Record on every row.");
+    noneButton.setTooltip ("Clears Record on every row, so you can tick just the pieces you want.");
+    logo = juce::ImageCache::getFromMemory (BinaryData::logo_png, BinaryData::logo_pngSize);
+    status.setJustificationType (juce::Justification::topLeft);
     namesButton.onClick = [this] { readNoteNames(); };
     addAndMakeVisible (captureButton);
     captureButton.onClick = [this] { startCapture(); };
@@ -292,10 +306,24 @@ MainComponent::~MainComponent()
     plugin = nullptr;
 }
 
+void MainComponent::paint (juce::Graphics& g)
+{
+    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+    if (logo.isValid())
+        g.drawImageWithin (logo, logoArea.getX(), logoArea.getY(), logoArea.getWidth(), logoArea.getHeight(),
+                           juce::RectanglePlacement::centred);
+}
+
 void MainComponent::resized()
 {
     auto area = getLocalBounds().reduced (16);
-    auto row = area.removeFromTop (32);
+
+    // The logo beside the three top rows: plugin, kit and map, tools.
+    auto top = area.removeFromTop (32 + 10 + 28 + 10 + 28);
+    logoArea = top.removeFromLeft (top.getHeight());
+    top.removeFromLeft (16);
+
+    auto row = top.removeFromTop (32);
     scanButton.setBounds (row.removeFromLeft (120));
     row.removeFromLeft (8);
     loadButton.setBounds (row.removeFromRight (110));
@@ -306,14 +334,36 @@ void MainComponent::resized()
     row.removeFromLeft (8);
     pluginChoice.setBounds (row);
 
-    area.removeFromTop (12);
-    row = area.removeFromTop (28);
+    top.removeFromTop (10);
+    row = top.removeFromTop (28);
     kitLabel.setBounds (row.removeFromLeft (70));
     kitName.setBounds (row.removeFromLeft (220));
     row.removeFromLeft (8);
     mapChoice.setBounds (row);
 
-    status.setBounds (area.removeFromBottom (64));
+    top.removeFromTop (10);
+    row = top;
+    for (auto* b : { &learnButton, &findButton, &namesButton, &captureButton, &addButton, &removeButton })
+    {
+        b->setBounds (row.removeFromLeft (92));
+        row.removeFromLeft (6);
+    }
+    row.removeFromLeft (10);
+    allButton.setBounds (row.removeFromLeft (84));
+    row.removeFromLeft (6);
+    noneButton.setBounds (row.removeFromLeft (92));
+    saveMapButton.setBounds (row.removeFromRight (90));
+    row.removeFromRight (6);
+    loadMapButton.setBounds (row.removeFromRight (90));
+
+    // From the bottom: status and the plugin request, recording, converting.
+    row = area.removeFromBottom (44);
+    stateButton.setBounds (row.removeFromRight (110).withSizeKeepingCentre (110, 28));
+    row.removeFromRight (10);
+    stateNote.setBounds (row.removeFromRight (420));
+    row.removeFromRight (10);
+    status.setBounds (row);
+
     area.removeFromBottom (8);
     row = area.removeFromBottom (32);
     auditionButton.setBounds (row.removeFromLeft (120));
@@ -338,19 +388,19 @@ void MainComponent::resized()
     lighter.setBounds (row.removeFromLeft (250));
 
     area.removeFromTop (12);
-    row = area.removeFromTop (28);
-    for (auto* b : { &learnButton, &findButton, &namesButton, &captureButton, &stateButton, &addButton, &removeButton })
-    {
-        b->setBounds (row.removeFromLeft (92));
-        row.removeFromLeft (6);
-    }
-    saveMapButton.setBounds (row.removeFromRight (90));
-    row.removeFromRight (6);
-    loadMapButton.setBounds (row.removeFromRight (90));
-
-    area.removeFromTop (8);
     area.removeFromBottom (8);
     table.setBounds (area);
+}
+
+void MainComponent::setAllRecorded (bool on)
+{
+    for (auto& zone : kitMap.zones)
+        zone.enabled = on;
+    mapChoice.setSelectedId (0, juce::dontSendNotification);
+    saveMap();
+    table.updateContent();
+    table.repaint();
+    setStatus (on ? "Every row will be recorded." : "No row is ticked. Tick the pieces you want to record.");
 }
 
 void MainComponent::loadDrums()
@@ -687,24 +737,89 @@ void MainComponent::showOutputFolder()
     saveToPath.setTooltip (outputFolder().getFullPathName());
 }
 
+void MainComponent::showPluginRequestHelp()
+{
+    auto options = juce::MessageBoxOptions()
+                       .withIconType (juce::MessageBoxIconType::InfoIcon)
+                       .withTitle ("Ask us to add a plugin")
+                       .withMessage ("eMIMICmkr reads the kits of the plugins it knows (piece names, brands and "
+                                     "models). To ask for another plugin, or for a kit it reads wrong:\n\n"
+                                     "1. Load the plugin here and pick a kit in it.\n"
+                                     "2. Click \"Save state...\" to save what the plugin stores about that kit as "
+                                     "a .zip file.\n"
+                                     "3. Click \"Open GitHub\". A request opens in your browser with the plugin's "
+                                     "name filled in.\n"
+                                     "4. Drag the .zip file into the request, say which kit you loaded, and submit it.\n\n"
+                                     "You need a free GitHub account to send a request.")
+                       .withButton ("Save state...")
+                       .withButton ("Open GitHub")
+                       .withButton ("Close")
+                       .withAssociatedComponent (this);
+    juce::AlertWindow::showAsync (options, [this] (int result)
+    {
+        if (result == 1)
+            savePluginState();
+        else if (result == 2)
+            openPluginRequest();
+    });
+}
+
+void MainComponent::openPluginRequest()
+{
+    const auto name = plugin != nullptr ? plugin->getName() : juce::String();
+    auto url = juce::URL (requestPage).withParameter ("template", "plugin-request.yml");
+    if (name.isNotEmpty())
+        url = url.withParameter ("title", "Add plugin: " + name).withParameter ("plugin", name);
+    if (! url.launchInDefaultBrowser())
+        setStatus ("Couldn't open your browser. The request page is " + url.toString (true) + ".");
+}
+
 void MainComponent::savePluginState()
 {
     if (plugin == nullptr)
-        return setStatus ("Load a plugin first.");
+        return setStatus ("Load a plugin first, then save its state.");
     juce::MemoryBlock state;
     plugin->getStateInformation (state);
-    const auto name = emk::BatchRecorder::safeName (plugin->getName()) + " state.bin";
-    chooser = std::make_unique<juce::FileChooser> ("Save the plugin's state", outputFolder().getChildFile (name));
+    // Zipped: GitHub takes .zip attachments but not a bare .bin.
+    const auto base = emk::BatchRecorder::safeName (plugin->getName()) + " state";
+    chooser = std::make_unique<juce::FileChooser> ("Save the plugin's state", outputFolder().getChildFile (base + ".zip"),
+                                                   "*.zip");
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::warnAboutOverwriting,
-                          [this, state] (const juce::FileChooser& fc)
+                          [this, state, base] (const juce::FileChooser& fc)
     {
-        const auto file = fc.getResult();
+        auto file = fc.getResult();
         if (file == juce::File())
             return;
-        setStatus (file.replaceWithData (state.getData(), state.getSize())
-                       ? "Saved " + juce::String ((int) state.getSize()) + " bytes to " + file.getFullPathName() + "."
-                       : "Couldn't write " + file.getFullPathName() + ".");
+        file = file.withFileExtension (".zip");
+        juce::ZipFile::Builder zip;
+        zip.addEntry (new juce::MemoryInputStream (state, true), 9, base + ".bin", juce::Time::getCurrentTime());
+        bool saved = false;
+        if (auto out = file.createOutputStream(); out != nullptr && out->openedOk())
+        {
+            out->setPosition (0);
+            out->truncate();
+            saved = zip.writeToStream (*out, nullptr);
+        }
+        if (! saved)
+            return setStatus ("Couldn't write " + file.getFullPathName() + ".");
+        setStatus ("Saved the plugin's state to " + file.getFullPathName() + ".");
+        auto options = juce::MessageBoxOptions()
+                           .withIconType (juce::MessageBoxIconType::InfoIcon)
+                           .withTitle ("State saved")
+                           .withMessage ("Saved to " + file.getFullPathName() + ".\n\nOpen the request on GitHub "
+                                         "now, then drag this file into it.")
+                           .withButton ("Open GitHub")
+                           .withButton ("Later")
+                           .withAssociatedComponent (this);
+        juce::AlertWindow::showAsync (options, [this, file] (int result)
+        {
+            if (result == 1)
+            {
+                file.revealToUser();
+                openPluginRequest();
+            }
+        });
     });
 }
 
@@ -1559,6 +1674,8 @@ void MainComponent::paintRowBackground (juce::Graphics& g, int row, int, int, bo
     else if (! soundingNotes.empty() && juce::isPositiveAndBelow (row, kitMap.zones.size())
              && kitMap.zones[row].enabled && soundingNotes.count (kitMap.zones[row].note) == 0)
         g.fillAll (juce::Colours::red.withAlpha (0.25f));   // this note played nothing in "Find notes"
+    else if (row % 2 == 1)
+        g.fillAll (juce::Colours::white.withAlpha (0.05f));   // stripes, to keep your place in a long kit
 }
 
 void MainComponent::paintCell (juce::Graphics&, int, int, int, int, bool)

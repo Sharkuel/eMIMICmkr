@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include <BinaryData.h>
 #include "PluginScanner.h"
+#include "SquareLook.h"
 
 class EMimicApplication : public juce::JUCEApplication
 {
@@ -14,6 +15,7 @@ public:
     {
         if (OutOfProcessScanner::runChildScanIfRequested (commandLine))
             return;
+        juce::LookAndFeel::setDefaultLookAndFeel (&look);
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
 
         // The banner, for a moment at start-up (a click closes it sooner). It deletes itself.
@@ -24,7 +26,11 @@ public:
                                                true);
         splash->deleteAfterDelay (juce::RelativeTime::seconds (2.5), true);
     }
-    void shutdown() override { mainWindow = nullptr; }
+    void shutdown() override
+    {
+        mainWindow = nullptr;
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+    }
     void systemRequestedQuit() override { quit(); }
 
 private:
@@ -47,6 +53,7 @@ private:
         void closeButtonPressed() override { JUCEApplication::getInstance()->systemRequestedQuit(); }
     };
 
+    SquareLook look;   // before mainWindow, so it outlives every window
     std::unique_ptr<MainWindow> mainWindow;
 };
 
