@@ -53,6 +53,9 @@ private:
     void showPluginRequestHelp();
     void openPluginRequest();
     void setAllRecorded (bool on);
+    void setUpHelp();
+    void showHelp (bool on);
+    void explainAt (juce::Point<int>);
     juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool lighter,
                                   juce::ThreadWithProgressWindow&);
     void setLive (bool on);
@@ -106,7 +109,10 @@ private:
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
         namesButton { "Read plugin" }, captureButton { "Capture..." },
         convertButton { "Convert WAV folder..." }, kitButton { "Build Mimic kit..." }, saveToButton { "Change..." }, stateButton { "Save state..." },
-        allButton { "Select all" }, noneButton { "Select none" };
+        allButton { "Select all" }, noneButton { "Select none" }, helpButton { "Help" };
+    std::unique_ptr<juce::Component> helpOverlay;                       // over the window while Help is on
+    std::vector<std::pair<juce::Component*, juce::String>> helpTexts;   // "Title\nWhat it does"
+    std::map<int, juce::String> columnHelp;                              // the same, by table column
     juce::Label stateNote { {}, "Want to add your plugin to our database?\nYou can create a save state, and open a request on our GitHub." };
     juce::Image logo;
     juce::Rectangle<int> logoArea;

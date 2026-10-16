@@ -75,6 +75,47 @@ public:
     }
 };
 
+/** What a control does, in a call-out bubble: a bold title over a paragraph. */
+class HelpBubble : public juce::Component
+{
+public:
+    HelpBubble (const juce::String& title, const juce::String& body)
+    {
+        text.append (title + "\n", juce::FontOptions (16.0f, juce::Font::bold), juce::Colours::white);
+        text.append (body, juce::FontOptions (14.0f), juce::Colours::white.withAlpha (0.85f));
+        text.setLineSpacing (3.0f);
+        layout.createLayout (text, (float) width);
+        setSize (width, (int) std::ceil (layout.getHeight()));
+    }
+    void paint (juce::Graphics& g) override { layout.draw (g, getLocalBounds().toFloat()); }
+
+private:
+    static constexpr int width = 360;
+    juce::AttributedString text;
+    juce::TextLayout layout;
+};
+
+/** Lies over the window while Help is on: outlines what can be explained and takes the clicks. */
+class HelpOverlay : public juce::Component
+{
+public:
+    std::function<void (juce::Point<int>)> onClick;
+    std::vector<juce::Rectangle<int>> spots;
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colours::black.withAlpha (0.12f));
+        g.setColour (juce::Colour (0xffffc107));
+        for (const auto& r : spots)
+            g.drawRect (r.expanded (2), 2);
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (onClick)
+            onClick (e.getPosition());
+    }
+};
+
 /** Runs work on a background thread behind a progress window with a Cancel button. */
 class Job final : public juce::ThreadWithProgressWindow
 {
@@ -287,6 +328,7 @@ MainComponent::MainComponent()
     loadDrums();
     refreshPluginChoices();
     setStatus ("Find your drum plugins to start.");
+    setUpHelp();
     setSize (1180, 720);
 }
 
@@ -323,6 +365,8 @@ void MainComponent::resized()
     auto row = top.removeFromTop (32);
     scanButton.setBounds (row.removeFromLeft (120));
     row.removeFromLeft (8);
+    helpButton.setBounds (row.removeFromRight (60));
+    row.removeFromRight (8);
     loadButton.setBounds (row.removeFromRight (110));
     row.removeFromRight (8);
     showButton.setBounds (row.removeFromRight (110));
@@ -385,6 +429,157 @@ void MainComponent::resized()
     area.removeFromTop (12);
     area.removeFromBottom (8);
     table.setBounds (area);
+
+    if (helpOverlay)
+    {
+        helpOverlay->setBounds (getLocalBounds());
+        auto& spots = static_cast<HelpOverlay&> (*helpOverlay).spots;
+        spots.clear();
+        for (const auto& [c, text] : helpTexts)
+            if (c->isVisible())
+                spots.push_back (c->getBounds());
+    }
+}
+
+void MainComponent::setUpHelp()
+{
+    addAndMakeVisible (helpButton);
+    helpButton.setClickingTogglesState (true);
+    helpButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffffc107));
+    helpButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+    helpButton.setTooltip ("Turns Help on: then click any button, box or column to read what it does.");
+    helpButton.onClick = [this] { showHelp (helpButton.getToggleState()); };
+
+    auto overlay = std::make_unique<HelpOverlay>();
+    overlay->onClick = [this] (juce::Point<int> at) { explainAt (at); };
+    helpOverlay = std::move (overlay);
+    addChildComponent (*helpOverlay);
+
+    auto add = [this] (juce::Component& c, const juce::String& title, const juce::String& body)
+    {
+        helpTexts.push_back ({ &c, title + "\n" + body });
+    };
+    add (scanButton, "Find plugins",
+         "Looks through your plugin folders for VST3 plugins and lists them in the box to the right. Each plugin "
+         "is opened on its own, so one that crashes is skipped instead of closing eMIMICmkr. Run it again after "
+         "installing a new drum plugin.");
+    add (pluginSearch, "Search plugins",
+         "Type part of a plugin's name or maker to narrow the list. Press Enter to open the list.");
+    add (pluginChoice, "Plugin list",
+         "The plugins Find plugins found. Drum plugins come first. Pick the one whose kit you want to record, "
+         "then click Load plugin.");
+    add (showButton, "Show plugin",
+         "Opens the loaded plugin's own window, to choose a kit, tweak sounds or click its drums while Learn "
+         "notes is on. Your e-drum kit plays the plugin too.");
+    add (loadButton, "Load plugin",
+         "Loads the plugin picked in the list. For plugins eMIMICmkr knows (Superior Drummer 3, BFD3, Addictive "
+         "Drums 2, MODO DRUM and others), click Read plugin afterwards to fill the table from its kit.");
+    add (kitName, "Kit name",
+         "Names the folders and files a recording makes. The Mimic shows each instrument by its Name on the "
+         "Mimic, not by this.");
+    add (mapChoice, "Note map",
+         "Which MIDI note plays each drum zone. Pick a ready-made map (e-drum, General MIDI or a Kontakt "
+         "library), or keep your own edits. Read plugin replaces it with the plugin's own kit when it can.");
+    add (learnButton, "Learn notes",
+         "While it's red, play a drum on your e-kit or click it in the plugin's window: the selected row takes "
+         "that note and the next row is selected. Click it again to stop.");
+    add (findButton, "Find notes",
+         "Plays every note from 0 to 127 and marks rows whose note makes no sound in red, so you can spot "
+         "zones that won't record anything.");
+    add (namesButton, "Read plugin",
+         "Reads the loaded plugin's kit: its pieces, their notes and, where the plugin says, the brand and "
+         "model of each drum. Pick a kit in the plugin first.");
+    add (captureButton, "Capture...",
+         "Takes a screenshot so you can drag a box around a drum in the plugin's window. That picture becomes "
+         "the selected piece's image on the Mimic, and any text in it can become its name.");
+    add (addButton, "Add row", "Adds a zone to the table, for a drum or articulation the map left out.");
+    add (removeButton, "Remove row", "Removes the selected row from the table.");
+    add (allButton, "Select all", "Ticks Record on every row.");
+    add (noneButton, "Select none",
+         "Clears Record on every row, so you can tick only the pieces you want. Handy for big kits.");
+    add (loadMapButton, "Open map...",
+         "Opens a note map saved with Save map..., or a Kontakt library's .nka map.");
+    add (saveMapButton, "Save map...",
+         "Saves the table (pieces, zones, notes, names) to a file, to reuse it later or share it.");
+    add (table, "Kit table",
+         "One row per zone the kit will record. Click a column (with Help on) to read about it.");
+    add (convertButton, "Convert WAV folder...",
+         "Builds Mimic instruments (.mci) from folders of WAV hits you already have: a kit recorded earlier, "
+         "an SDSE render or a WAV library. You can pick several folders at once.");
+    add (kitButton, "Build Mimic kit...",
+         "Makes a Mimic kit preset (.kit) from .mci files. It starts from one of your own Mimic kits, so its pad "
+         "settings carry over.");
+    add (lighter, "Lighter instruments",
+         "Builds each instrument with half the hits. Use it if the Mimic glitches with many instruments loaded.");
+    add (saveToPath, "Save to", "Where recordings go: <this folder>/<kit name>, with the Mimic files in it.");
+    add (saveToButton, "Change...", "Picks the folder recordings and Mimic files are saved to.");
+    add (auditionButton, "Listen to zone", "Plays the selected row's note through the plugin, at full strength.");
+    add (fitLimits, "Fit Mimic limits",
+         "Keeps each instrument within the number of hits the Mimic handles well, sharing them out between its "
+         "zones. Leave it on unless you know you need more.");
+    add (hitsPerZone, "Most hits per zone",
+         "The most velocities recorded per zone, from loudest to softest. More hits give smoother dynamics but "
+         "take longer to record.");
+    add (recordButton, "Record kit",
+         "Records every ticked row at several velocities. When it's done, it offers to build the Mimic "
+         "instruments (.mci) from them, in the kit's folder or straight onto a USB stick for the Mimic.");
+    add (stateButton, "Save state...",
+         "Explains how to ask us to add a plugin eMIMICmkr doesn't read yet, saves the plugin's state for the "
+         "request and opens it on GitHub.");
+    add (status, "Status", "What eMIMICmkr just did, or what it needs from you next.");
+
+    columnHelp = {
+        { colOn, "Record\nTicked rows are recorded. Untick zones you don't need." },
+        { colPiece, "Piece\nWhich instrument this zone belongs to. Zones with the same piece become one Mimic instrument." },
+        { colMimicName, "Name on the Mimic\nThe instrument name the Mimic shows. Double-click to type it." },
+        { colLibrary, "Library\nThe library name the Mimic shows. It changes every piece from the same plugin library." },
+        { colImage, "Image\nThe picture the Mimic shows. Click to choose, paste or capture one, or drop an image file on it." },
+        { colZone, "Zone (file label)\nThe articulation, such as SNARE1 RIMSHOT. It decides which Mimic zone the hits go to." },
+        { colNote, "Note\nThe MIDI note that plays this zone in the plugin. Double-click to type it, or use Learn notes." },
+        { colCc4, "CC4\nFor hi-hats: the pedal position sent before the note, 127 closed to 0 open." },
+        { colHits, "Hits\nHow many velocities this zone records. Double-click to set it; the piece's other zones share out the rest." },
+        { colName, "Name in plugin\nWhat the plugin calls this note, for reference." },
+    };
+}
+
+void MainComponent::showHelp (bool on)
+{
+    helpOverlay->setVisible (on);
+    if (on)
+    {
+        resized();
+        helpOverlay->toFront (false);
+        helpButton.toFront (false);   // stays clickable, to turn Help off
+        setStatus ("Help is on: click anything outlined to read what it does. Click Help again when you're done.");
+    }
+    else
+    {
+        setStatus ("Help is off.");
+    }
+}
+
+void MainComponent::explainAt (juce::Point<int> at)
+{
+    auto show = [this] (const juce::String& text, juce::Rectangle<int> target)
+    {
+        auto bubble = std::make_unique<HelpBubble> (text.upToFirstOccurrenceOf ("\n", false, false),
+                                                    text.fromFirstOccurrenceOf ("\n", false, false));
+        juce::CallOutBox::launchAsynchronously (std::move (bubble), target, this);
+    };
+    if (table.getBounds().contains (at))
+    {
+        const auto x = at.x - table.getX() + table.getViewport()->getViewPositionX();
+        const auto column = table.getHeader().getColumnIdAtX (x);
+        if (const auto it = columnHelp.find (column); it != columnHelp.end())
+        {
+            const auto left = table.getX() + table.getHeader().getColumnPosition (table.getHeader().getIndexOfColumnId (column, true)).getX()
+                              - table.getViewport()->getViewPositionX();
+            return show (it->second, { left, table.getY(), table.getHeader().getColumnWidth (column), table.getHeader().getHeight() });
+        }
+    }
+    for (const auto& [c, text] : helpTexts)
+        if (c->isVisible() && c->getBounds().expanded (2).contains (at))
+            return show (text, c->getBounds());
 }
 
 void MainComponent::setAllRecorded (bool on)
