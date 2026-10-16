@@ -48,8 +48,16 @@ sorted by how hard each hit was played.
 ## Downloads
 
 Every push builds the app for Linux, Windows and macOS on GitHub (Actions tab, "Build",
-artifacts at the bottom of a run); a version tag such as `v0.2.0` publishes them under
-Releases. The macOS build is unsigned: right-click it and choose Open the first time.
+artifacts at the bottom of a run); a version tag such as `v1.0.0` publishes them under
+Releases. To release, set the version in `CMakeLists.txt` (`project(eMIMICmkr VERSION ...)`)
+and `packaging/nix/package.nix`, then push a matching tag: `git tag v1.0.0 && git push origin v1.0.0`.
+
+| File | For |
+| --- | --- |
+| `eMIMICmkr-Windows-x64-Setup.exe` | Windows 10/11: installs with a Start menu entry and an uninstaller. It is unsigned, so SmartScreen may warn: click More info, then Run anyway |
+| `eMIMICmkr-Windows-x64.zip` | Windows, portable: unzip and run `eMIMICmkr.exe` |
+| `eMIMICmkr-macOS.dmg` | macOS 11 or newer (Apple silicon and Intel): open it and drag eMIMICmkr into Applications. It is unsigned: right-click it and choose Open the first time |
+| `eMIMICmkr-macOS.zip` | The same app, zipped |
 
 Linux comes in four forms, all built for x86-64 on Ubuntu 22.04 (glibc 2.35 or newer):
 

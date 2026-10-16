@@ -72,6 +72,7 @@ jobs:
         run: |
           mkdir -p dist
           app=build/eMIMICmkr_artefacts/Release
+          version=$(sed -n 's/^project(eMIMICmkr VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           case "$RUNNER_OS" in
             Linux)   cp assets/logo.png "$app/eMIMICmkr.png"
                      cp packaging/linux/eMIMICmkr.desktop "$app/"
@@ -86,8 +87,17 @@ jobs:
                      APPIMAGE_EXTRACT_AND_RUN=1 LDAI_OUTPUT=dist/eMIMICmkr-x86_64.AppImage ./linuxdeploy --appdir AppDir \
                        -d AppDir/usr/share/applications/eMIMICmkr.desktop \
                        -i AppDir/usr/share/icons/hicolor/512x512/apps/eMIMICmkr.png --output appimage ;;
-            Windows) 7z a dist/eMIMICmkr-Windows-x64.zip "./$app/eMIMICmkr.exe" ;;
-            macOS)   ditto -c -k --keepParent "$app/eMIMICmkr.app" dist/eMIMICmkr-macOS.zip ;;
+            Windows) # A setup program (Start menu entry, uninstaller), and the bare .exe for a portable copy.
+                     # Inno Setup comes with GitHub's Windows images; install it if an image lacks it.
+                     iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+                     [ -x "$iscc" ] || { choco install innosetup -y --no-progress && iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"; }
+                     "$iscc" "//DAppVersion=$version" "//DAppExe=$(cygpath -w "$PWD/$app/eMIMICmkr.exe")" \
+                       "//O$(cygpath -w "$PWD/dist")" packaging/windows/eMIMICmkr.iss
+                     7z a dist/eMIMICmkr-Windows-x64.zip "./$app/eMIMICmkr.exe" ;;
+            macOS)   # A disk image to drag into Applications, and the zipped app.
+                     mkdir dmg && cp -R "$app/eMIMICmkr.app" dmg/ && ln -s /Applications dmg/Applications
+                     hdiutil create -volname eMIMICmkr -srcfolder dmg -ov -format UDZO dist/eMIMICmkr-macOS.dmg
+                     ditto -c -k --keepParent "$app/eMIMICmkr.app" dist/eMIMICmkr-macOS.zip ;;
           esac
           ls -l dist
 
