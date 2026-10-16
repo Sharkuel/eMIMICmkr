@@ -76,7 +76,9 @@ public:
 
     /** Longest hit kept for a piece, close to Pearl's factory hits: kick 2.5 s; snare, hi-hat,
         percussion 3 s; tom 5 s; cymbal 16 s, ride-type (with a bell) 20 s; an open or
-        half-open hi-hat zone, or its foot splash, 8 s (they all hit 3 s, Alexandre 2026-10-15). */
+        half-open hi-hat zone, or its foot splash, 8 s (they all hit 3 s, Alexandre 2026-10-15).
+        A tam-tam or gong takes the cymbal's length, and a timp-tom or floor filed under
+        percussion the tom's. */
     static double maxSeconds (const juce::String& family, bool hasBell, const juce::String& zone = {});
     /** x cut to maxFrames with its last fadeFrames faded out to 0 along the square of a straight
         line (falls fast, then trails off like a ringing tail); unchanged when shorter. */

@@ -770,6 +770,21 @@ static bool ringsOpen (const juce::String& family, const juce::String& zone)
     return family == "hat" && (zone.contains ("open") || zone == "footsplash");
 }
 
+// Percussion is cut like a short hit, but some of it rings like a cymbal or a tom: a tam-tam
+// or gong rings 20-30 s, and SD3's timp-tom ("LeftFloor") is a drum filed under percussion
+// (Alexandre's Area 33 Origin kit, 2026-10-16). Such pieces take that family's length.
+static juce::String lengthFamily (const WavToMci::Piece& piece)
+{
+    if (piece.family != "perc")
+        return piece.family;
+    const auto name = piece.name.toUpperCase().removeCharacters (" _-");
+    if (name.contains ("TAMTAM") || name.contains ("GONG"))
+        return "cymbal";
+    if (name.contains ("FLOOR") || name.contains ("TOM") || name.contains ("TIMP"))
+        return "tom";
+    return piece.family;
+}
+
 double WavToMci::maxSeconds (const juce::String& family, bool hasBell, const juce::String& zone)
 {
     if (ringsOpen (family, zone))
@@ -814,6 +829,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
     auto cells = [cellsPercent] (const juce::String& kind) { return std::max (2, cellLimit (kind) * cellsPercent / 100); };
     const auto hatHitsUsed = std::max (1, hatHits * cellsPercent / 100);
     const bool pieceHasBell = piece.find ("bell") != nullptr;
+    const auto ringsLike = lengthFamily (piece);
     auto readOne = [&] (const Hit& h)
     {
         if (onWavRead)
@@ -875,8 +891,8 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         if (maxHits > 0 && (int) hits.size() > maxHits)   // keep an even spread of velocities
             hits = evenSpread (std::move (hits), maxHits);
         const auto split = rr > 0 ? roundRobinLayers (std::move (hits), rr) : splitLayers (std::move (hits), layers);
-        const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (piece.family, pieceHasBell, key) * sampleRate);
-        const auto fadeFrames = (int) std::lround (fadeSeconds (piece.family, pieceHasBell, key) * sampleRate);
+        const auto maxFrames = fullLength ? 0 : (int) std::lround (maxSeconds (ringsLike, pieceHasBell, key) * sampleRate);
+        const auto fadeFrames = (int) std::lround (fadeSeconds (ringsLike, pieceHasBell, key) * sampleRate);
         Zone z;
         for (const auto& layer : split)
         {
