@@ -770,8 +770,12 @@ void MainComponent::openPluginRequest()
     auto url = juce::URL (requestPage).withParameter ("template", "plugin-request.yml");
     if (name.isNotEmpty())
         url = url.withParameter ("title", "Add plugin: " + name).withParameter ("plugin", name);
-    if (! url.launchInDefaultBrowser())
-        setStatus ("Couldn't open your browser. The request page is " + url.toString (true) + ".");
+    // Also on the clipboard: on Linux the link goes to whatever app claims web links, which
+    // isn't always a browser (Alexandre's opened a Claude sign-in page, 2026-10-16).
+    juce::SystemClipboard::copyTextToClipboard (url.toString (true));
+    setStatus (juce::String (url.launchInDefaultBrowser() ? "Opened" : "Couldn't open")
+               + " the request page in your browser. Its address is copied too: if the wrong page opened, paste it "
+                 "into your browser (it starts " + juce::String (requestPage) + ").");
 }
 
 void MainComponent::savePluginState()
