@@ -17,6 +17,7 @@ public:
     MainComponent();
     ~MainComponent() override;
 
+    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
@@ -49,6 +50,9 @@ private:
     void chooseOutputFolder();
     void showOutputFolder();
     void savePluginState();
+    void showPluginRequestHelp();
+    void openPluginRequest();
+    void setAllRecorded (bool on);
     juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool hatsAsRides, bool lighter,
                                   juce::ThreadWithProgressWindow&);
     void setLive (bool on);
@@ -101,7 +105,11 @@ private:
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
         namesButton { "Read plugin" }, captureButton { "Capture..." },
-        convertButton { "Convert WAV folder..." }, kitButton { "Build Mimic kit..." }, saveToButton { "Change..." }, stateButton { "Save state..." };
+        convertButton { "Convert WAV folder..." }, kitButton { "Build Mimic kit..." }, saveToButton { "Change..." }, stateButton { "Save state..." },
+        allButton { "Select all" }, noneButton { "Select none" };
+    juce::Label stateNote { {}, "Want to add your plugin to our database?\nYou can create a save state, and open a request on our GitHub." };
+    juce::Image logo;
+    juce::Rectangle<int> logoArea;
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
     juce::ToggleButton fitLimits { "Fit Mimic limits" }, hatAsRide { "Also make hi-hats as 3-zone rides" },
                      lighter { "Lighter instruments (half the hits)" };

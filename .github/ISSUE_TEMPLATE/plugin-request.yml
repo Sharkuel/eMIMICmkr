@@ -1,0 +1,46 @@
+name: Add a drum plugin
+description: Ask for eMIMICmkr to read the kits of a drum plugin it doesn't know yet, or one it reads wrong.
+title: "Add plugin: "
+labels: ["plugin request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! In eMIMICmkr, load the plugin, pick a kit in it, then click **Save state...** (bottom right).
+        Drag the .zip file it saves into the box at the bottom of this page.
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin
+      description: Its name and maker, as eMIMICmkr lists it.
+      placeholder: Superior Drummer 3 (Toontrack)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      placeholder: "3.4.2"
+  - type: input
+    id: kit
+    attributes:
+      label: Kit you loaded
+      description: The kit or preset that was loaded when you saved the state.
+      placeholder: Area 33 Origin, default kit
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Computer
+      options:
+        - Windows
+        - macOS
+        - Linux
+  - type: textarea
+    id: state
+    attributes:
+      label: Saved state and notes
+      description: Drag the .zip file from Save state... here, and tell us anything that looks wrong.
+    validations:
+      required: true
