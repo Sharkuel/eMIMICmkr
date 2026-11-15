@@ -25,6 +25,22 @@ void addHat (KitMap& m, int bowNote, int edgeNote, int pedalNote)
     // Most plugins play a foot splash from the pedal note when the hat is open; off until checked.
     m.zones.add ({ "Hi-Hat", "HATS FOOT SPLASH", pedalNote, 0, false });
 }
+
+/** True when a lower-case drum name names a tom: "Tom 1", "FloorTom", "Rototom", but not the "tom"
+    hiding in "Custom" (a Zildjian A Custom crash came in as a tom), "Bottom" or "Phantom". */
+bool namesTom (const juce::String& lowerName)
+{
+    for (int at = lowerName.indexOf ("tom"); at >= 0; at = lowerName.indexOf (at + 1, "tom"))
+    {
+        const auto before = lowerName.substring (0, at);
+        if (before.isEmpty() || ! juce::CharacterFunctions::isLetter (before.getLastCharacter()))
+            return true;
+        for (const char* joined : { "floor", "rack", "roto", "high", "hi", "mid", "low", "lo", "concert", "octa" })
+            if (before.endsWith (joined))
+                return true;
+    }
+    return false;
+}
 } // namespace
 
 KitMap KitMap::generalMidi()
@@ -747,7 +763,7 @@ KitMap KitMap::fromBfd3 (const juce::String& text, juce::String& error)
         if (n.contains ("kick")) return "kick";
         if (n.contains ("snare")) return "snare";
         if (n.contains ("hihat") || n.contains ("hi-hat") || n.contains ("hat")) return "hats";
-        if (n.contains ("tom")) return "tom";
+        if (namesTom (n)) return "tom";
         if (n.contains ("ride")) return "ride";
         if (n.contains ("splash")) return "splash";
         if (n.contains ("china")) return "china";
@@ -1250,7 +1266,7 @@ KitMap KitMap::fromSoundworks (const juce::String& text, juce::String& error)
             if (n.contains ("kick")) return "kick";
             if (n.contains ("snare")) return "snare";
             if (n.contains ("hat")) return "hats";
-            if (n.contains ("tom") || n.contains ("floor")) return "tom";
+            if (namesTom (n) || n.contains ("floor")) return "tom";
             if (n.contains ("ride")) return "ride";
             if (n.contains ("splash")) return "splash";
             if (n.contains ("china")) return "china";

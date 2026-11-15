@@ -335,6 +335,38 @@ bool bfd3MapsEveryDrum()
 
 /** An ML Drums kit, as a VST3 host saves its state: the plugin's own XML in base64 under
     IComponent (ML_DRUMS_STATE names a real state file). */
+/** Cymbal names hiding "tom" ("A-Custom") stay cymbals; real toms are still toms. */
+bool bfd3CustomCrashIsNoTom()
+{
+    const juce::String xml =
+        "<root SourceEngine=\"BFD3\"><BFD2Kit>"
+        "<VString name=\"kit_slot_7\">Zildjian/Zildjian A-Custom Fast Crash</VString>"
+        "<VString name=\"kit_slot_14\">DW/DW Mardi Gras Sparkle Floor Tom 2</VString>"
+        "<VString name=\"kit_slot_15\">Sonor/Rototom 10</VString>"
+        "<BFD2KitPiece name=\"kp_slot_7\"><BFD2Artic name=\"artic_0_Edge\" artic_name=\"Edge\"/></BFD2KitPiece>"
+        "<BFD2KitPiece name=\"kp_slot_14\"><BFD2Artic name=\"artic_0_Hit\" artic_name=\"Hit\"/></BFD2KitPiece>"
+        "<BFD2KitPiece name=\"kp_slot_15\"><BFD2Artic name=\"artic_0_Hit\" artic_name=\"Hit\"/></BFD2KitPiece></BFD2Kit>"
+        "<BFD2MidiMap><VObjectArray name=\"midi_note_49\"><MIDIMapElement note=\"49\">"
+        "<RequestedArticulationID slot=\"7\" artic=\"0\"/></MIDIMapElement></VObjectArray>"
+        "<VObjectArray name=\"midi_note_41\"><MIDIMapElement note=\"41\">"
+        "<RequestedArticulationID slot=\"14\" artic=\"0\"/></MIDIMapElement></VObjectArray>"
+        "<VObjectArray name=\"midi_note_50\"><MIDIMapElement note=\"50\">"
+        "<RequestedArticulationID slot=\"15\" artic=\"0\"/></MIDIMapElement></VObjectArray></BFD2MidiMap></root>";
+    juce::String error;
+    const auto m = emk::KitMap::fromBfd3 (xml, error);
+    auto pieceOf = [&] (int note)
+    {
+        for (const auto& z : m.zones)
+            if (z.note == note)
+                return z.piece + "|" + z.label;
+        return juce::String();
+    };
+    const bool ok = pieceOf (49) == "Crash 1|CRASH1 EDGE" && pieceOf (41) == "Tom 1|TOM1 CENTER" && pieceOf (50) == "Tom 2|TOM2 CENTER";
+    if (! ok)
+        std::printf ("bfd3CustomCrashIsNoTom failed: '%s' '%s' '%s'\n", pieceOf (49).toRawUTF8(), pieceOf (41).toRawUTF8(), pieceOf (50).toRawUTF8());
+    return ok;
+}
+
 bool mlDrumsKitReads()
 {
     const juce::String params = "<?xml version=\"1.0\"?> <PARAMS instrument0=\"1\" instrument1=\"27\" "
@@ -1031,7 +1063,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
