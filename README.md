@@ -189,9 +189,7 @@ table column shows what it does instead of running it. Click **Help** again to l
 
 **Convert WAV folder...** builds Mimic instruments from one or several folders (or a .zip) of WAV hits in
 the layout below, such as a kit you recorded yourself or a WAV library, into a `Mimic`
-folder inside it. **3-zone hi-hats (OS2 test)** adds a ride-type copy of each hi-hat
-(`<hat> 3-zone.mci`: closed bow, bell and edge). The stock Mimic can't play it as a hi-hat; it's there for
-testing new hi-hat engines such as MIMIC OS2.
+folder inside it.
 A piece folder (the one holding its zone folders) may hold `mimic.txt` (`name: ...` and
 `library: ...` lines) and `mimic.png` (94x63); recordings get them from the table, and the
 converter puts them in the instrument.
