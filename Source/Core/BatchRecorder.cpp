@@ -72,7 +72,7 @@ juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const Kit
     for (int i = 0; i < map.zones.size(); ++i)
         if (map.zones[i].enabled)
         {
-            const int hits = map.hitsFor (i, settings.hitsPerZone, settings.fitMimicLimits);
+            const int hits = map.hitsFor (i, settings.hitsPerZone, settings.fitMimicLimits, settings.stockLimits);
             zones.add (map.zones[i]);
             zoneVelocities.add (velocities (hits, settings.softestVelocity, settings.hardestVelocity));
             progress.total += hits;

@@ -157,14 +157,26 @@ void walk (const juce::File& root, const juce::File& dir, juce::StringArray& out
 } // namespace
 
 //==============================================================================
-int WavToMci::cellLimit (const juce::String& type)
+int WavToMci::cellLimit (const juce::String& type, bool stock)
 {
-    // Wave cells per instrument, shared by its zones. The Mimic preloads about 0.1 MB of RAM
-    // per cell whatever the hit length, and kits built to the Editor's limits (snare 300,
-    // toms 200...) glitched once several were loaded, while Pearl's own instruments play clean.
-    // So these follow Pearl's factory library (2026-10-13): kicks 12-45 cells, snares 84-140,
-    // toms 49-70, crashes/splashes/chinas 32-65, rides 74-112, percussion 30. Cymbals and
-    // rides keep one cell for the choke ring. Hi-hats: see hatHits.
+    // Wave cells per instrument, shared by its zones. Cymbals and rides keep one cell for the
+    // choke ring. Hi-hats: see hatHits.
+    if (! stock)
+    {
+        // The most the Mimic Instrument Editor accepts (Alexandre, 2026-10-07).
+        if (type == "Kick")
+            return 64;
+        if (type == "Snare" || type == "Ride")
+            return 300;
+        if (type == "Tom" || type == "Cymbal" || type == "Perc")
+            return 200;
+        return 0;
+    }
+    // Stock sound limits. The Mimic preloads about 0.1 MB of RAM per cell whatever the hit
+    // length, and kits built to the Editor's limits glitched once several were loaded on the
+    // stock disk, while Pearl's own instruments play clean. These follow Pearl's factory
+    // library (2026-10-13): kicks 12-45 cells, snares 84-140, toms 49-70,
+    // crashes/splashes/chinas 32-65, rides 74-112, percussion 30.
     if (type == "Kick")
         return 48;
     if (type == "Snare")
@@ -823,10 +835,11 @@ void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
 mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::String& name, bool choke, bool hatAsRide,
                               const std::function<void (const juce::String&)>& log,
                               const std::function<void()>& onWavRead, bool fullLength,
-                              int cellsPercent)
+                              int cellsPercent, bool stockLimits)
 {
     // The instrument's wave-cell budget, cut to cellsPercent.
-    auto cells = [cellsPercent] (const juce::String& kind) { return std::max (2, cellLimit (kind) * cellsPercent / 100); };
+    auto cells = [cellsPercent, stockLimits] (const juce::String& kind)
+        { return std::max (2, cellLimit (kind, stockLimits) * cellsPercent / 100); };
     const auto hatHitsUsed = std::max (1, hatHits * cellsPercent / 100);
     const bool pieceHasBell = piece.find ("bell") != nullptr;
     const auto ringsLike = lengthFamily (piece);
@@ -1266,7 +1279,8 @@ WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juc
         {
             try
             {
-                auto f = build (piece, src, title, options.choke, asRide, log, onWavRead, options.fullLength, options.cellsPercent);
+                auto f = build (piece, src, title, options.choke, asRide, log, onWavRead, options.fullLength, options.cellsPercent,
+                                options.stockLimits);
                 if (info.library.isNotEmpty())
                     f.set ("INST0libnam", mci::Value::ofString (info.library));
                 if (info.image.getSize() > 0)

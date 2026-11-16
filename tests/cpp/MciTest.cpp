@@ -1,7 +1,7 @@
 // Checks of the C++ .mci writer and WAV converter, and the converter's command line.
 //
 //   eMIMICmkr_mci_tests                      run the self-checks
-//   eMIMICmkr_mci_tests --convert INPUT [INPUT...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]
+//   eMIMICmkr_mci_tests --convert INPUT [INPUT...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride] [--stock-limits]
 //                                            convert a folder or .zip of rendered WAVs, or
 //                                            several folders read as one
 //   eMIMICmkr_mci_tests --rewrite IN OUT     read a .mci and write it back (reader/writer check)
@@ -355,6 +355,8 @@ int convert (const juce::StringArray& args)
             options.hatAsRide = true;
         else if (a == "--cells-percent" && i + 1 < args.size())
             options.cellsPercent = juce::jlimit (1, 100, args[++i].getIntValue());
+        else if (a == "--stock-limits")
+            options.stockLimits = true;
         else if (a == "--full-length")
             options.fullLength = true;
         else if (! a.startsWith ("--"))
@@ -367,7 +369,7 @@ int convert (const juce::StringArray& args)
     }
     if (inputs.isEmpty())
     {
-        std::fprintf (stderr, "usage: --convert INPUT.zip|FOLDER [FOLDER...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]\n");
+        std::fprintf (stderr, "usage: --convert INPUT.zip|FOLDER [FOLDER...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride] [--stock-limits]\n");
         return 2;
     }
     const auto report = WavToMci::run (inputs, outDir, options,
@@ -418,7 +420,7 @@ int main (int argc, char** argv)
     }
     if (args.size() > 0 && args[0] != "--selftest")
     {
-        std::fprintf (stderr, "usage: %s [--selftest | --convert INPUT [INPUT...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride]"
+        std::fprintf (stderr, "usage: %s [--selftest | --convert INPUT [INPUT...] [--out DIR] [--name NAME] [--no-choke] [--hat-as-ride] [--stock-limits]"
                               " | --rewrite IN.mci OUT.mci"
                               " | --rewrite-kit IN.kit OUT.kit | --kit TEMPLATE.kit OUT.kit IN.mci...]\n", argv[0]);
         return 2;

@@ -1013,31 +1013,35 @@ int main (int argc, char** argv)
     juce::String badError;
     emk::KitMap::fromCsv ("Kick,KICK1,abc", badError);
 
-    // Hits per zone that fit the Mimic's wave-cell limits.
-    auto hitsOf = [&map] (const juce::String& label)
+    // Hits per zone that fit the Mimic's wave-cell limits: the Instrument Editor's, or the stock sounds'.
+    auto hitsOf = [&map] (const juce::String& label, bool stock)
     {
         for (int i = 0; i < map.zones.size(); ++i)
             if (map.zones[i].label == label)
-                return map.hitsFor (i, 127);
+                return map.hitsFor (i, 127, true, stock);
         return -1;
     };
-    const bool limitsOk = hitsOf ("KICK1") == 48 && hitsOf ("SNARE1 CENTER") == 46 && hitsOf ("TOM1 RIMSHOT") == 35
-                          && hitsOf ("CRASH1 EDGE") == 31 && hitsOf ("RIDE1 BELL") == 37 && hitsOf ("HATS BOW OPEN2") == 32;
+    const bool limitsOk = hitsOf ("KICK1", true) == 48 && hitsOf ("SNARE1 CENTER", true) == 46
+                          && hitsOf ("TOM1 RIMSHOT", true) == 35 && hitsOf ("CRASH1 EDGE", true) == 31
+                          && hitsOf ("RIDE1 BELL", true) == 37 && hitsOf ("HATS BOW OPEN2", true) == 32
+                          && hitsOf ("KICK1", false) == 64 && hitsOf ("SNARE1 CENTER", false) == 100
+                          && hitsOf ("TOM1 RIMSHOT", false) == 100 && hitsOf ("CRASH1 EDGE", false) == 99
+                          && hitsOf ("RIDE1 BELL", false) == 99 && hitsOf ("HATS BOW OPEN2", false) == 32;
     std::printf ("limits %s\n", limitsOk ? "ok" : "WRONG");
 
-    // A count set by hand: the snare's other ticked zones share what's left of its 140.
+    // A count set by hand: the snare's other ticked zones share what's left of its 140 (stock limits).
     auto chosen = map;
     int sidestick = -1;
     for (int i = 0; i < chosen.zones.size(); ++i)
         if (chosen.zones[i].label == "SNARE1 SIDESTICK")
             sidestick = i;
-    const int set = chosen.setHits (sidestick, 30);
-    const int tooMany = emk::KitMap (chosen).setHits (sidestick, 1000);
+    const int set = chosen.setHits (sidestick, 30, true, true);
+    const int tooMany = emk::KitMap (chosen).setHits (sidestick, 1000, true, true);
     auto hitsIn = [&chosen] (const juce::String& label, int most)
     {
         for (int i = 0; i < chosen.zones.size(); ++i)
             if (chosen.zones[i].label == label)
-                return chosen.hitsFor (i, most);
+                return chosen.hitsFor (i, most, true, true);
         return -1;
     };
     juce::String err;
