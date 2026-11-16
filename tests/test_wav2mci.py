@@ -32,11 +32,11 @@ def render(tmp_path, zones, velocities, piece="14 Test Crash_AB12", family="CRAS
 
 def test_two_zone_crash_becomes_a_cymbal(tmp_path):
     render(tmp_path, ["BOW", "EDGE"], range(127, 0, -3))
-    assert wav2mci.main([str(tmp_path / "14 Test Crash"), "--out", str(tmp_path)]) == 0
+    assert wav2mci.main([str(tmp_path / "14 Test Crash"), "--out", str(tmp_path), "--stock-limits"]) == 0
     f = mci.read_mci(str(tmp_path / "14 Test Crash.mci"))
     assert f.get("INST0instyp") == "Cymbal"
     assert [f.get(f"INST0artic{a}artn") for a in range(3)] == ["Edge", "Bow", "Choke Ring"]
-    assert f.get("INST0artic0numlay") == 8           # 32 of 43 hits (63 cells shared), 4 round robins
+    assert f.get("INST0artic0numlay") == 8           # 32 of 43 hits (63 stock cells shared), 4 round robins
     vel = [f.get(f"INST0artic0veloLay{l}minvel") for l in range(8)]
     assert vel[0] == 0 and vel == sorted(vel) and len(set(vel)) == 8
     assert f.get("INST0artic2numlay") == 1          # generated choke

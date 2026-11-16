@@ -46,13 +46,16 @@ import mci  # noqa: E402
 SAMPLE_RATE = 44100      # the Mimic's rate, judging by Pearl's factory content
 MAX_LAYERS = 20          # what the Editor's and Pearl's cymbal files use
 MAX_ROUND_ROBINS = 6     # per velocity layer, for kicks, snares, toms and cymbals
-# Wave cells per instrument, shared by its zones. The Mimic preloads about 0.1 MB of RAM
-# per cell whatever the hit length, and kits built to the Editor's limits (snare 300,
-# toms 200...) glitched once several were loaded, while Pearl's own instruments play clean.
-# So these follow Pearl's factory library (2026-10-13): kicks 12-45 cells, snares 84-140,
-# toms 49-70, crashes/splashes/chinas 32-65, rides 74-112, percussion 30. Cymbals and
-# rides keep one cell for the choke ring. Hi-hats: see HAT_HITS.
-CELL_LIMITS = {"Kick": 48, "Snare": 140, "Tom": 70, "Cymbal": 64, "Ride": 112, "Perc": 64}
+# Wave cells per instrument, shared by its zones. Cymbals and rides keep one cell for the
+# choke ring. Hi-hats: see HAT_HITS. Stock sound limits (--stock-limits): the Mimic preloads
+# about 0.1 MB of RAM per cell whatever the hit length, and kits built to the Editor's limits
+# glitched on the stock disk once several were loaded, while Pearl's own instruments play
+# clean. These follow Pearl's factory library (2026-10-13): kicks 12-45 cells, snares 84-140,
+# toms 49-70, crashes/splashes/chinas 32-65, rides 74-112, percussion 30.
+STOCK_CELL_LIMITS = {"Kick": 48, "Snare": 140, "Tom": 70, "Cymbal": 64, "Ride": 112, "Perc": 64}
+# The default: the most the Mimic Instrument Editor accepts (Alexandre, 2026-10-07), for
+# Mimics on a faster disk. --stock-limits picks the factory sizes above.
+CELL_LIMITS = {"Kick": 64, "Snare": 300, "Tom": 200, "Cymbal": 200, "Ride": 300, "Perc": 200}
 # Longest hit kept per piece, in seconds, close to Pearl's factory hits (kicks 1.5-2.5 s,
 # snares 1.5-3.5, toms 2-6). Cymbals ring longer than Pearl's 12-14 s: SDSE keeps crashes
 # up to 24 s and those play fine, and length costs disk reads, not RAM. Ride-type cymbals
@@ -405,10 +408,11 @@ def fit_length(x: list[int], max_frames: int, fade_frames: int = round(SHORT_FAD
 
 
 def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
-          hat_as_ride: bool = False, full_length: bool = False, cells_percent: int = 100) -> mci.MciFile:
+          hat_as_ride: bool = False, full_length: bool = False, cells_percent: int = 100,
+          stock_limits: bool = False) -> mci.MciFile:
 
     def cells(kind):     # the instrument's wave-cell budget, cut to cells_percent
-        return max(2, CELL_LIMITS[kind] * cells_percent // 100)
+        return max(2, (STOCK_CELL_LIMITS if stock_limits else CELL_LIMITS)[kind] * cells_percent // 100)
 
     def read(h):
         x = read_wav(src.read(h.path))
@@ -565,6 +569,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-choke", action="store_true", help="leave the Choke Ring empty")
     ap.add_argument("--hat-as-ride", action="store_true",
                     help="also build each hi-hat as a 3-zone ride-type instrument (closed; bow, bell, edge)")
+    ap.add_argument("--stock-limits", action="store_true",
+                    help="size instruments like Pearl's stock sounds instead of the Instrument Editor's limits")
     ap.add_argument("--cells-percent", type=int, default=100,
                     help="use this percentage of each instrument's wave-cell limit (fewer hits, lighter instruments)")
     ap.add_argument("--full-length", action="store_true",
@@ -593,7 +599,8 @@ def main(argv=None) -> int:
             builds.append((f"{name} 3-zone", True))
         for title, as_ride in builds:
             f = build(piece, src, title, choke=not args.no_choke, hat_as_ride=as_ride,
-                      full_length=args.full_length, cells_percent=args.cells_percent)
+                      full_length=args.full_length, cells_percent=args.cells_percent,
+                      stock_limits=args.stock_limits)
             path = os.path.join(out_dir, f"{title}.mci")
             with open(path, "wb") as fh:
                 fh.write(mci.write_mci(f))

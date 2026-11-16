@@ -214,7 +214,10 @@ def test_float_recordings_past_full_scale(tmp_path):
 
 def test_cell_limits_thin_out_big_zones(tmp_path):
     render(tmp_path / "in", ["BOW", "EDGE"], list(range(127, 0, -1)) + list(range(127, 50, -1)))
-    py_out, _, _ = convert_both(tmp_path, tmp_path / "in" / "14 Test Crash")
+    py_out, _, _ = convert_both(tmp_path / "editor", tmp_path / "in" / "14 Test Crash")
+    f = mci.read_mci(str(py_out / "14 Test Crash.mci"))
+    assert f.get("INST0pool0psz") == 200     # the most the Instrument Editor allows
+    py_out, _, _ = convert_both(tmp_path / "stock", tmp_path / "in" / "14 Test Crash", "--stock-limits")
     f = mci.read_mci(str(py_out / "14 Test Crash.mci"))
     assert f.get("INST0pool0psz") == 64      # as many as Pearl's crashes
 
@@ -241,7 +244,7 @@ def test_mixed_formats_kit_zip_with_name(tmp_path):
     convert_both(tmp_path / "b", single, "--name", "My Crash", expect=["My Crash.mci"])
 
 
-@pytest.mark.parametrize("flags", [[], ["--hat-as-ride"], ["--cells-percent", "50"]])
+@pytest.mark.parametrize("flags", [[], ["--hat-as-ride"], ["--cells-percent", "50"], ["--stock-limits"]])
 def test_hi_hat_folders(tmp_path, flags):
     folders = (["BOW CLOSED", "BOW OPEN1", "BOW OPEN2", "BOW OPEN3", "BOW OPEN4"]
                + ["EDGE CLOSED", "EDGE OPEN1", "EDGE OPEN2", "EDGE OPEN3", "EDGE OPEN4"]
@@ -276,7 +279,7 @@ def test_several_zone_folders_convert_like_their_parent(tmp_path):
     picked, _, log = convert_both(tmp_path / "picked", zones, expect=["My Kit Ride.mci"])
     assert (whole / "My Kit Ride.mci").read_bytes() == (picked / "My Kit Ride.mci").read_bytes()
     f = mci.read_mci(str(picked / "My Kit Ride.mci"))
-    assert f.get("INST0instyp") == "Ride" and f.get("INST0artic0numlay") == 9    # 37 of 64 hits, 4 round robins
+    assert f.get("INST0instyp") == "Ride" and f.get("INST0artic0numlay") == 16   # all 64 bow hits fit the Editor limit
 
     # a folder given inside another one adds nothing; a zip among several inputs is skipped
     z = tmp_path / "bell.zip"
@@ -373,13 +376,13 @@ def test_long_cymbal_tails_fade_over_their_second_half(tmp_path):
     assert natural(x[-44100:], 683550) < 0.02 * before                # and ends near silence
 
 
-def test_lighter_instruments_use_fewer_cells(tmp_path):
+def test_stock_limits_and_cells_percent_use_fewer_cells(tmp_path):
     ride = ride_folders(tmp_path / "in", velocities=range(127, 0, -1))   # 127 hits per zone
     full, _, _ = convert_both(tmp_path / "full", ride)
     half, _, _ = convert_both(tmp_path / "half", ride, "--cells-percent", "50")
-    n_full = mci.read_mci(str(full / "My Kit Ride.mci")).get("INST0pool0psz")
-    n_half = mci.read_mci(str(half / "My Kit Ride.mci")).get("INST0pool0psz")
-    assert n_full == 112 and n_half == 56
+    stock, _, _ = convert_both(tmp_path / "stock", ride, "--stock-limits")
+    cells = lambda out: mci.read_mci(str(out / "My Kit Ride.mci")).get("INST0pool0psz")
+    assert (cells(full), cells(half), cells(stock)) == (300, 150, 112)
 
 
 def test_snare_edge_and_off_center(tmp_path):

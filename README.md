@@ -177,10 +177,11 @@ table column shows what it does instead of running it. Click **Help** again to l
      (`piece,zone,note,cc4,record,hits,instrument,name,library,image`), which a spreadsheet can edit too.
    Tom rimclicks and the snare rimclick have no Roland note, so their rows start unticked.
 4. Set **Most hits per zone** (default 127, spread from velocity 127 down to 1) and **Record kit**.
-   With **Fit Mimic limits** on, each piece records only as many hits as Pearl's own
-   instruments use (kick 48, snare 140, toms 70, crashes 64, rides 112, shared across the
-   piece's zones): the Mimic keeps part of every hit in memory, and kits with more glitch
-   once several instruments are loaded. The **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
+   With **Fit Editor limits** on, each piece records only as many hits as the Mimic Instrument
+   Editor allows (kick 64, snare 300, toms 200, crashes 200, rides 300, shared across the
+   piece's zones). Tick **Stock sound limits** to size them like Pearl's own instruments instead
+   (kick 48, snare 140, toms 70, crashes 64, rides 112): the Mimic keeps part of every hit in
+   memory, and on the stock disk kits with more glitch once several instruments are loaded. The **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
    count yourself (marked *); the piece's other ticked zones share what is left.
 5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
    **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;
@@ -256,9 +257,10 @@ Each instrument is then turned up (or down) as a whole so its loudest hit peaks 
 as SDSE's are. Quiet libraries play as loud as the rest, and the balance between soft and
 hard hits stays as recorded.
 
-"Lighter instruments (half the hits)" in the app, or `--cells-percent 50`, builds each
-instrument with that share of its wave-cell limit (and of the 32 hits per hi-hat
-articulation), for kits that glitch when many instruments are loaded.
+Instruments use the Instrument Editor's wave-cell limits. "Stock sound limits" in the app, or
+`--stock-limits`, uses the sizes of Pearl's own instruments instead, for kits that glitch when
+many instruments are loaded. `--cells-percent N` builds each instrument with that share of its
+limit (and of the 32 hits per hi-hat articulation).
 
 A snare's shallow rimshots (zone labels with `SHALLOW`, or `RIMSHOT SIDE`) fill the Mimic's
 Rim Shot Side zone. Most libraries have none; then each rimshot is mixed 50/50 with the rim
@@ -275,7 +277,7 @@ build/eMIMICmkr_mci_tests_artefacts/Release/eMIMICmkr_mci_tests --convert "My Ki
 ```
 
 Options: `--out DIR` (default: next to the input, or for several, the folder holding them all), `--name NAME` (only when the input holds
-one piece), `--no-choke` (leave the Choke Ring empty), `--hat-as-ride`, `--full-length` and `--cells-percent N`. Run with no
+one piece), `--no-choke` (leave the Choke Ring empty), `--hat-as-ride`, `--full-length`, `--stock-limits` and `--cells-percent N`. Run with no
 arguments, the tool checks the codec and builders instead.
 
 `tools/mci/wav2mci.py` stays as the reference implementation and takes the same options:

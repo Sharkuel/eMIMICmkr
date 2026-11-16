@@ -117,8 +117,8 @@ private:
     juce::Image logo;
     juce::Rectangle<int> logoArea;
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
-    juce::ToggleButton fitLimits { "Fit Mimic limits" },
-                     lighter { "Lighter instruments (half the hits)" };
+    juce::ToggleButton fitLimits { "Fit Editor limits" },
+                     lighter { "Stock sound limits" };
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
     juce::TextEditor kitName, hitsPerZone, pluginSearch;
