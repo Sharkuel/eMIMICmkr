@@ -31,6 +31,7 @@ juce_add_binary_data(eMIMICmkr_assets SOURCES assets/logo.png assets/banner.png)
 target_sources(eMIMICmkr PRIVATE
     Source/App/Main.cpp
     Source/App/MainComponent.cpp
+    Source/App/MockupExport.cpp
     Source/App/PluginScanner.cpp
     Source/App/ScreenTools.cpp
     Source/Core/KitMap.cpp

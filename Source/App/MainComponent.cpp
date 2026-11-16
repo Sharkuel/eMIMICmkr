@@ -335,6 +335,16 @@ MainComponent::MainComponent()
     refreshPluginChoices();
     setStatus ("Find your drum plugins to start.");
     setUpHelp();
+    // Names for the layers of --export-mockup (and for screen readers).
+    pluginChoice.setName ("Plugin");
+    pluginSearch.setName ("Search plugins");
+    mapChoice.setName ("Note map");
+    kitName.setName ("Kit name");
+    hitsPerZone.setName ("Most hits per zone");
+    table.setName ("Kit pieces");
+    status.setName ("Status");
+    saveToPath.setName ("Save to folder");
+    setName ("eMIMICmkr main window");
     setSize (1180, 720);
 }
 

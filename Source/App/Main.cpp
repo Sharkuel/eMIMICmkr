@@ -1,5 +1,7 @@
 #include "MainComponent.h"
 #include <BinaryData.h>
+#include <iostream>
+#include "MockupExport.h"
 #include "PluginScanner.h"
 #include "SquareLook.h"
 
@@ -16,6 +18,8 @@ public:
         if (OutOfProcessScanner::runChildScanIfRequested (commandLine))
             return;
         juce::LookAndFeel::setDefaultLookAndFeel (&look);
+        if (commandLine.contains ("--export-mockup"))
+            return exportMockup (commandLine.fromFirstOccurrenceOf ("--export-mockup", false, false).trim().unquoted());
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
 
         // The banner, for a moment at start-up (a click closes it sooner). It deletes itself.
@@ -34,6 +38,27 @@ public:
     void systemRequestedQuit() override { quit(); }
 
 private:
+    /** eMIMICmkr --export-mockup <folder>: saves the main window as a layered SVG and a PNG, to redesign it. */
+    void exportMockup (const juce::String& folderName)
+    {
+        const auto folder = folderName.isEmpty() ? juce::File::getCurrentWorkingDirectory()
+                                                 : juce::File::getCurrentWorkingDirectory().getChildFile (folderName);
+        folder.createDirectory();
+        mockup = std::make_unique<MainComponent>();
+        // Let the table lay out its rows first.
+        juce::Timer::callAfterDelay (800, [this, folder]
+        {
+            const auto svg = folder.getChildFile ("eMIMICmkr-main-window.svg");
+            const auto png = folder.getChildFile ("eMIMICmkr-main-window.png");
+            const bool ok = MockupExport::writeSvg (*mockup, svg) && MockupExport::writePng (*mockup, png);
+            std::cout << (ok ? "Saved " + svg.getFullPathName() + " and " + png.getFileName() : juce::String ("Couldn't save the mockup"))
+                      << std::endl;
+            mockup = nullptr;
+            setApplicationReturnValue (ok ? 0 : 1);
+            quit();
+        });
+    }
+
     class MainWindow : public juce::DocumentWindow
     {
     public:
@@ -55,6 +80,7 @@ private:
 
     SquareLook look;   // before mainWindow, so it outlives every window
     std::unique_ptr<MainWindow> mainWindow;
+    std::unique_ptr<juce::Component> mockup;
 };
 
 START_JUCE_APPLICATION (EMimicApplication)
