@@ -186,10 +186,16 @@ MainComponent::MainComponent()
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
     addAndMakeVisible (lighter);
-    lighter.setToggleState (settings->getBoolValue ("lighterInstruments", false), juce::dontSendNotification);
-    lighter.onClick = [this] { settings->setValue ("lighterInstruments", lighter.getToggleState()); };
-    lighter.setTooltip ("Builds each instrument with half the Mimic's wave-cell limit, for kits that glitch "
-                        "when many instruments are loaded");
+    lighter.setToggleState (settings->getBoolValue ("stockLimits", false), juce::dontSendNotification);
+    lighter.onClick = [this]
+    {
+        settings->setValue ("stockLimits", lighter.getToggleState());
+        table.updateContent();
+        table.repaint();
+    };
+    lighter.setTooltip ("Sizes each instrument like Pearl's stock sounds (kick 48, snare 140, tom 70, cymbal 64, "
+                        "ride 112 wave cells) instead of the Instrument Editor's limits. Use it if the Mimic "
+                        "glitches with many instruments loaded.");
     convertButton.onClick = [this] { convertWavFolder(); };
     kitButton.onClick = [this] { buildMimicKit(); };
     kitButton.setTooltip ("Makes a Mimic kit preset (.kit) from .mci files, starting from one of your own kits "
@@ -509,14 +515,16 @@ void MainComponent::setUpHelp()
     add (kitButton, "Build Mimic kit...",
          "Makes a Mimic kit preset (.kit) from .mci files. It starts from one of your own Mimic kits, so its pad "
          "settings carry over.");
-    add (lighter, "Lighter instruments",
-         "Builds each instrument with half the hits. Use it if the Mimic glitches with many instruments loaded.");
+    add (lighter, "Stock sound limits",
+         "Sizes each instrument like Pearl's stock sounds (kick 48, snare 140, tom 70, cymbal 64, ride 112 wave "
+         "cells) instead of the Instrument Editor's limits. Use it if the Mimic glitches with many instruments loaded.");
     add (saveToPath, "Save to", "Where recordings go: <this folder>/<kit name>, with the Mimic files in it.");
     add (saveToButton, "Change...", "Picks the folder recordings and Mimic files are saved to.");
     add (auditionButton, "Listen to zone", "Plays the selected row's note through the plugin, at full strength.");
-    add (fitLimits, "Fit Mimic limits",
-         "Keeps each instrument within the number of hits the Mimic handles well, sharing them out between its "
-         "zones. Leave it on unless you know you need more.");
+    add (fitLimits, "Fit Editor limits",
+         "Keeps each instrument within the most wave cells the Mimic Instrument Editor allows (kick 64, snare 300, "
+         "tom 200, cymbal 200, ride 300), sharing them out between its zones. With Stock sound limits on, it uses "
+         "the smaller stock sizes instead. Leave it on unless you know you need more.");
     add (hitsPerZone, "Most hits per zone",
          "The most velocities recorded per zone, from loudest to softest. More hits give smoother dynamics but "
          "take longer to record.");
@@ -1237,6 +1245,7 @@ void MainComponent::recordKit()
     emk::BatchRecorder::Settings s;
     s.hitsPerZone = maxHits();
     s.fitMimicLimits = fitLimits.getToggleState();
+    s.stockLimits = lighter.getToggleState();
     s.render.sampleRate = sampleRate;
     s.render.blockSize = blockSize;
 
@@ -1311,7 +1320,7 @@ juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inpu
                                              juce::ThreadWithProgressWindow& w)
 {
     emk::WavToMci::Options options;
-    options.cellsPercent = light ? 50 : 100;
+    options.stockLimits = light;
     w.setProgress (0.0);
     w.setStatusMessage ("Building Mimic instruments");
     outDir.createDirectory();
@@ -1924,7 +1933,7 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         delete existing;
         cell = new EditableCell();
     }
-    const int hits = ! zone.enabled ? 0 : kitMap.hitsFor (row, maxHits(), fitLimits.getToggleState());
+    const int hits = ! zone.enabled ? 0 : kitMap.hitsFor (row, maxHits(), fitLimits.getToggleState(), lighter.getToggleState());
     // Empty name and library cells show, greyed, what the Mimic will get instead.
     const auto shownName = zone.name.isNotEmpty() ? zone.name
                                                   : emk::BatchRecorder::safeName (kitMap.kitName + " " + zone.piece);
@@ -1974,7 +1983,8 @@ juce::Component* MainComponent::refreshComponentForCell (int row, int column, bo
         if (column == colHits)
         {
             const int wanted = text.getIntValue();
-            const int set = kitMap.setHits (row, juce::jmin (wanted, maxHits()), fitLimits.getToggleState());
+            const int set = kitMap.setHits (row, juce::jmin (wanted, maxHits()), fitLimits.getToggleState(),
+                                                lighter.getToggleState());
             if (wanted > 0 && set < wanted)
                 setStatus (z.piece + " " + z.label + " can have " + juce::String (set) + " hits: the Mimic's limit "
                            "for this piece is shared with its other ticked zones (or capped by Most hits per zone).");

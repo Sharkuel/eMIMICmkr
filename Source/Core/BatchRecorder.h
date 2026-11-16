@@ -18,6 +18,7 @@ public:
     {
         int hitsPerZone = 127;          // the most per zone...
         bool fitMimicLimits = true;     // ...but no more than the Mimic can hold (KitMap::hitsFor)
+        bool stockLimits = false;       // ...sized like Pearl's stock sounds rather than the Editor's limits
         int softestVelocity = 1;
         int hardestVelocity = 127;
         HitRenderer::Settings render;

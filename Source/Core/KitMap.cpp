@@ -120,9 +120,9 @@ bool isHat (const juce::String& family)
 }
 
 /** Wave cells the Mimic gives the instrument this zone belongs to (one cymbal cell is the choke ring). */
-int cellsFor (const KitMap& map, const KitZone& zone)
+int cellsFor (const KitMap& map, const KitZone& zone, bool stock)
 {
-    // Kept in step with WavToMci::cellLimit, which follows Pearl's factory instruments.
+    // Kept in step with WavToMci::cellLimit: the Instrument Editor's limits, or Pearl's stock sizes.
     const auto family = familyOf (zone.label);
     bool hasBell = false;
     for (const auto& z : map.zones)
@@ -130,6 +130,13 @@ int cellsFor (const KitMap& map, const KitZone& zone)
             hasBell = true;
     const bool cymbal = family == "CRASH" || family == "SPLASH" || family == "CHINA" || family == "STACK"
                         || family == "CYMBAL";
+    if (! stock)
+        return family == "KICK" ? 64
+             : family == "SNARE" ? 300
+             : family == "TOM" ? 200
+             : family == "RIDE" || (cymbal && hasBell) ? 299
+             : cymbal ? 199
+             : 200;
     return family == "KICK" ? 48
          : family == "SNARE" ? 140
          : family == "TOM" ? 70
@@ -139,7 +146,7 @@ int cellsFor (const KitMap& map, const KitZone& zone)
 }
 } // namespace
 
-int KitMap::hitsFor (int index, int maxHits, bool fitLimits) const
+int KitMap::hitsFor (int index, int maxHits, bool fitLimits, bool stockLimits) const
 {
     const auto& zone = zones.getReference (index);
     if (! fitLimits)
@@ -147,7 +154,7 @@ int KitMap::hitsFor (int index, int maxHits, bool fitLimits) const
     if (isHat (familyOf (zone.label)))
         return juce::jmin (maxHits, 32, zone.hits > 0 ? zone.hits : 32);
     if (zone.hits > 0)
-        return juce::jlimit (1, juce::jmin (maxHits, cellsFor (*this, zone)), zone.hits);
+        return juce::jlimit (1, juce::jmin (maxHits, cellsFor (*this, zone, stockLimits)), zone.hits);
 
     // The ticked zones without a count of their own share what the others leave.
     int taken = 0, sharing = 0;
@@ -159,10 +166,10 @@ int KitMap::hitsFor (int index, int maxHits, bool fitLimits) const
             else
                 ++sharing;
         }
-    return juce::jlimit (1, maxHits, (cellsFor (*this, zone) - taken) / juce::jmax (1, sharing));
+    return juce::jlimit (1, maxHits, (cellsFor (*this, zone, stockLimits) - taken) / juce::jmax (1, sharing));
 }
 
-int KitMap::setHits (int index, int count, bool fitLimits)
+int KitMap::setHits (int index, int count, bool fitLimits, bool stockLimits)
 {
     auto& zone = zones.getReference (index);
     if (count <= 0)
@@ -174,7 +181,7 @@ int KitMap::setHits (int index, int count, bool fitLimits)
     for (int i = 0; i < zones.size(); ++i)
         if (i != index && zones[i].enabled && zones[i].piece == zone.piece)
             othersTaken += juce::jmax (1, zones[i].hits);
-    return zone.hits = juce::jlimit (1, juce::jmax (1, cellsFor (*this, zone) - othersTaken), count);
+    return zone.hits = juce::jlimit (1, juce::jmax (1, cellsFor (*this, zone, stockLimits) - othersTaken), count);
 }
 
 std::pair<juce::String, juce::String> KitMap::guessFromName (const juce::String& noteName)

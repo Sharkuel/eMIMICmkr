@@ -21,7 +21,8 @@ public:
     {
         bool choke = true;        // make a Choke Ring from the hardest edge hit when none was recorded
         bool hatAsRide = false;   // also write each hi-hat as a 3-zone ride-type instrument
-        int cellsPercent = 100;   // share of each instrument's wave-cell limit used (lighter instruments)
+        bool stockLimits = false; // cell limits like Pearl's stock sounds instead of the Instrument Editor's
+        int cellsPercent = 100;   // share of each instrument's wave-cell limit used
         bool fullLength = false;  // keep every tail as recorded instead of cutting it (maxSeconds)
         juce::String name;        // instrument name, used only when the input holds one piece
     };
@@ -84,8 +85,9 @@ public:
         line (falls fast, then trails off like a ringing tail); unchanged when shorter. */
     static void fitLength (mci::Samples& x, int maxFrames, int fadeFrames = (int) (shortFadeSeconds * sampleRate + 0.5));
 
-    /** Wave cells the Mimic allows per instrument, shared by its zones; 0 = no limit known. */
-    static int cellLimit (const juce::String& instrumentType);
+    /** Wave cells per instrument, shared by its zones; 0 = no limit known. By default the most the
+        Mimic Instrument Editor allows; with stock, the sizes of Pearl's own factory instruments. */
+    static int cellLimit (const juce::String& instrumentType, bool stock = false);
 
     /** The deepest folder holding every file, or File() when there is none. */
     static juce::File commonFolder (const juce::Array<juce::File>&);
@@ -178,6 +180,6 @@ public:
     static mci::MciFile build (const Piece&, const Input&, const juce::String& name, bool choke, bool hatAsRide,
                                const std::function<void (const juce::String&)>& log,
                                const std::function<void()>& onWavRead = {}, bool fullLength = false,
-                               int cellsPercent = 100);
+                               int cellsPercent = 100, bool stockLimits = false);
 };
 } // namespace emk
