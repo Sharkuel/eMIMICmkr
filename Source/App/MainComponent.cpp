@@ -182,7 +182,7 @@ MainComponent::MainComponent()
     audioDevices.addAudioCallback (&player);
 
     for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
-                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, &convertButton, &kitButton })
+                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, (juce::TextButton*) &convertButton, (juce::TextButton*) &kitButton })
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
     addAndMakeVisible (lighter);
@@ -217,6 +217,12 @@ MainComponent::MainComponent()
         addAndMakeVisible (b);
     allButton.onClick = [this] { setAllRecorded (true); };
     noneButton.onClick = [this] { setAllRecorded (false); };
+    // The frames go behind the controls they hold.
+    for (auto* group : { &midiGroup, &rowsGroup, &selectGroup, &builderGroup, &settingsGroup, &exportGroup })
+    {
+        addAndMakeVisible (group);
+        group->toBack();
+    }
     allButton.setTooltip ("Ticks Record on every row.");
     noneButton.setTooltip ("Clears Record on every row, so you can tick just the pieces you want.");
     logo = juce::ImageCache::getFromMemory (BinaryData::logo_png, BinaryData::logo_pngSize);
@@ -263,6 +269,9 @@ MainComponent::MainComponent()
     removeButton.onClick = [this] { removeZone(); };
     loadMapButton.onClick = [this] { loadMapFile(); };
     saveMapButton.onClick = [this] { saveMapFile(); };
+    // The main action, in the logo's red.
+    recordButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe20000));
+    recordButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     learnButton.setClickingTogglesState (true);
     // Red while on, so it isn't left learning by mistake.
     learnButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffc62828));
@@ -325,6 +334,7 @@ MainComponent::MainComponent()
     header.addColumn ("Hits", colHits, 50);
     header.addColumn ("Name in plugin", colName, 180);
     table.setRowHeight (24);
+    header.setStretchToFitActive (true);   // the columns share the table's width, with no sideways scrolling
 
     if (auto xml = settings->getXmlValue ("kitMap"))
         useMap (emk::KitMap::fromValueTree (juce::ValueTree::fromXml (*xml)));
@@ -335,6 +345,16 @@ MainComponent::MainComponent()
     refreshPluginChoices();
     setStatus ("Find your drum plugins to start.");
     setUpHelp();
+    // Names for the layers of --export-mockup (and for screen readers).
+    pluginChoice.setName ("Plugin");
+    pluginSearch.setName ("Search plugins");
+    mapChoice.setName ("Note map");
+    kitName.setName ("Kit name");
+    hitsPerZone.setName ("Most hits per zone");
+    table.setName ("Kit pieces");
+    status.setName ("Status");
+    saveToPath.setName ("Save to folder");
+    setName ("eMIMICmkr main window");
     setSize (1180, 720);
 }
 
@@ -361,80 +381,105 @@ void MainComponent::paint (juce::Graphics& g)
 
 void MainComponent::resized()
 {
+    constexpr int gap = 10, buttonH = 27, frameTop = 20, frameSide = 8;
     auto area = getLocalBounds().reduced (16);
 
-    // The logo beside the three top rows: plugin, kit and map, tools.
-    auto top = area.removeFromTop (32 + 10 + 28 + 10 + 28);
-    logoArea = top.removeFromLeft (top.getHeight());
-    top.removeFromLeft (16);
+    // Left column: the logo, then the MIDI, ROWS and SELECT boxes and Capture.
+    auto side = area.removeFromLeft (110);
+    area.removeFromLeft (16);
+    logoArea = side.removeFromTop (side.getWidth());
+    side.removeFromTop (gap + 2);
+    // A frame around buttons stacked one under the other; returns where its buttons go.
+    auto stack = [&] (juce::GroupComponent& group, std::initializer_list<juce::Component*> items)
+    {
+        auto frame = side.removeFromTop (frameTop + (int) items.size() * buttonH + frameSide);
+        group.setBounds (frame);
+        auto inside = frame.withTrimmedTop (frameTop).reduced (frameSide, 0);
+        for (auto* c : items)
+            c->setBounds (inside.removeFromTop (buttonH).reduced (0, 1));
+        side.removeFromTop (gap);
+    };
 
-    auto row = top.removeFromTop (32);
+    // Bottom strip: status, the plugin request and Save state.
+    auto bottom = area.removeFromBottom (32);
+    area.removeFromBottom (gap);
+    // Above it: the BUILDER, EXPORT SETTINGS and EXPORT boxes, with Listen to zone at the right.
+    auto boxes = area.removeFromBottom (frameTop + 2 * buttonH + frameSide);
+    area.removeFromBottom (gap + 2);
+    // The left column ends where the boxes start, so BUILDER sits under it.
+    side.setBottom (boxes.getY() - gap);
+
+    stack (midiGroup, { &namesButton, &learnButton, &findButton });
+    stack (rowsGroup, { &addButton, &removeButton });
+    stack (selectGroup, { &allButton, &noneButton });
+    side.removeFromTop (gap);
+    captureButton.setBounds (side.removeFromTop (44));
+
+    // Top rows: plugin, then kit name and note map.
+    auto row = area.removeFromTop (32);
     scanButton.setBounds (row.removeFromLeft (120));
-    row.removeFromLeft (8);
-    helpButton.setBounds (row.removeFromRight (60));
-    row.removeFromRight (8);
-    loadButton.setBounds (row.removeFromRight (110));
-    row.removeFromRight (8);
-    showButton.setBounds (row.removeFromRight (110));
-    row.removeFromRight (8);
+    row.removeFromLeft (gap);
     pluginSearch.setBounds (row.removeFromLeft (180));
-    row.removeFromLeft (8);
+    row.removeFromLeft (gap);
+    helpButton.setBounds (row.removeFromRight (60));
+    row.removeFromRight (gap);
+    loadButton.setBounds (row.removeFromRight (110));
+    row.removeFromRight (gap);
+    showButton.setBounds (row.removeFromRight (110));
+    row.removeFromRight (gap);
     pluginChoice.setBounds (row);
 
-    top.removeFromTop (10);
-    row = top.removeFromTop (28);
+    area.removeFromTop (gap);
+    row = area.removeFromTop (28);
     kitLabel.setBounds (row.removeFromLeft (70));
     kitName.setBounds (row.removeFromLeft (220));
-    row.removeFromLeft (8);
+    row.removeFromLeft (gap);
+    saveMapButton.setBounds (row.removeFromRight (90));
+    row.removeFromRight (gap);
+    loadMapButton.setBounds (row.removeFromRight (90));
+    row.removeFromRight (gap);
     mapChoice.setBounds (row);
 
-    top.removeFromTop (10);
-    row = top;
-    for (auto* b : { &learnButton, &findButton, &namesButton, &captureButton, &addButton, &removeButton })
-    {
-        b->setBounds (row.removeFromLeft (92));
-        row.removeFromLeft (6);
-    }
-    row.removeFromLeft (10);
-    allButton.setBounds (row.removeFromLeft (84));
-    row.removeFromLeft (6);
-    noneButton.setBounds (row.removeFromLeft (92));
-    saveMapButton.setBounds (row.removeFromRight (90));
-    row.removeFromRight (6);
-    loadMapButton.setBounds (row.removeFromRight (90));
+    area.removeFromTop (gap + 2);
+    table.setBounds (area);
 
-    // From the bottom: status and the plugin request, recording, converting.
-    row = area.removeFromBottom (44);
-    stateButton.setBounds (row.removeFromRight (110).withSizeKeepingCentre (110, 28));
-    row.removeFromRight (10);
-    stateNote.setBounds (row.removeFromRight (420));
-    row.removeFromRight (10);
-    status.setBounds (row);
+    // The boxes, left to right; the right column holds Listen to zone and, below, Save state.
+    auto rightColumn = boxes.removeFromRight (120);
+    auditionButton.setBounds (rightColumn.withTrimmedTop (frameTop).removeFromTop (32));
+    boxes.removeFromRight (gap);
 
-    area.removeFromBottom (8);
-    row = area.removeFromBottom (32);
-    auditionButton.setBounds (row.removeFromLeft (120));
-    recordButton.setBounds (row.removeFromRight (120));
-    row.removeFromRight (8);
-    hitsPerZone.setBounds (row.removeFromRight (44));
-    hitsLabel.setBounds (row.removeFromRight (124));
-    fitLimits.setBounds (row.removeFromRight (130));
+    auto frame = boxes.removeFromLeft (186);
+    builderGroup.setBounds (frame);
+    auto inside = frame.withTrimmedTop (frameTop).reduced (frameSide, 0);
+    convertButton.setBounds (inside.removeFromTop (buttonH).reduced (0, 1));
+    kitButton.setBounds (inside.removeFromTop (buttonH).reduced (0, 1));
+    boxes.removeFromLeft (gap);
 
-    area.removeFromBottom (8);
-    row = area.removeFromBottom (28);
+    frame = boxes.removeFromRight (320);
+    exportGroup.setBounds (frame);
+    inside = frame.withTrimmedTop (frameTop).reduced (frameSide + 6, 0).withTrimmedBottom (frameSide);
+    fitLimits.setBounds (inside.removeFromRight (130).withSizeKeepingCentre (130, buttonH));
+    recordButton.setBounds (inside.removeFromLeft (140).withSizeKeepingCentre (140, 32));
+    boxes.removeFromRight (gap);
+
+    settingsGroup.setBounds (boxes);
+    inside = boxes.withTrimmedTop (frameTop).reduced (frameSide, 0);
+    row = inside.removeFromTop (buttonH).reduced (0, 1);
+    hitsLabel.setBounds (row.removeFromLeft (128));
+    hitsPerZone.setBounds (row.removeFromLeft (44));
+    row.removeFromLeft (16);
+    lighter.setBounds (row);
+    row = inside.removeFromTop (buttonH).reduced (0, 1);
+    saveToLabel.setBounds (row.removeFromLeft (60));
     saveToButton.setBounds (row.removeFromRight (80));
     row.removeFromRight (6);
-    saveToPath.setBounds (row.removeFromRight (200));
-    saveToLabel.setBounds (row.removeFromRight (60));
-    convertButton.setBounds (row.removeFromLeft (160));
-    row.removeFromLeft (6);
-    kitButton.setBounds (row.removeFromLeft (140));
-    row.removeFromLeft (12);
-    lighter.setBounds (row.removeFromLeft (250));
+    saveToPath.setBounds (row);
 
-    area.removeFromTop (12);
-    area.removeFromBottom (8);
-    table.setBounds (area);
+    stateButton.setBounds (bottom.removeFromRight (120).withSizeKeepingCentre (120, 30));
+    bottom.removeFromRight (gap);
+    stateNote.setBounds (bottom.removeFromRight (420));
+    bottom.removeFromRight (gap);
+    status.setBounds (bottom);
 
     if (helpOverlay)
     {
@@ -495,24 +540,25 @@ void MainComponent::setUpHelp()
     add (namesButton, "Read plugin",
          "Reads the loaded plugin's kit: its pieces, their notes and, where the plugin says, the brand and "
          "model of each drum. Pick a kit in the plugin first.");
-    add (captureButton, "Capture...",
+    add (captureButton, "Capture from plugin",
          "Takes a screenshot so you can drag a box around a drum in the plugin's window. That picture becomes "
          "the selected piece's image on the Mimic, and any text in it can become its name.");
     add (addButton, "Add row", "Adds a zone to the table, for a drum or articulation the map left out.");
     add (removeButton, "Remove row", "Removes the selected row from the table.");
-    add (allButton, "Select all", "Ticks Record on every row.");
-    add (noneButton, "Select none",
-         "Clears Record on every row, so you can tick only the pieces you want. Handy for big kits.");
+    add (allButton, "All", "Ticks Record on every row. It shows ticked while every row is.");
+    add (noneButton, "None",
+         "Clears Record on every row, so you can tick only the pieces you want. Handy for big kits. It shows "
+         "ticked while no row is.");
     add (loadMapButton, "Open map...",
          "Opens a note map saved with Save map..., or a Kontakt library's .nka map.");
     add (saveMapButton, "Save map...",
          "Saves the table (pieces, zones, notes, names) to a file, to reuse it later or share it.");
     add (table, "Kit table",
          "One row per zone the kit will record. Click a column (with Help on) to read about it.");
-    add (convertButton, "Convert WAV folder...",
+    add (convertButton, "Convert WAV folder",
          "Builds Mimic instruments (.mci) from folders of WAV hits you already have: a kit recorded earlier, "
          "an SDSE render or a WAV library. You can pick several folders at once.");
-    add (kitButton, "Build Mimic kit...",
+    add (kitButton, "Build Mimic kit",
          "Makes a Mimic kit preset (.kit) from .mci files. It starts from one of your own Mimic kits, so its pad "
          "settings carry over.");
     add (lighter, "Stock sound limits",
@@ -1041,8 +1087,18 @@ void MainComponent::useMap (emk::KitMap map)
     saveMap();
 }
 
+void MainComponent::showSelection()
+{
+    int ticked = 0;
+    for (const auto& zone : kitMap.zones)
+        ticked += zone.enabled ? 1 : 0;
+    allButton.setToggleState (ticked > 0 && ticked == kitMap.zones.size(), juce::dontSendNotification);
+    noneButton.setToggleState (ticked == 0, juce::dontSendNotification);
+}
+
 void MainComponent::saveMap()
 {
+    showSelection();
     if (auto xml = kitMap.toValueTree().createXml())
         settings->setValue ("kitMap", xml.get());
 }
@@ -1502,14 +1558,14 @@ bool MainComponent::runJob (const juce::String& title,
     if (job != nullptr)
         return false;
     setLive (false);
-    for (auto* b : { &recordButton, &auditionButton, &findButton, &convertButton })
+    for (juce::TextButton* b : { &recordButton, &auditionButton, &findButton, (juce::TextButton*) &convertButton })
         b->setEnabled (false);
     job = std::make_unique<Job> (title, std::move (work), [this, done] (const juce::String& report)
     {
         if (plugin != nullptr)
             plugin->prepareToPlay (sampleRate, blockSize);
         setLive (true);
-        for (auto* b : { &recordButton, &auditionButton, &findButton, &convertButton })
+        for (juce::TextButton* b : { &recordButton, &auditionButton, &findButton, (juce::TextButton*) &convertButton })
             b->setEnabled (true);
         done (report);
         // The job can't delete itself from inside its own callback.

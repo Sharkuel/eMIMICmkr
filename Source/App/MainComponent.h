@@ -4,6 +4,7 @@
 #include "../Core/SoundPrint.h"
 #include "LiveHost.h"
 #include "ScreenTools.h"
+#include "IconButton.h"
 #include <map>
 #include <set>
 
@@ -107,9 +108,14 @@ private:
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
-        namesButton { "Read plugin" }, captureButton { "Capture..." },
-        convertButton { "Convert WAV folder..." }, kitButton { "Build Mimic kit..." }, saveToButton { "Change..." }, stateButton { "Save state..." },
-        allButton { "Select all" }, noneButton { "Select none" }, helpButton { "Help" };
+        namesButton { "Read plugin" }, captureButton { "Capture\nfrom plugin" },
+        saveToButton { "Change..." }, stateButton { "Save state..." }, helpButton { "Help" };
+    IconButton convertButton { "Convert WAV folder", IconButton::folder },
+               kitButton { "Build Mimic kit", IconButton::drumKit };
+    juce::ToggleButton allButton { "All" }, noneButton { "None" };   // ticked while every row / no row is ticked
+    void showSelection();
+    juce::GroupComponent midiGroup { {}, "MIDI" }, rowsGroup { {}, "ROWS" }, selectGroup { {}, "SELECT" },
+        builderGroup { {}, "BUILDER" }, settingsGroup { {}, "EXPORT SETTINGS" }, exportGroup { {}, "EXPORT" };
     std::unique_ptr<juce::Component> helpOverlay;                       // over the window while Help is on
     std::vector<std::pair<juce::Component*, juce::String>> helpTexts;   // "Title\nWhat it does"
     std::map<int, juce::String> columnHelp;                              // the same, by table column
