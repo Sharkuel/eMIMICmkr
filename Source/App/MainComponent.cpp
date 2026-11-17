@@ -269,6 +269,9 @@ MainComponent::MainComponent()
     removeButton.onClick = [this] { removeZone(); };
     loadMapButton.onClick = [this] { loadMapFile(); };
     saveMapButton.onClick = [this] { saveMapFile(); };
+    // The main action, in the logo's red.
+    recordButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe20000));
+    recordButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     learnButton.setClickingTogglesState (true);
     // Red while on, so it isn't left learning by mistake.
     learnButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffc62828));
@@ -452,13 +455,11 @@ void MainComponent::resized()
     kitButton.setBounds (inside.removeFromTop (buttonH).reduced (0, 1));
     boxes.removeFromLeft (gap);
 
-    frame = boxes.removeFromRight (380);
+    frame = boxes.removeFromRight (320);
     exportGroup.setBounds (frame);
     inside = frame.withTrimmedTop (frameTop).reduced (frameSide + 6, 0).withTrimmedBottom (frameSide);
-    auto ticks = inside.removeFromRight (170);
-    fitLimits.setBounds (ticks.removeFromTop (ticks.getHeight() / 2));
-    lighter.setBounds (ticks);
-    recordButton.setBounds (inside.removeFromLeft (150).withSizeKeepingCentre (150, 32));
+    fitLimits.setBounds (inside.removeFromRight (130).withSizeKeepingCentre (130, buttonH));
+    recordButton.setBounds (inside.removeFromLeft (140).withSizeKeepingCentre (140, 32));
     boxes.removeFromRight (gap);
 
     settingsGroup.setBounds (boxes);
@@ -466,6 +467,8 @@ void MainComponent::resized()
     row = inside.removeFromTop (buttonH).reduced (0, 1);
     hitsLabel.setBounds (row.removeFromLeft (128));
     hitsPerZone.setBounds (row.removeFromLeft (44));
+    row.removeFromLeft (16);
+    lighter.setBounds (row);
     row = inside.removeFromTop (buttonH).reduced (0, 1);
     saveToLabel.setBounds (row.removeFromLeft (60));
     saveToButton.setBounds (row.removeFromRight (80));
