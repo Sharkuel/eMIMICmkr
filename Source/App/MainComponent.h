@@ -110,10 +110,13 @@ private:
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
-        namesButton { "Read plugin" }, captureButton { "Capture\nfrom plugin" },
+        namesButton { "Read plugin" },
         saveToButton { "Change..." }, stateButton { "Save state..." }, helpButton { "Help" };
     IconButton convertButton { "Convert WAV folder", IconButton::folder },
-               kitButton { "Build Mimic kit", IconButton::drumKit },
+               kitButton { "Build Mimic kit", juce::ImageCache::getFromMemory (BinaryData::buildkiticon_png,
+                                                                               BinaryData::buildkiticon_pngSize) },
+               captureButton { "Capture\nfrom plugin", juce::ImageCache::getFromMemory (BinaryData::cameraicon_png,
+                                                                                      BinaryData::cameraicon_pngSize) },
                kitEditorButton { "Kit editor", juce::ImageCache::getFromMemory (BinaryData::kiteditoricon_png,
                                                                                 BinaryData::kiteditoricon_pngSize) };
     std::unique_ptr<KitEditorWindow> kitEditor;
