@@ -6,6 +6,7 @@
 #include "ScreenTools.h"
 #include "IconButton.h"
 #include "KitEditor.h"
+#include <BinaryData.h>
 #include <map>
 #include <set>
 
@@ -113,7 +114,8 @@ private:
         saveToButton { "Change..." }, stateButton { "Save state..." }, helpButton { "Help" };
     IconButton convertButton { "Convert WAV folder", IconButton::folder },
                kitButton { "Build Mimic kit", IconButton::drumKit },
-               kitEditorButton { "Kit editor", IconButton::drumKit };
+               kitEditorButton { "Kit editor", juce::ImageCache::getFromMemory (BinaryData::kiteditoricon_png,
+                                                                                BinaryData::kiteditoricon_pngSize) };
     std::unique_ptr<KitEditorWindow> kitEditor;
     void showKitEditor();
     juce::ToggleButton allButton { "All" }, noneButton { "None" };   // ticked while every row / no row is ticked

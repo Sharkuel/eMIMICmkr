@@ -408,7 +408,7 @@ void MainComponent::resized()
     auto bottom = area.removeFromBottom (32);
     area.removeFromBottom (gap);
     // Above it: the BUILDER, EXPORT SETTINGS and EXPORT boxes, with Listen to zone at the right.
-    auto boxes = area.removeFromBottom (frameTop + 2 * buttonH + frameSide);
+    auto boxes = area.removeFromBottom (frameTop + 3 * buttonH + frameSide);
     area.removeFromBottom (gap + 2);
     // The left column ends where the boxes start, so BUILDER sits under it.
     side.setBottom (boxes.getY() - gap);
@@ -418,8 +418,6 @@ void MainComponent::resized()
     stack (selectGroup, { &allButton, &noneButton });
     side.removeFromTop (gap);
     captureButton.setBounds (side.removeFromTop (44));
-    side.removeFromTop (gap);
-    kitEditorButton.setBounds (side.removeFromTop (44));
 
     // Top rows: plugin, then kit name and note map.
     auto row = area.removeFromTop (32);
@@ -459,6 +457,7 @@ void MainComponent::resized()
     auto inside = frame.withTrimmedTop (frameTop).reduced (frameSide, 0);
     convertButton.setBounds (inside.removeFromTop (buttonH).reduced (0, 1));
     kitButton.setBounds (inside.removeFromTop (buttonH).reduced (0, 1));
+    kitEditorButton.setBounds (inside.removeFromTop (buttonH).reduced (0, 1));
     boxes.removeFromLeft (gap);
 
     frame = boxes.removeFromRight (320);
@@ -470,6 +469,7 @@ void MainComponent::resized()
 
     settingsGroup.setBounds (boxes);
     inside = boxes.withTrimmedTop (frameTop).reduced (frameSide, 0);
+    inside.removeFromTop (buttonH / 2);   // two rows, centred in the three-row box
     row = inside.removeFromTop (buttonH).reduced (0, 1);
     hitsLabel.setBounds (row.removeFromLeft (128));
     hitsPerZone.setBounds (row.removeFromLeft (44));

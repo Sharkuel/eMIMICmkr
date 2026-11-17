@@ -13,13 +13,25 @@ public:
             drawable = juce::Drawable::createFromSVG (*xml);
     }
 
+    /** With a picture instead: white on transparent, drawn like the built-in icons. */
+    IconButton (const juce::String& text, const juce::Image& picture) : juce::TextButton (text)
+    {
+        auto image = std::make_unique<juce::DrawableImage>();
+        image->setImage (picture);
+        drawable = std::move (image);
+    }
+
     void paintButton (juce::Graphics& g, bool highlighted, bool down) override
     {
         auto& look = getLookAndFeel();
         look.drawButtonBackground (g, *this, findColour (buttonColourId), highlighted, down);
 
         auto area = getLocalBounds().reduced (6, 4);
-        const auto iconArea = area.removeFromRight (area.getHeight()).toFloat();
+        // A wide picture gets a wider spot, so it isn't shrunk to fit a square.
+        const auto aspect = drawable != nullptr && drawable->getDrawableBounds().getHeight() > 0
+                                ? std::max (1.0f, drawable->getDrawableBounds().getWidth() / drawable->getDrawableBounds().getHeight())
+                                : 1.0f;
+        const auto iconArea = area.removeFromRight (juce::roundToInt ((float) area.getHeight() * aspect)).toFloat();
         if (drawable != nullptr)
             drawable->drawWithin (g, iconArea, juce::RectanglePlacement::centred, isEnabled() ? 1.0f : 0.4f);
 

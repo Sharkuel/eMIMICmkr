@@ -204,7 +204,7 @@ centre. The kit is written next to the instruments as `<kit name>.mdp/[U] <kit n
 the way the Mimic stores its own. The Mimic finds a slot's instrument by its name and library,
 so keep the `.mci` files as they were made, and copy them to the Mimic along with the kit.
 
-**Kit editor** (under Capture from plugin) opens a page to edit a Mimic kit: **Open kit...** one of
+**Kit editor** (in the BUILDER box) opens a page to edit a Mimic kit: **Open kit...** one of
 yours, or **New kit...** to start an empty one from one of your kits (its pad settings carry
 over). Drop a `.mci` on any of the 26 slots (or double-click a slot to pick one), or **Fill from
 folder** to place a whole folder as Build Mimic kit does. For the selected slot you can turn it
