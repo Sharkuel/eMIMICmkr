@@ -312,6 +312,10 @@ own level (`micv`) and pan (`micp`, 0.5 = centre). An empty slot has no `CME<slo
 Bus channels (`CMEKicks...`, `CMESnares...`, `CMERoom...`, `CMEOH...`, `CMEMaster...`),
 the master (`mK...`, `mRev...`, `KitVol`) and pad settings (`TPAD...`) are kit-wide.
 
+Across 675 user kits, `iv` (default 1, seen 0.7-2.5) reads as the slot's volume and `tn`
+(default 0.5, seen 0-1) as its tuning; `micm` mutes a mic. The kit editor sets these, plus
+`micv`, `micp`, `enb` and `KitVol`; their exact units on the Mimic are not confirmed.
+
 `emk::MimicKit` builds a kit from a user's kit as template; `eMIMICmkr_mci_tests
 --rewrite-kit IN OUT` rewrites a kit byte for byte, and `--kit TEMPLATE OUT MCI...` builds one.
 

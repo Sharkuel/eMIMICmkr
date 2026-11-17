@@ -42,6 +42,49 @@ std::map<juce::String, size_t> assignSlots (const juce::StringArray& slots, cons
     Mixer channels keep the template's settings, panned to the centre. Throws mci::Error. */
 mci::MciFile build (const mci::MciFile& templateKit, const std::vector<Instrument>& instruments, Report& report);
 
+/** One slot as the kit editor shows it. */
+struct Slot
+{
+    juce::String name, instrument, library, type;   // instrument fields are empty when nothing is loaded
+    bool loaded = false, enabled = true;
+};
+std::vector<Slot> slotList (const mci::MciFile& kit);
+
+/** Puts an instrument in a slot. A slot that held something keeps its mixer channel (EQ,
+    compressors, pans); an empty one gets a copy of the first loaded slot's, EQ and compressors
+    off. Throws mci::Error. */
+void place (mci::MciFile& kit, const juce::String& slot, const Instrument&);
+void empty (mci::MciFile& kit, const juce::String& slot);
+/** False, with the reason, for a hi-hat outside the Hi-Hat slot or anything else in it. */
+bool canTake (const juce::String& slot, const Instrument&, juce::String& why);
+void setEnabled (mci::MciFile& kit, const juce::String& slot, bool on);
+
+/** A mic of a slot's mixer channel (CME<slot>mi<n>...). */
+struct Mic
+{
+    juce::String name;    // micn: "Kick In", "OH", "Room"...
+    float level = 1.0f;   // micv
+    float pan = 0.5f;     // micp, 0 left, 0.5 centre, 1 right
+    bool muted = false;   // micm
+};
+std::vector<Mic> mics (const mci::MciFile& kit, const juce::String& slot);
+void setMic (mci::MciFile& kit, const juce::String& slot, int index, const Mic&);
+
+/** A float of a loaded slot's channel, "CME<slot><what>": "iv" (volume, 1 = as recorded) or
+    "tn" (tune, 0.5 = as recorded). Setting one on an empty slot does nothing. */
+float channelValue (const mci::MciFile& kit, const juce::String& slot, const char* what, float fallback);
+void setChannelValue (mci::MciFile& kit, const juce::String& slot, const char* what, float value);
+
+/** Pans every mic of every slot to the centre; returns how many changed. */
+int centreAll (mci::MciFile& kit);
+
+/** The template with every slot emptied: a new kit that keeps its pad settings. Throws mci::Error. */
+mci::MciFile emptied (const mci::MciFile& templateKit);
+
+/** "[U] My kit.kit" -> "My kit", and the folder that holds the kit (above its .mdp folder). */
+juce::String kitName (const juce::File&);
+juce::File kitFolderOf (const juce::File&);
+
 /** "<kit name>.mdp/[U] <kit name>.kit" in folder, as the Mimic's own kits are stored. */
 juce::File kitFile (const juce::File& folder, const juce::String& kitName);
 
