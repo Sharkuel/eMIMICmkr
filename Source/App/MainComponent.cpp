@@ -233,7 +233,6 @@ MainComponent::MainComponent()
     status.setJustificationType (juce::Justification::topLeft);
     namesButton.onClick = [this] { readNoteNames(); };
     addAndMakeVisible (captureButton);
-    captureButton.iconAbove = true;
     captureButton.onClick = [this] { startCapture(); };
     captureButton.setTooltip ("Takes a screenshot to pick the selected piece's picture and name (read from the "
                               "picture's text) straight from the plugin's window.");
@@ -418,7 +417,7 @@ void MainComponent::resized()
     stack (rowsGroup, { &addButton, &removeButton });
     stack (selectGroup, { &allButton, &noneButton });
     side.removeFromTop (gap);
-    captureButton.setBounds (side.removeFromTop (70));
+    captureButton.setBounds (side.removeFromTop (44));
 
     // Top rows: plugin, then kit name and note map.
     auto row = area.removeFromTop (32);

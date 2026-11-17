@@ -27,32 +27,24 @@ public:
         look.drawButtonBackground (g, *this, findColour (buttonColourId), highlighted, down);
 
         auto area = getLocalBounds().reduced (6, 4);
-        if (iconAbove && drawable != nullptr)
-        {
-            // A small icon over the text, for a narrow, tall button.
-            drawable->drawWithin (g, area.removeFromTop (area.getHeight() * 2 / 5).toFloat(),
-                                  juce::RectanglePlacement::centred, isEnabled() ? 1.0f : 0.4f);
-            g.setColour (findColour (textColourOffId).withMultipliedAlpha (isEnabled() ? 1.0f : 0.5f));
-            g.setFont (look.getTextButtonFont (*this, getHeight()));
-            g.drawFittedText (getButtonText(), area, juce::Justification::centred,
-                              juce::StringArray::fromLines (getButtonText()).size());
-            return;
-        }
         // A wide picture gets a wider spot, so it isn't shrunk to fit a square.
         const auto aspect = drawable != nullptr && drawable->getDrawableBounds().getHeight() > 0
                                 ? std::max (1.0f, drawable->getDrawableBounds().getWidth() / drawable->getDrawableBounds().getHeight())
                                 : 1.0f;
-        const auto iconArea = area.removeFromRight (juce::roundToInt ((float) area.getHeight() * aspect)).toFloat();
+        // At most 22 px high, so a tall two-line button keeps room for its text.
+        const auto iconH = std::min (area.getHeight(), 22);
+        const auto iconArea = area.removeFromRight (juce::roundToInt ((float) iconH * aspect)).toFloat();
         if (drawable != nullptr)
             drawable->drawWithin (g, iconArea, juce::RectanglePlacement::centred, isEnabled() ? 1.0f : 0.4f);
 
         g.setColour (findColour (textColourOffId).withMultipliedAlpha (isEnabled() ? 1.0f : 0.5f));
-        g.setFont (look.getTextButtonFont (*this, getHeight()));
-        g.drawFittedText (getButtonText(), area.withTrimmedRight (4), juce::Justification::centred,
-                          juce::StringArray::fromLines (getButtonText()).size());
+        const auto lines = juce::StringArray::fromLines (getButtonText()).size();
+        auto font = look.getTextButtonFont (*this, getHeight());
+        if (lines > 1)
+            font = font.withHeight (std::min (font.getHeight(), 14.0f));   // two lines beside an icon
+        g.setFont (font);
+        g.drawFittedText (getButtonText(), area.withTrimmedRight (4), juce::Justification::centred, lines, 0.8f);
     }
-
-    bool iconAbove = false;   // the icon over the text instead of at the right end
 
 private:
     std::unique_ptr<juce::Drawable> drawable;
