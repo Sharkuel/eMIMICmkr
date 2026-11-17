@@ -35,4 +35,27 @@ public:
         g.setColour (box.findColour (juce::ComboBox::arrowColourId).withAlpha (box.isEnabled() ? 0.9f : 0.2f));
         g.strokePath (path, juce::PathStrokeType (2.0f));
     }
+
+    /** A square frame with its title centred in the top line, like "MIDI" over the note buttons. */
+    void drawGroupComponentOutline (juce::Graphics& g, int width, int height, const juce::String& text,
+                                    const juce::Justification&, juce::GroupComponent& group) override
+    {
+        const juce::Font font (juce::FontOptions (15.0f));
+        const float top = font.getHeight() * 0.5f;
+        const auto frame = juce::Rectangle<float> (0.0f, top, (float) width, (float) height - top).reduced (0.5f);
+        const float textW = text.isEmpty() ? 0.0f
+                                           : juce::GlyphArrangement::getStringWidth (font, text) + 8.0f;
+        const float textX = frame.getCentreX() - textW * 0.5f;
+
+        g.setColour (group.findColour (juce::GroupComponent::outlineColourId));
+        g.drawLine (frame.getX(), frame.getY(), textX, frame.getY());
+        g.drawLine (textX + textW, frame.getY(), frame.getRight(), frame.getY());
+        g.drawLine (frame.getRight(), frame.getY(), frame.getRight(), frame.getBottom());
+        g.drawLine (frame.getRight(), frame.getBottom(), frame.getX(), frame.getBottom());
+        g.drawLine (frame.getX(), frame.getBottom(), frame.getX(), frame.getY());
+
+        g.setColour (group.findColour (juce::GroupComponent::textColourId));
+        g.setFont (font);
+        g.drawText (text, juce::Rectangle<float> (textX, 0.0f, textW, font.getHeight()), juce::Justification::centred, false);
+    }
 };
