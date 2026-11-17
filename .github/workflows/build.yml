@@ -22,7 +22,7 @@ jobs:
             name: Linux
           - os: windows-latest
             name: Windows
-          - os: macos-14
+          - os: macos-15   # macos-14 runners were retired ("not supported", 2026-11)
             name: macOS
     runs-on: ${{ matrix.os }}
     steps:
