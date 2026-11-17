@@ -204,6 +204,14 @@ centre. The kit is written next to the instruments as `<kit name>.mdp/[U] <kit n
 the way the Mimic stores its own. The Mimic finds a slot's instrument by its name and library,
 so keep the `.mci` files as they were made, and copy them to the Mimic along with the kit.
 
+**Kit editor** (under Capture from plugin) opens a page to edit a Mimic kit: **Open kit...** one of
+yours, or **New kit...** to start an empty one from one of your kits (its pad settings carry
+over). Drop a `.mci` on any of the 26 slots (or double-click a slot to pick one), or **Fill from
+folder** to place a whole folder as Build Mimic kit does. For the selected slot you can turn it
+on or off, set its volume and tune, and each mic's level, pan and mute; **Centre all pans** centres
+every mic in the kit. Double-click a fader to reset it. **Save** writes over the kit, or saves a
+new one beside it when you changed its name; **Save as...** asks for a folder.
+
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 32-bit float WAVs (so a hit louder than full scale isn't clipped) under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
 the layout the converter reads (below). Each hit runs until it has rung down to 90 dB below

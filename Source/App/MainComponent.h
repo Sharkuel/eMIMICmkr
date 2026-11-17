@@ -5,6 +5,7 @@
 #include "LiveHost.h"
 #include "ScreenTools.h"
 #include "IconButton.h"
+#include "KitEditor.h"
 #include <map>
 #include <set>
 
@@ -111,7 +112,10 @@ private:
         namesButton { "Read plugin" }, captureButton { "Capture\nfrom plugin" },
         saveToButton { "Change..." }, stateButton { "Save state..." }, helpButton { "Help" };
     IconButton convertButton { "Convert WAV folder", IconButton::folder },
-               kitButton { "Build Mimic kit", IconButton::drumKit };
+               kitButton { "Build Mimic kit", IconButton::drumKit },
+               kitEditorButton { "Kit editor", IconButton::drumKit };
+    std::unique_ptr<KitEditorWindow> kitEditor;
+    void showKitEditor();
     juce::ToggleButton allButton { "All" }, noneButton { "None" };   // ticked while every row / no row is ticked
     void showSelection();
     juce::GroupComponent midiGroup { {}, "MIDI" }, rowsGroup { {}, "ROWS" }, selectGroup { {}, "SELECT" },

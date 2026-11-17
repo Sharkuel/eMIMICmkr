@@ -294,6 +294,40 @@ void checkKits()
            "new channel copied, EQ and compressor off");
     check (kit.find ("CMEKickscb") != nullptr && kit.find ("CMEKicksvr") != nullptr
            && kit.getString ("TPADKICKKICKfprn") == "R-KD-120", "buses and pads kept");
+
+    // The kit editor: slots, replacing and emptying one, mics, volume and tune.
+    auto edited = kit;
+    const auto slots = MimicKit::slotList (edited);
+    check (slots.size() == 26 && slots[0].name == "Kick" && slots[0].loaded && slots[0].instrument == "22 Kick"
+           && ! slots[1].loaded && ! slots[6].enabled, "slot list");
+    auto mics = MimicKit::mics (edited, "Kick");
+    check (mics.size() == 1 && mics[0].name == "Kick", "kick mics");
+    mics[0].pan = 0.25f;
+    mics[0].level = 0.6f;
+    mics[0].muted = true;
+    MimicKit::setMic (edited, "Kick", 0, mics[0]);
+    MimicKit::setChannelValue (edited, "Kick", "tn", 0.7f);
+    MimicKit::setChannelValue (edited, "Kick Layer", "tn", 0.7f);   // empty: ignored
+    check (juce::exactlyEqual (MimicKit::mics (edited, "Kick")[0].pan, 0.25f) && MimicKit::mics (edited, "Kick")[0].muted
+           && juce::exactlyEqual (MimicKit::channelValue (edited, "Kick", "tn", 0.5f), 0.7f)
+           && edited.find ("CMEKick Layertn") == nullptr, "mic and channel edits");
+
+    const auto other = MimicKit::readInstrument (files[0]);   // "22 Kick" again, into the empty Kick Layer
+    MimicKit::place (edited, "Kick Layer", other);
+    check (MimicKit::slotList (edited)[1].instrument == "22 Kick" && edited.getInt ("CMEKick Layercmp0en") == 0
+           && edited.getInt ("CMEKick Layernm") == 1, "place in an empty slot borrows a channel");
+    MimicKit::place (edited, "Kick", other);   // replacing keeps the slot's own channel and pan
+    check (juce::exactlyEqual (MimicKit::mics (edited, "Kick")[0].pan, 0.25f) && edited.getInt ("CMEKickcmp0en") == 1
+           && juce::exactlyEqual (MimicKit::channelValue (edited, "Kick", "tn", 0.5f), 0.7f), "replace keeps the channel");
+    check (MimicKit::centreAll (edited) == 1 && juce::exactlyEqual (MimicKit::mics (edited, "Kick")[0].pan, 0.5f), "centre all");
+    MimicKit::empty (edited, "Kick Layer");
+    check (! MimicKit::slotList (edited)[1].loaded && edited.find ("CMEKick Layercv") == nullptr, "empty a slot");
+    juce::String why;
+    check (! MimicKit::canTake ("Snare", MimicKit::readInstrument (files[1]), why) == false
+           && ! MimicKit::canTake ("Hi-Hat", MimicKit::readInstrument (files[1]), why) && why.isNotEmpty(), "hi-hat slot");
+    const auto blank = MimicKit::emptied (kit);
+    check (MimicKit::slotList (blank)[0].loaded == false && blank.getString ("TPADKICKKICKfprn") == "R-KD-120", "new kit from template");
+    check (MimicKit::kitName (out) == "My Kit" && MimicKit::kitFolderOf (out) == dir.getFile(), "kit name and folder");
 }
 
 int buildKit (const juce::StringArray& args)

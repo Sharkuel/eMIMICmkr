@@ -182,7 +182,8 @@ MainComponent::MainComponent()
     audioDevices.addAudioCallback (&player);
 
     for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
-                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, (juce::TextButton*) &convertButton, (juce::TextButton*) &kitButton })
+                     &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, (juce::TextButton*) &convertButton, (juce::TextButton*) &kitButton,
+                     (juce::TextButton*) &kitEditorButton })
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
     addAndMakeVisible (lighter);
@@ -198,6 +199,9 @@ MainComponent::MainComponent()
                         "glitches with many instruments loaded.");
     convertButton.onClick = [this] { convertWavFolder(); };
     kitButton.onClick = [this] { buildMimicKit(); };
+    kitEditorButton.onClick = [this] { showKitEditor(); };
+    kitEditorButton.setTooltip ("Opens the kit editor: put instruments in a Mimic kit's slots and set their volume, "
+                                "tune and mic levels and pans.");
     kitButton.setTooltip ("Makes a Mimic kit preset (.kit) from .mci files, starting from one of your own kits "
                           "so its pad settings carry over.");
     for (juce::Component* c : { (juce::Component*) &saveToButton, (juce::Component*) &saveToLabel,
@@ -414,6 +418,8 @@ void MainComponent::resized()
     stack (selectGroup, { &allButton, &noneButton });
     side.removeFromTop (gap);
     captureButton.setBounds (side.removeFromTop (44));
+    side.removeFromTop (gap);
+    kitEditorButton.setBounds (side.removeFromTop (44));
 
     // Top rows: plugin, then kit name and note map.
     auto row = area.removeFromTop (32);
@@ -558,6 +564,10 @@ void MainComponent::setUpHelp()
     add (convertButton, "Convert WAV folder",
          "Builds Mimic instruments (.mci) from folders of WAV hits you already have: a kit recorded earlier, "
          "an SDSE render or a WAV library. You can pick several folders at once.");
+    add (kitEditorButton, "Kit editor",
+         "Opens a page to edit a Mimic kit (.kit): drop .mci files on its 26 slots, turn slots on or off, and set "
+         "each slot's volume and tune and each mic's level, pan and mute. A new kit starts from one of your own "
+         "kits, so its pad settings carry over. Save writes the kit as <name>.mdp/[U] <name>.kit.");
     add (kitButton, "Build Mimic kit",
          "Makes a Mimic kit preset (.kit) from .mci files. It starts from one of your own Mimic kits, so its pad "
          "settings carry over.");
@@ -1449,6 +1459,22 @@ void MainComponent::convertWavFolder()
             });
         });
     });
+}
+
+void MainComponent::showKitEditor()
+{
+    if (kitEditor == nullptr)
+        kitEditor = std::make_unique<KitEditorWindow> (*settings, [this]
+        {
+            // The window can't delete itself from inside its own close button.
+            juce::Component::SafePointer<MainComponent> safe (this);
+            juce::MessageManager::callAsync ([safe]
+            {
+                if (safe != nullptr)
+                    safe->kitEditor = nullptr;
+            });
+        });
+    kitEditor->toFront (true);
 }
 
 void MainComponent::buildMimicKit()
