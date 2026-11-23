@@ -188,6 +188,19 @@ table column shows what it does instead of running it. Click **Help** again to l
    **Choose folder...** builds them anywhere else, such as a USB stick for the Mimic (remembered for next time);
    **Not now** leaves the WAV files for **Convert WAV folder...** later.
 
+**Send to Mimic** (with [Mimic OS 2](https://github.com/Sharkuel/Pearl-Mimic-OS-2.0)): its
+mimic-share puts the Mimic's Instruments and Kits folders on the computer as `~/Mimic`, over a USB
+Ethernet adapter. When that drive is there, the question after a recording also offers **Send to
+Mimic**: it converts as Convert does, then copies the instruments to
+`Instruments/eMIMICmkr/<kit name>/` on the Mimic, and **Build Mimic kit** offers **Build and send to
+Mimic**, which sends the kit (as `Kits/[U] <kit name>.kit`) along with its instruments. The Mimic
+shows them about 10 seconds after the copy, with no restart. Each file is copied under a hidden name
+the Mimic ignores, checked, then renamed into place; files already there with the same bytes are
+skipped. If the drive is mounted somewhere else (SSHFS-Win on Windows, macFUSE on macOS), pick that
+folder once with **Choose folder...** (or as the output of **Convert WAV folder...**): any folder
+holding `Instruments` and `Kits` is taken as the Mimic and remembered. Without it, nothing changes:
+USB sticks work as before.
+
 **Convert WAV folder...** builds Mimic instruments from one or several folders (or a .zip) of WAV hits in
 the layout below, such as a kit you recorded yourself or a WAV library, into a `Mimic`
 folder inside it.

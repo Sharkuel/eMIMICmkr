@@ -6,6 +6,7 @@
 #include "../../Source/Core/SoundPrint.h"
 #include "../../Source/Core/WavToMci.h"
 #include "../../Source/Core/MimicImage.h"
+#include "../../Source/Core/MimicDrive.h"
 #include "../../Source/App/ScreenTools.h"
 
 namespace
@@ -891,6 +892,49 @@ bool liveHostWorks()
 }
 } // namespace
 
+// Save to Mimic: files land whole under their own names, unchanged ones are left alone, and
+// nothing hidden is left behind.
+bool mimicDriveSends (const juce::File& root)
+{
+    namespace D = emk::MimicDrive;
+    const auto drive = root.getChildFile ("fake Mimic drive");
+    drive.deleteRecursively();
+    const bool notYet = ! D::isDrive (drive) && D::find (drive) != drive;
+    drive.getChildFile ("Instruments").createDirectory();
+    drive.getChildFile ("Kits").createDirectory();
+
+    const auto src = root.getChildFile ("drive source");
+    src.deleteRecursively();
+    src.createDirectory();
+    const auto a = src.getChildFile ("Kick.mci"), b = src.getChildFile ("Snare.mci");
+    a.replaceWithText ("kick");
+    juce::MemoryBlock big;
+    big.setSize (3 << 20, true);
+    b.replaceWithData (big.getData(), big.getSize());
+
+    const auto folder = D::instrumentsFor (drive, "My Kit");
+    const auto first = D::send ({ a, b }, folder);
+    const auto again = D::send ({ a, b }, folder);
+    static_cast<char*> (big.getData())[big.getSize() - 1] = 1;   // the last bytes hold a .mci's MD5
+    b.replaceWithData (big.getData(), big.getSize());
+    const auto changed = D::send ({ a, b }, folder);
+    const auto kit = D::kitFileFor (drive, "My Kit");
+    const auto kitSent = D::send ({ a }, kit.getParentDirectory(), { kit.getFileName() });
+
+    const bool ok = notYet && D::isDrive (drive) && D::find (drive) == drive
+                    && folder == drive.getChildFile ("Instruments/eMIMICmkr/My Kit")
+                    && kit == drive.getChildFile ("Kits/[U] My Kit.kit")
+                    && first.copied.size() == 2 && first.failed.isEmpty()
+                    && again.copied.isEmpty() && again.unchanged.size() == 2
+                    && changed.copied == juce::StringArray { "Snare.mci" } && changed.unchanged == juce::StringArray { "Kick.mci" }
+                    && kitSent.copied.size() == 1 && kit.loadFileAsString() == "kick"
+                    && folder.getChildFile ("Snare.mci").getSize() == (juce::int64) big.getSize()
+                    && folder.findChildFiles (juce::File::findFiles, false, ".*").isEmpty();
+    std::printf ("mimic drive %s (%s; again %s; changed %s)\n", ok ? "ok" : "WRONG", first.toString().toRawUTF8(),
+                 again.toString().toRawUTF8(), changed.toString().toRawUTF8());
+    return ok;
+}
+
 int main (int argc, char** argv)
 {
     if (argc < 2)
@@ -1067,7 +1111,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && mimicDriveSends (root) && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

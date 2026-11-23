@@ -60,7 +60,9 @@ private:
     void showHelp (bool on);
     void explainAt (juce::Point<int>);
     juce::String buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool lighter,
-                                  juce::ThreadWithProgressWindow&);
+                                  juce::ThreadWithProgressWindow&, const juce::File& sendTo = {});
+    juce::File mimicDrive() const;
+    void rememberMimicDrive (const juce::File&);
     void setLive (bool on);
     int maxHits() const;
     bool runJob (const juce::String& title, std::function<juce::String (juce::ThreadWithProgressWindow&)> work,
