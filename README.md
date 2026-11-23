@@ -290,6 +290,9 @@ Rim Shot Side zone. Most libraries have none; then each rimshot is mixed 50/50 w
 click (or, without one, the head hit) nearest its velocity, so that zone still plays.
 A snare's `EDGE` hits (near the edge of the head) fill its Side zone. `OFF CENTER` hits have
 no Mimic zone and are left out, so they don't mix into the center hits.
+Snare `EDGE` hits are ticked by default, and Superior Drummer 3's Rimshot Edge (`MR`) records
+as `RIMSHOT SHALLOW`: on Mimic OS 2, xplay blends Side with the center hits and Rim Shot Side
+with the rimshots, by where the pad is hit.
 
 The converter also runs headless, from the `eMIMICmkr_mci_tests` console tool:
 

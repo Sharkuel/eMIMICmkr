@@ -575,8 +575,8 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
             // FX is the rimshot (snareFX sits on GM's rimshot note 40) and RO the rim only: with
             // them the other way round, SD3 rimshots played as rim hits (Alexandre, 2026-10-15).
             { "snare", { { "R", "CENTER", true }, { "FX", "RIMSHOT", true }, { "SL", "SIDESTICK", true },
-                         { "RO", "RIMCLICK", true }, { "FO", "EDGE", false }, { "MC", "OFF CENTER", false },
-                         { "MR", "RIMSHOT EDGE", false }, { "BZ", "BUZZ", false }, { "FL", "FLAM", false } } },
+                         { "RO", "RIMCLICK", true }, { "FO", "EDGE", true }, { "MC", "OFF CENTER", false },
+                         { "MR", "RIMSHOT SHALLOW", false }, { "BZ", "BUZZ", false }, { "FL", "FLAM", false } } },
             { "tom", { { "R", "CENTER", true }, { "FX", "RIMSHOT", true }, { "RO", "RIMCLICK", true } } },
             { "ride", { { "", "BOW", true }, { "BL", "BELL", true }, { "PU", "EDGE", true }, { "M", "CHOKE", false } } },
             { "crash", { { "", "EDGE", true }, { "RT", "BOW", true }, { "BL", "BELL", false }, { "M", "CHOKE", false } } },
@@ -863,7 +863,7 @@ KitMap KitMap::fromBfd3 (const juce::String& text, juce::String& error)
             static const std::map<juce::String, std::vector<Zone>> zonesOf {
                 { "kick", { { "Hit", "", true } } },
                 { "snare", { { "Hit", "CENTER", true }, { "Rim", "RIMSHOT", true }, { "SS", "SIDESTICK", true },
-                             { "Rim Click", "RIMCLICK", false }, { "HalfEdge", "EDGE", false } } },
+                             { "Rim Click", "RIMCLICK", false }, { "HalfEdge", "EDGE", true } } },
                 { "tom", { { "Hit", "CENTER", true }, { "Rim", "RIMSHOT", true }, { "Rim Click", "RIMCLICK", true } } },
                 { "ride", { { "Bow", "BOW", true }, { "Bell", "BELL", true }, { "Edge", "EDGE", true } } },
                 { "crash", { { "Edge", "EDGE", true }, { "Bow", "BOW", true }, { "Bell", "BELL", false } } },
@@ -1379,7 +1379,7 @@ KitMap KitMap::fromSoundworks (const juce::String& text, juce::String& error)
             static const std::map<juce::String, std::vector<Zone>> zonesOf {
                 { "kick", { { "Center", "", true } } },
                 { "snare", { { "Center", "CENTER", true }, { "Rimshot", "RIMSHOT", true }, { "X Stick", "SIDESTICK", true },
-                             { "Rim", "RIMCLICK", true }, { "Edge", "EDGE", false } } },
+                             { "Rim", "RIMCLICK", true }, { "Edge", "EDGE", true } } },
                 { "tom", { { "Center", "CENTER", true }, { "Rimshot", "RIMSHOT", true }, { "Rim", "RIMCLICK", true } } },
                 { "ride", { { "Bow", "BOW", true }, { "Bell", "BELL", true }, { "Edge", "EDGE", true } } },
                 { "crash", { { "Edge", "EDGE", true }, { "Bow", "BOW", true }, { "Bell", "BELL", false } } },
@@ -1595,7 +1595,7 @@ KitMap KitMap::fromAddictive (const juce::String& text, juce::String& error)
     addSlot ("KICK", "Kick", { { 1, "KICK1", "Kick", true } });
     addSlot ("SNAR", "Snare", { { 3, "SNARE1 CENTER", "Open Hit", true }, { 2, "SNARE1 RIMSHOT", "RimShot", true },
                                 { 5, "SNARE1 SIDESTICK", "SideStick", true }, { 7, "SNARE1 RIMCLICK", "RimClick", true },
-                                { 4, "SNARE1 RIMSHOT SHALLOW", "Shallow RimShot", true }, { 6, "SNARE1 EDGE", "Shallow Hit", false } });
+                                { 4, "SNARE1 RIMSHOT SHALLOW", "Shallow RimShot", true }, { 6, "SNARE1 EDGE", "Shallow Hit", true } });
     // AD2's open hat (Open A to D) is one sound per opening; the Mimic's hat wants it for the
     // bow and the edge, so both take it.
     addSlot ("HHAT", "Hi-Hat", { { 10, "HATS BOW CLOSED", "Closed1 Tip", true }, { 11, "HATS EDGE CLOSED", "Closed1 Shaft", true },

@@ -143,8 +143,12 @@ bool sd3KitReads()
         for (const auto& z : realMap.zones)
             std::cout << "  " << z.piece << " | " << z.label << " | " << z.note << " | " << (z.enabled ? "on" : "off") << " | " << z.instrument << "\n";
     }
-    bool rimclickOn = false;
+    bool rimclickOn = false, edgeOn = false;
+    // Edge hits and shallow rimshots (FO, MR) fill the Side and Rim Shot Side zones, which
+    // Mimic OS 2's xplay blends with the center and rimshot by where the pad is hit.
     const bool ok = error.isEmpty() && vst3Ok
+                    && noteOf ("Snare", "SNARE1 EDGE", &edgeOn) == 33 && edgeOn
+                    && noteOf ("Snare", "SNARE1 RIMSHOT SHALLOW") == 68
                     && noteOf ("Kick", "KICK1") == 36 && noteOf ("Snare", "SNARE1 CENTER") == 38
                     && noteOf ("Snare", "SNARE1 SIDESTICK") == 37 && noteOf ("Snare", "SNARE1 RIMSHOT") == 40
                     && noteOf ("Snare", "SNARE1 RIMCLICK") == 76
@@ -618,7 +622,7 @@ bool addictiveKitReads()
               && find ("KICK1")->library == "Black Oyster" && find ("KICK1")->instrument == "Addictive Drums 2/40102"
               && is ("SNARE1 CENTER", "Snare", 38, true) && is ("SNARE1 RIMSHOT", "Snare", 37, true)
               && is ("SNARE1 SIDESTICK", "Snare", 42, true) && is ("SNARE1 RIMSHOT SHALLOW", "Snare", 41, true)
-              && is ("SNARE1 EDGE", "Snare", 43, false)
+              && is ("SNARE1 EDGE", "Snare", 43, true)
               && is ("HATS BOW CLOSED", "Hi-Hat", 49, true) && is ("HATS EDGE OPEN4", "Hi-Hat", 57, true)
               && is ("HATS BOW OPEN1", "Hi-Hat", 54, true) && is ("HATS PEDAL CLOSED", "Hi-Hat", 48, true)
               && is ("TOM1 CENTER", "Tom 1", 71, true) && is ("TOM4 CENTER", "Tom 4", 65, true) && find ("TOM4 RIMSHOT") == nullptr
