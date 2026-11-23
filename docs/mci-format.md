@@ -6,8 +6,11 @@ crashes saved in the ride layout, and a kick we built that the Editor opened and
 
 The reference implementation in `tools/mci/mci.py` reads all of them and writes them
 back byte for byte. It also decodes every sample bit-exactly. The app's C++ port
-(`Source/Core/Mci.cpp`) writes the same bytes; `tests/test_cpp_converter.py` checks it. Anything below marked
-**unknown** has not been confirmed on a Mimic yet.
+(`Source/Core/Mci.cpp`) writes the same bytes; `tests/test_cpp_converter.py` checks it.
+Pearl Mimic OS 2 reads these files too (`tools/mimic-lib`, `tools/xplay/mci.c`); its
+`tools/xplay/test_emimicmkr.py` converts a synthetic kit with `wav2mci.py` and checks every
+instrument type reads the same there. Run it after changing the format code here.
+Anything below marked **unknown** has not been confirmed on a Mimic yet.
 
 All integers are little-endian.
 
@@ -328,3 +331,8 @@ Across 675 user kits, `iv` (default 1, seen 0.7-2.5) reads as the slot's volume 
 - How does the Editor compute `minvel` and `minvol` from loudness ("Calc Velo")? Ours
   is a square-root curve on peak loudness, close but not identical.
 - What does `isst` do on its own (we only ever set it together with 2 channels)?
+- Is a block's header value its first frame (as here) or the value before the block?
+  Pearl Mimic OS 2's player (`tools/xplay/mci.c`) reads it the second way, so it plays our
+  samples one frame early: without their first frame and with the last one twice. Editor
+  and factory samples start from silence, so their files can't tell; a click-like sample
+  recorded through Pearl's engine would.
