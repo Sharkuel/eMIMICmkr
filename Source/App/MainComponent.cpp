@@ -4,6 +4,7 @@
 #include "../Core/HitRenderer.h"
 #include "../Core/MimicImage.h"
 #include "../Core/MimicKit.h"
+#include "../Core/MimicDrive.h"
 #include "PluginScanner.h"
 #include <BinaryData.h>
 
@@ -1336,54 +1337,78 @@ void MainComponent::recordKit()
         // Offer the Mimic instruments now, next to the recordings; they can always be made later
         // with "Convert WAV folder...".
         const auto mimic = kitFolder.getChildFile ("Mimic");
-        juce::AlertWindow::showAsync (juce::MessageBoxOptions()
-                                          .withIconType (juce::MessageBoxIconType::QuestionIcon)
-                                          .withTitle ("Make the Mimic files?")
-                                          .withMessage ("The WAV files of " + kitName + " are in\n" + kitFolder.getFullPathName()
-                                                        + "\n\nConvert them to .mci files now? Convert puts them in\n"
-                                                        + mimic.getFullPathName()
-                                                        + "\nor choose another folder, such as a USB stick for the Mimic.")
-                                          .withButton ("Convert")
-                                          .withButton ("Choose folder...")
-                                          .withButton ("Not now")
-                                          .withAssociatedComponent (this),
-                                      [this, report, kitFolder, mimic, kitName] (int button)
+        // With a Mimic running Mimic OS 2 connected (its ~/Mimic drive), the instruments can go
+        // straight onto it.
+        const auto drive = mimicDrive();
+        auto options = juce::MessageBoxOptions()
+                           .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                           .withTitle ("Make the Mimic files?")
+                           .withMessage ("The WAV files of " + kitName + " are in\n" + kitFolder.getFullPathName()
+                                         + "\n\nConvert them to .mci files now? Convert puts them in\n"
+                                         + mimic.getFullPathName()
+                                         + (drive != juce::File() ? "\nSend to Mimic also copies them to the Mimic, in\n"
+                                                                        + emk::MimicDrive::instrumentsFor (drive, kitName).getFullPathName()
+                                                                  : juce::String())
+                                         + "\nor choose another folder, such as a USB stick for the Mimic.")
+                           .withButton ("Convert");
+        if (drive != juce::File())
+            options = options.withButton ("Send to Mimic");
+        options = options.withButton ("Choose folder...").withButton ("Not now").withAssociatedComponent (this);
+        juce::AlertWindow::showAsync (options, [this, report, kitFolder, mimic, kitName, drive] (int button)
         {
-            auto convert = [this, report, kitFolder, kitName] (const juce::File& outDir)
+            auto convert = [this, report, kitFolder, kitName] (const juce::File& outDir, const juce::File& sendTo)
             {
-                runJob ("Converting " + kitName, [this, kitFolder, outDir, light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
+                runJob ("Converting " + kitName, [this, kitFolder, outDir, sendTo, light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
                 {
-                    return buildMimicFiles ({ kitFolder }, outDir, light, w);
+                    return buildMimicFiles ({ kitFolder }, outDir, light, w, sendTo);
                 },
-                [this, report, outDir] (const juce::String& built)
+                [this, report, outDir, sendTo] (const juce::String& built)
                 {
                     setStatus (report + "\n" + built);
-                    if (outDir.isDirectory())
+                    if (sendTo == juce::File() && outDir.isDirectory())
                         outDir.revealToUser();
                 });
             };
+            const int send = drive != juce::File() ? 2 : -1, choose = drive != juce::File() ? 3 : 2;
             if (button == 1)
-                return convert (mimic);
-            if (button != 2)
+                return convert (mimic, {});
+            if (button == send)
+                return convert (mimic, emk::MimicDrive::instrumentsFor (drive, kitName));
+            if (button != choose)
                 return;
             const auto last = settings->getValue ("mimicFolder");
             chooser = std::make_unique<juce::FileChooser> ("Where should the Mimic files for " + kitName + " go?",
                                                            last.isNotEmpty() && juce::File (last).isDirectory() ? juce::File (last) : kitFolder);
             chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-                                  [this, convert] (const juce::FileChooser& fc)
+                                  [this, convert, mimic, kitName] (const juce::FileChooser& fc)
             {
                 const auto folder = fc.getResult();
                 if (folder == juce::File())
                     return;
+                if (emk::MimicDrive::isDrive (folder))
+                {
+                    rememberMimicDrive (folder);
+                    return convert (mimic, emk::MimicDrive::instrumentsFor (folder, kitName));
+                }
                 settings->setValue ("mimicFolder", folder.getFullPathName());
-                convert (folder);
+                convert (folder, {});
             });
         });
     });
 }
 
+juce::File MainComponent::mimicDrive() const
+{
+    return emk::MimicDrive::find (juce::File (settings->getValue ("mimicDrive")));
+}
+
+void MainComponent::rememberMimicDrive (const juce::File& drive)
+{
+    settings->setValue ("mimicDrive", drive.getFullPathName());
+}
+
 juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inputs, const juce::File& outDir, bool light,
-                                             juce::ThreadWithProgressWindow& w)
+                                             juce::ThreadWithProgressWindow& w, const juce::File& sendTo)
 {
     emk::WavToMci::Options options;
     options.stockLimits = light;
@@ -1407,6 +1432,16 @@ juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inpu
         text << "\nCould not convert: " << report.failed.joinIntoString ("; ") << ".";
     if (! report.skipped.isEmpty())
         text << "\nSkipped " << report.skipped.size() << " files, for example " << report.skipped[0] << ".";
+    if (sendTo != juce::File() && ! report.written.isEmpty())
+    {
+        w.setStatusMessage ("Sending to the Mimic");
+        juce::Array<juce::File> files;
+        for (const auto& path : report.written)
+            files.add (juce::File (path));
+        const auto sent = emk::MimicDrive::send (files, sendTo);
+        text << "\nTo the Mimic, in " << sendTo.getFullPathName() << ": " << sent.toString() << "."
+             << (sent.copied.isEmpty() ? "" : " The Mimic shows them about 10 s after the copy.");
+    }
     return text;
 }
 
@@ -1447,13 +1482,24 @@ void MainComponent::convertWavFolder()
             chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
                                   [this, inputs, title] (const juce::FileChooser& out)
             {
-                const auto outDir = out.getResult();
+                auto outDir = out.getResult();
                 if (outDir == juce::File())
                     return;
-                player.setSource (nullptr);
-                runJob ("Converting " + title, [this, inputs, outDir, light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
+                // Picked the Mimic's drive: build here first, then send them across whole.
+                juce::File sendTo;
+                if (emk::MimicDrive::isDrive (outDir))
                 {
-                    return buildMimicFiles (inputs, outDir, light, w);
+                    rememberMimicDrive (outDir);
+                    sendTo = emk::MimicDrive::instrumentsFor (outDir, title);
+                    outDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("eMIMICmkr", "");
+                }
+                player.setSource (nullptr);
+                runJob ("Converting " + title, [this, inputs, outDir, sendTo, light = lighter.getToggleState()] (juce::ThreadWithProgressWindow& w)
+                {
+                    auto text = buildMimicFiles (inputs, outDir, light, w, sendTo);
+                    if (sendTo != juce::File())
+                        outDir.deleteRecursively();
+                    return text;
                 },
                 [this] (const juce::String& report) { setStatus (report); });
             });
@@ -1532,9 +1578,12 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
                                                      juce::MessageBoxIconType::NoIcon, this);
     kitDialog->addTextEditor ("name", name, "Kit name");
     kitDialog->addButton ("Build", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    const auto drive = mimicDrive();
+    if (drive != juce::File())
+        kitDialog->addButton ("Build and send to Mimic", 3);
     kitDialog->addButton ("Other kit to start from...", 2);
     kitDialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    kitDialog->enterModalState (true, juce::ModalCallbackFunction::create ([this, instruments, templateKit, folder] (int button)
+    kitDialog->enterModalState (true, juce::ModalCallbackFunction::create ([this, instruments, templateKit, folder, drive] (int button)
     {
         const auto newKit = kitDialog->getTextEditorContents ("name").trim();
         juce::MessageManager::callAsync ([this] { kitDialog = nullptr; });
@@ -1553,7 +1602,7 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
             });
             return;
         }
-        if (button != 1 || newKit.isEmpty())
+        if ((button != 1 && button != 3) || newKit.isEmpty())
             return;
 
         const auto out = emk::MimicKit::kitFile (folder, newKit);
@@ -1568,7 +1617,20 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
             for (const auto& note : report.notes)
                 text << "\n" << note;
             setStatus (text);
-            out.revealToUser();
+            if (button != 3)
+                return out.revealToUser();
+
+            // The Mimic finds a slot's instrument by name, so the instruments go along with the kit.
+            runJob ("Sending " + newKit + " to the Mimic", [instruments, out, drive, newKit] (juce::ThreadWithProgressWindow& w)
+            {
+                w.setStatusMessage ("Sending the instruments");
+                const auto inst = emk::MimicDrive::send (instruments, emk::MimicDrive::instrumentsFor (drive, newKit));
+                const auto kitFile = emk::MimicDrive::kitFileFor (drive, newKit);
+                const auto kit = emk::MimicDrive::send ({ out }, kitFile.getParentDirectory(), { kitFile.getFileName() });
+                return "To the Mimic: instruments " + inst.toString() + "; kit " + kit.toString() + "."
+                       + (kit.failed.isEmpty() && inst.failed.isEmpty() ? " The Mimic lists it about 10 s after the copy." : "");
+            },
+            [this, text] (const juce::String& sent) { setStatus (text + "\n" + sent); });
         }
         catch (const std::exception& e)
         {

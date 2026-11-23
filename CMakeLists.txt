@@ -42,7 +42,8 @@ target_sources(eMIMICmkr PRIVATE
     Source/Core/MimicKit.cpp
     Source/Core/WavToMci.cpp
     Source/Core/SoundPrint.cpp
-    Source/Core/MimicImage.cpp)
+    Source/Core/MimicImage.cpp
+    Source/Core/MimicDrive.cpp)
 
 target_compile_definitions(eMIMICmkr PRIVATE
     JUCE_PLUGINHOST_VST3=1
@@ -86,6 +87,7 @@ target_sources(eMIMICmkr_tests PRIVATE
     Source/Core/WavToMci.cpp
     Source/Core/SoundPrint.cpp
     Source/Core/MimicImage.cpp
+    Source/Core/MimicDrive.cpp
     Source/App/ScreenTools.cpp)
 target_compile_definitions(eMIMICmkr_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(eMIMICmkr_tests PRIVATE
