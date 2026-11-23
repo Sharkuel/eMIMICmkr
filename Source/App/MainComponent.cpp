@@ -1621,14 +1621,21 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
                 return out.revealToUser();
 
             // The Mimic finds a slot's instrument by name, so the instruments go along with the kit.
-            runJob ("Sending " + newKit + " to the Mimic", [instruments, out, drive, newKit] (juce::ThreadWithProgressWindow& w)
+            runJob ("Sending " + newKit + " to the Mimic", [instruments, out, drive, newKit, leftOut = report.leftOut] (juce::ThreadWithProgressWindow& w)
             {
                 w.setStatusMessage ("Sending the instruments");
                 const auto inst = emk::MimicDrive::send (instruments, emk::MimicDrive::instrumentsFor (drive, newKit));
                 const auto kitFile = emk::MimicDrive::kitFileFor (drive, newKit);
                 const auto kit = emk::MimicDrive::send ({ out }, kitFile.getParentDirectory(), { kitFile.getFileName() });
-                return "To the Mimic: instruments " + inst.toString() + "; kit " + kit.toString() + "."
-                       + (kit.failed.isEmpty() && inst.failed.isEmpty() ? " The Mimic lists it about 10 s after the copy." : "");
+                juce::String text = "To the Mimic: instruments " + inst.toString() + "; kit " + kit.toString() + ".";
+                if (kit.failed.isEmpty() && inst.failed.isEmpty())
+                    text << " The Mimic lists it about 10 s after the copy.";
+                // Mimic OS 2 plays instruments beyond the kit's slots as extras, one per input.
+                if (! leftOut.isEmpty() && inst.failed.isEmpty())
+                    text << "\n" << leftOut.joinIntoString (", ") << (leftOut.size() == 1 ? " is" : " are")
+                         << " on the Mimic too: to play " << (leftOut.size() == 1 ? "it" : "them")
+                         << ", load the kit, then tap + on a free input on the HOME page, or use EXTRAS.";
+                return text;
             },
             [this, text] (const juce::String& sent) { setStatus (text + "\n" + sent); });
         }

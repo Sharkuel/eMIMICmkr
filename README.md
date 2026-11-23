@@ -193,7 +193,9 @@ mimic-share puts the Mimic's Instruments and Kits folders on the computer as `~/
 Ethernet adapter. When that drive is there, the question after a recording also offers **Send to
 Mimic**: it converts as Convert does, then copies the instruments to
 `Instruments/eMIMICmkr/<kit name>/` on the Mimic, and **Build Mimic kit** offers **Build and send to
-Mimic**, which sends the kit (as `Kits/[U] <kit name>.kit`) along with its instruments. The Mimic
+Mimic**, which sends the kit (as `Kits/[U] <kit name>.kit`) along with its instruments. Instruments
+that found no slot in the kit (a second hi-hat, a fifth tom) are sent too: Mimic OS 2 plays them as
+extras, beyond the 26 slots, once one is put on a free input (HOME page's +, or EXTRAS). The Mimic
 shows them about 10 seconds after the copy, with no restart. Each file is copied under a hidden name
 the Mimic ignores, checked, then renamed into place; files already there with the same bytes are
 skipped. If the drive is mounted somewhere else (SSHFS-Win on Windows, macFUSE on macOS), pick that
