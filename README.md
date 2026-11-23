@@ -318,6 +318,20 @@ identical: metadata, RAM heads and compressed audio (so far byte for byte). Set
 `MCI_REAL=1` to include the real SDSE zips in `MCI_SAMPLES` (slow: the Python side takes
 minutes per zip).
 
+### Checking playback on a Mimic
+
+`tools/mci/playcheck.py` checks, frame for frame, that a Mimic running Mimic OS 2 plays what
+eMIMICmkr wrote. `make DIR` writes `Playback Check.mci` (3 s of noise). Put it in a kit's
+Kick slot with the slot's effects off. Then record the Kick's output with HOME > Record
+while you hit the pad a few times, a second or more apart. Last, run
+`check "Playback Check.mci" TAKE.wav`, which reports any frame the Mimic dropped or played
+twice, and where:
+
+```
+python3 tools/mci/playcheck.py make ~/Mimic/Instruments/eMIMICmkr
+python3 tools/mci/playcheck.py check ~/Mimic/Instruments/eMIMICmkr/"Playback Check.mci" "Mimic Recordings/Take 001/03 Line Out 1 - Kick.wav"
+```
+
 ## Licensing
 
 eMIMICmkr is an independent project, not made or endorsed by Pearl or Slate Digital. Pearl, Mimic
