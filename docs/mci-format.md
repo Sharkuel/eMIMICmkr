@@ -335,4 +335,7 @@ Across 675 user kits, `iv` (default 1, seen 0.7-2.5) reads as the slot's volume 
   Pearl Mimic OS 2's player (`tools/xplay/mci.c`) reads it the second way, so it plays our
   samples one frame early: without their first frame and with the last one twice. Editor
   and factory samples start from silence, so their files can't tell; a click-like sample
-  recorded through Pearl's engine would.
+  recorded through Pearl's engine would. `tools/mci/playcheck.py` is that test: in Pearl's
+  engine the answer shows where the RAM head ends, since the head already holds the first
+  stream block's header value. If the header is the block's first frame, the Mimic plays
+  that frame twice there.

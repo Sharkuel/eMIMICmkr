@@ -193,7 +193,9 @@ mimic-share puts the Mimic's Instruments and Kits folders on the computer as `~/
 Ethernet adapter. When that drive is there, the question after a recording also offers **Send to
 Mimic**: it converts as Convert does, then copies the instruments to
 `Instruments/eMIMICmkr/<kit name>/` on the Mimic, and **Build Mimic kit** offers **Build and send to
-Mimic**, which sends the kit (as `Kits/[U] <kit name>.kit`) along with its instruments. The Mimic
+Mimic**, which sends the kit (as `Kits/[U] <kit name>.kit`) along with its instruments. Instruments
+that found no slot in the kit (a second hi-hat, a fifth tom) are sent too: Mimic OS 2 plays them as
+extras, beyond the 26 slots, once one is put on a free input (HOME page's +, or EXTRAS). The Mimic
 shows them about 10 seconds after the copy, with no restart. Each file is copied under a hidden name
 the Mimic ignores, checked, then renamed into place; files already there with the same bytes are
 skipped. If the drive is mounted somewhere else (SSHFS-Win on Windows, macFUSE on macOS), pick that
@@ -288,6 +290,9 @@ Rim Shot Side zone. Most libraries have none; then each rimshot is mixed 50/50 w
 click (or, without one, the head hit) nearest its velocity, so that zone still plays.
 A snare's `EDGE` hits (near the edge of the head) fill its Side zone. `OFF CENTER` hits have
 no Mimic zone and are left out, so they don't mix into the center hits.
+Snare `EDGE` hits are ticked by default, and Superior Drummer 3's Rimshot Edge (`MR`) records
+as `RIMSHOT SHALLOW`: on Mimic OS 2, xplay blends Side with the center hits and Rim Shot Side
+with the rimshots, by where the pad is hit.
 
 The converter also runs headless, from the `eMIMICmkr_mci_tests` console tool:
 
@@ -312,6 +317,20 @@ identical: metadata, RAM heads and compressed audio (so far byte for byte). Set
 `EMIMICMKR_MCI_TESTS` to the tool's path when the build folder is not `./build`, and
 `MCI_REAL=1` to include the real SDSE zips in `MCI_SAMPLES` (slow: the Python side takes
 minutes per zip).
+
+### Checking playback on a Mimic
+
+`tools/mci/playcheck.py` checks, frame for frame, that a Mimic running Mimic OS 2 plays what
+eMIMICmkr wrote. `make DIR` writes `Playback Check.mci` (3 s of noise). Put it in a kit's
+Kick slot with the slot's effects off. Then record the Kick's output with HOME > Record
+while you hit the pad a few times, a second or more apart. Last, run
+`check "Playback Check.mci" TAKE.wav`, which reports any frame the Mimic dropped or played
+twice, and where:
+
+```
+python3 tools/mci/playcheck.py make ~/Mimic/Instruments/eMIMICmkr
+python3 tools/mci/playcheck.py check ~/Mimic/Instruments/eMIMICmkr/"Playback Check.mci" "Mimic Recordings/Take 001/03 Line Out 1 - Kick.wav"
+```
 
 ## Licensing
 
