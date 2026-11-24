@@ -393,6 +393,8 @@ int convert (const juce::StringArray& args)
             options.stockLimits = true;
         else if (a == "--full-length")
             options.fullLength = true;
+        else if (a == "--mix-mics")
+            options.mixMics = true;
         else if (! a.startsWith ("--"))
             inputs.add (juce::File::getCurrentWorkingDirectory().getChildFile (a));
         else

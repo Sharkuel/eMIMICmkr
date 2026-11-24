@@ -355,6 +355,59 @@ MIC_DEFAULTS = {"Kick": (2, 0), "Ride": (5, 1), "Cymbal": (5, 1), "Hat": (0, 0)}
 # They are written as two identical channels, as the stereo cymbals Pearl sells are.
 STEREO_TYPES = ("Ride", "Cymbal")
 
+# Separate mics. The recorder writes every hit as five channels: the close (direct) mic, then
+# the overheads (left, right), then the room (left, right). build_instrument(mics=True) lays
+# them out the way Pearl's factory instruments do (Mimic_Factory.lib, read 2026-11-24):
+#   Kick, Snare, Tom      close + Room             3 channels (the overheads go into the room pair)
+#   Cymbal (crash...)     OH + Room                4 channels (any close mic goes into the overheads)
+#   Ride, Hat, Perc       close + OH + Room        5 channels
+# Each mono mic is one channel and each stereo mic two, interleaved in mic order.
+RECORDED_MICS = 5
+OVERHEAD_MIC = ("OH", 5, 1, True)    # (name, micpos, mict, stereo)
+ROOM_MIC = ("Room", 6, 1, True)
+
+
+def mic_layout(instrument_type: str, mic: str):
+    """The mics (name, micpos, mict, stereo) of a separate-mics instrument, and a function that
+    turns one recorded frame (close, OH L, OH R, room L, room R) into its stored values."""
+    close = (mic or instrument_type, 2 if instrument_type == "Kick" else 0, 0, False)
+    if instrument_type in ("Kick", "Snare", "Tom"):
+        return [close, ROOM_MIC], lambda d, ol, orr, rl, rr: [d, rl + ol, rr + orr]
+    if instrument_type == "Cymbal":
+        return [OVERHEAD_MIC, ROOM_MIC], lambda d, ol, orr, rl, rr: [ol + d, orr + d, rl, rr]
+    return [close, OVERHEAD_MIC, ROOM_MIC], lambda d, ol, orr, rl, rr: [d, ol, orr, rl, rr]
+
+
+def mic_mix(values: list[int], stereo: list[bool]) -> list[int]:
+    """The mono mix of interleaved mic channels, as the plugin's own output sums them: every
+    mono mic plus the average of every stereo pair."""
+    out, i, n = [], 0, len(values)
+    width = sum(2 if s else 1 for s in stereo)
+    while i + width <= n:
+        m, c = 0, i
+        for s in stereo:
+            if s:
+                m += (values[c] + values[c + 1]) // 2
+                c += 2
+            else:
+                m += values[c]
+                c += 1
+        out.append(m)
+        i += width
+    return out
+
+
+RECORDED_STEREO = [False, True, True]   # the recorder's five channels as mics: close, OH, room
+
+
+def lay_out_mics(samples: list[int], instrument_type: str, mic: str) -> list[int]:
+    """A five-channel recorded hit in the instrument type's mic layout (see mic_layout)."""
+    _, frame = mic_layout(instrument_type, mic)
+    out = []
+    for i in range(0, len(samples) - RECORDED_MICS + 1, RECORDED_MICS):
+        out += frame(*samples[i:i + RECORDED_MICS])
+    return out
+
 
 def interleave(samples: list[int], channels: int) -> list[int]:
     """One mono sample repeated on every channel, interleaved."""
@@ -372,6 +425,22 @@ def fit_full_scale(pool: list[list[int]]) -> list[list[int]]:
     if peak == 0 or peak == TARGET_PEAK:
         return pool
     return [[v * TARGET_PEAK // peak for v in s] for s in pool]
+
+
+def fit_mics_full_scale(pool: list[list[int]], stereo: list[bool]) -> list[list[int]]:
+    """fit_full_scale for separate mics: the instrument's loudest mono mix (mic_mix) peaks at
+    TARGET_PEAK, so it plays as loud as a mixed one, unless that would push one channel past
+    FULL_SCALE; then that channel's peak sets the gain."""
+    mix_peak = max((abs(v) for s in pool for v in mic_mix(s, stereo)), default=0)
+    peak = max((abs(v) for s in pool for v in s), default=0)
+    if mix_peak == 0:
+        return pool
+    num, den = TARGET_PEAK, mix_peak
+    if peak * TARGET_PEAK > FULL_SCALE * mix_peak:
+        num, den = FULL_SCALE, peak
+    if num == den:
+        return pool
+    return [[v * num // den for v in s] for s in pool]
 
 
 def _cymbal_zones(zones, choke, release_bottom, release_top) -> list[Articulation]:
@@ -456,7 +525,7 @@ def hat_articulations(tip, shank, edge, pedal, footsplash, transition=None
 
 
 def make_choke(samples: list[float], rate: int = 44100, length: float = 3.0,
-               fade_in: float = 0.005, fade_out: float = 1.0) -> list[float]:
+               fade_in: float = 0.005, fade_out: float = 1.0, channels: int = 1) -> list[float]:
     """Turn an open cymbal hit into a choke-ring sample: the ring without the hit.
 
     The Mimic plays one choke-ring sample and scales it to how hard the pad is hit,
@@ -464,26 +533,31 @@ def make_choke(samples: list[float], rate: int = 44100, length: float = 3.0,
     hardest edge hit: the attack is cut where the envelope, after its peak, first
     falls 6 dB below it (and at least 20 ms after the peak), then up to `length`
     seconds of ring are kept, with a short fade in and a fade out at the end.
+
+    channels=5 takes a separate-mics hit (close, OH L/R, room L/R, interleaved): the cut is
+    found on its mono mix and made in every channel at the same frame.
     """
-    n = len(samples)
+    mono = samples if channels == 1 else mic_mix(samples, RECORDED_STEREO)
+    n = len(mono)
     if n == 0:
         return []
     win = max(1, int(rate * 0.005))                      # 5 ms |x| average
     env, acc = [], 0.0
-    for i, v in enumerate(samples):
+    for i, v in enumerate(mono):
         acc += abs(v)
         if i >= win:
-            acc -= abs(samples[i - win])
+            acc -= abs(mono[i - win])
         env.append(acc / min(i + 1, win))
     peak = max(range(n), key=env.__getitem__)
     start = min(n - 1, peak + int(rate * 0.02))
     while start < n - 1 and env[start] > env[peak] * 0.5:
         start += 1
-    ring = samples[start:start + int(round(length * rate))]
-    m, fi, fo = len(ring), max(1, int(fade_in * rate)), max(1, int(fade_out * rate))
+    ring = samples[start * channels:(start + int(round(length * rate))) * channels]
+    m, fi, fo = len(ring) // channels, max(1, int(fade_in * rate)), max(1, int(fade_out * rate))
     out = []
     for i, v in enumerate(ring):
-        g = min(1.0, i / fi) * min(1.0, (m - 1 - i) / fo if m > fo else 1.0)
+        f = i // channels
+        g = min(1.0, f / fi) * min(1.0, (m - 1 - f) / fo if m > fo else 1.0)
         out.append(v * g)
     return out
 
@@ -515,12 +589,15 @@ def velocity_thresholds(loudness: list[float]) -> list[int]:
 def build_instrument(name: str, instrument_type: str, articulations: list[Articulation],
                      image: bytes, library: str = "", mic: str = "",
                      sample_volume: float = 0.52,
-                     controller_zones: list[tuple[int, list[int]]] = ()) -> MciFile:
+                     controller_zones: list[tuple[int, list[int]]] = (), mics: bool = False) -> MciFile:
     """Build a complete instrument.
 
     controller_zones: (zone type, artids closed->open) for hi-hat zones whose
     articulation is picked by the pedal position; see hat_articulations().
+    mics: every sample holds the recorder's five channels (close, OH L/R, room L/R); they
+    are stored in Pearl's factory mic layout for the type (see mic_layout), not mixed.
     """
+    mono = (lambda s: mic_mix(s, RECORDED_STEREO)) if mics else (lambda s: s)
     m: dict[str, tuple[int, object]] = {}
 
     def put(k, s, v):
@@ -549,7 +626,7 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
 
         loud = []
         for layer in art.layers:
-            peaks = [max(rms_envelope(s) or [0]) for s in layer]
+            peaks = [max(rms_envelope(mono(s)) or [0]) for s in layer]
             loud.append(sum(peaks) / len(peaks))
         minvel = art.min_velocities or velocity_thresholds(loud)
         nl = len(art.layers)
@@ -572,9 +649,19 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
             put(L + "maxrtl", F32_ARRAY, [hi] + [1.0] * (RT_ARRAY_LEN - 1))
 
     # Pool: compress every sample, then lay out the RAM heads.
-    pool = fit_full_scale(pool)
-    nchn = 2 if instrument_type in STEREO_TYPES else 1
-    stored = [interleave(s, nchn) if nchn > 1 else s for s in pool]
+    if mics:
+        mic_list, _ = mic_layout(instrument_type, mic)
+        stereo = [m[3] for m in mic_list]
+        nchn = sum(2 if st else 1 for st in stereo)
+        stored = fit_mics_full_scale([lay_out_mics(s, instrument_type, mic) for s in pool], stereo)
+        envelopes = [rms_envelope(mic_mix(s, stereo)) or [0] for s in stored]
+    else:
+        mic_list = [(mic or instrument_type, *MIC_DEFAULTS.get(instrument_type, (0, 0)),
+                     instrument_type in STEREO_TYPES)]
+        pool = fit_full_scale(pool)
+        nchn = 2 if instrument_type in STEREO_TYPES else 1
+        stored = [interleave(s, nchn) if nchn > 1 else s for s in pool]
+        envelopes = [rms_envelope(s) or [0] for s in pool]
     blobs, layouts = [], []
     for s in stored:
         blob, frames = encode_blocks(s)
@@ -601,8 +688,7 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
     put(Q + "desc", I32_ARRAY, [l[1] for l in layouts])
     put(Q + "nobu", I32_ARRAY, [l[0] for l in layouts])
     put(Q + "svol", F32_ARRAY, [sample_volume] * len(pool))
-    for i, s in enumerate(pool):
-        env = rms_envelope(s) or [0]
+    for i, env in enumerate(envelopes):
         put(f"{Q}rmsenv{i}rmse", I32_ARRAY, env)
         put(f"{Q}rmsenv{i}rmsl", I32, len(env))
         put(f"{Q}rmsenv{i}mrms", F32, float(max(env)))
@@ -616,23 +702,26 @@ def build_instrument(name: str, instrument_type: str, articulations: list[Articu
         put(f"INST0hctrlzn{c}trzone", I32_ARRAY, list(artids))
 
     # Instrument-wide values, as written by the Editor.
-    for k, v in {"INST0chkn": 0, "INST0ecov": 0, "INST0insv": 1, "INST0micnt": 1,
+    for k, v in {"INST0chkn": 0, "INST0ecov": 0, "INST0insv": 1, "INST0micnt": len(mic_list),
                  "INST0numart": len(articulations), "INST0nznctrl": len(controller_zones),
-                 "INST0zonecnt": len(zones),
-                 "INST0micinf0micpos": MIC_DEFAULTS.get(instrument_type, (0, 0))[0],
-                 "INST0micinf0mict": MIC_DEFAULTS.get(instrument_type, (0, 0))[1]}.items():
+                 "INST0zonecnt": len(zones)}.items():
         put(k, I32, v)
-    for k, v in {"att": 0.0, "att2": 0.0, "dmp": 0.0, "dmp2": 0.0, "micp": 0.5, "micpz": 1.0,
-                 "micrs": 0.0, "mictn": 0.5, "micv": 1.0, "rel": 1.0, "rel2": 1.0,
-                 "sus": 1.0, "sus2": 1.0}.items():
-        put("INST0micinf0" + k, F32, v)
-    for k, v in {"INST0dav2": 1, "INST0micinf0enven": 1, "INST0micinf0isst": int(nchn > 1),
-                 "INST0micinf0micen": 1, "INST0micinf0micm": 0, "INST0tmr": 1,
-                 "INSTedtr": 1, "INSTmnlth": 1}.items():
+    for k, v in {"INST0dav2": 1, "INST0tmr": 1, "INSTedtr": 1, "INSTmnlth": 1}.items():
         put(k, U8, v)
     for k, v in {"INST0insdat": "", "INST0insimj": "", "INST0insnam": name,
-                 "INST0instyp": instrument_type, "INST0libnam": library,
-                 "INST0micinf0micn": mic or instrument_type}.items():
+                 "INST0instyp": instrument_type, "INST0libnam": library}.items():
         put(k, STRING, v)
+    # One micinf per mic. Every level is 1.0, so the Mimic's mix of the mics is the plugin's own.
+    for i, (mic_name, micpos, mict, st) in enumerate(mic_list):
+        M = f"INST0micinf{i}"
+        put(M + "micpos", I32, micpos)
+        put(M + "mict", I32, mict)
+        for k, v in {"att": 0.0, "att2": 0.0, "dmp": 0.0, "dmp2": 0.0, "micp": 0.5, "micpz": 1.0,
+                     "micrs": 0.0, "mictn": 0.5, "micv": 1.0, "rel": 1.0, "rel2": 1.0,
+                     "sus": 1.0, "sus2": 1.0}.items():
+            put(M + k, F32, v)
+        for k, v in {"enven": 1, "isst": int(st), "micen": 1, "micm": 0}.items():
+            put(M + k, U8, v)
+        put(M + "micn", STRING, mic_name)
 
     return MciFile(meta=m, image=image, heads=bytes(heads), data=b"".join(blobs))

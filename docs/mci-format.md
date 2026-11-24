@@ -68,7 +68,7 @@ envelope of pool sample i.
 | `INST0numart`, `INST0zonecnt` | int | Number of articulations / zones |
 | `INST0zoneArtId<a>` | int | Articulation for zone a, always a |
 | `INST0zoneType<a>` | int | Zone type id (table below) |
-| `INST0micnt` | int | Number of mics, always 1 |
+| `INST0micnt` | int | Number of mics: 1 in Editor files, 2 or 3 in factory ones (see Separate mics) |
 | `INST0micinf0micn` | string | Mic name, e.g. `Kick In`, `Snare Top` |
 | `INST0micinf0micpos`, `INST0micinf0mict` | int | Mic position / type (kick 2/0, ride 5/1, others 0/0). The Editor resets a kick to 2 when it saves |
 | `INST0micinf0*` floats and bytes | | Mic and envelope settings, identical in all five files |
@@ -128,6 +128,32 @@ two types as two identical channels with `isst` 1, like the Meinl files.
 
 The Editor cannot make real hi-hats (open/closed with a pedal). Factory hi-hats are
 described below.
+
+### Separate mics
+
+Pearl's factory instruments keep their mics apart. Their layouts (`Mimic_Factory.lib`, read
+2026-11-24), one channel per mono mic and two per stereo mic, interleaved in mic order:
+
+| Type | Mics (`micn`, micpos/mict, `isst`) | `nchn` |
+| --- | --- | --- |
+| Kick | `Kick Dir` 2/0 mono, `Room` 6/1 stereo | 3 |
+| Snare, Tom | `Snare Dir` (`Tom 10`) 0/0 mono, `Room` 6/1 stereo | 3 |
+| Cymbal (crash, splash, china) | `OH` 5/1 stereo, `Room` 6/1 stereo | 4 |
+| Ride, Hat, Perc | `Ride` (`Hi-Hat`, `Cowbell`) 0/0 mono, `OH` 5/1 stereo, `Room` 6/1 stereo | 5 |
+
+Factory `micv` are 0.631 (0.251 on rides and hats) for the close mic and 0.55 for OH and room;
+`insv` is 0. The RAM head and the compressed data hold the interleaved values exactly as a
+mono sample's: 63 zero values, then the stream, with `desc`, `nobu` and the block frame counts
+counted in values, not frames (`Kick 01 NRG`: the head from value 63 on equals the decoded data).
+
+eMIMICmkr's separate-mics recordings (five channels: close, OH L/R, room L/R) are written in
+these layouts. Kicks, snares and toms have no overheads on the Mimic, so their overheads are
+added into the room pair; crashes have no close mic, so any close mic is added into both
+overheads. Every `micv` is 1.0, so the Mimic's mix of the mics is the plugin's own. The
+instrument is scaled so the mono mix of its mics (each mono mic plus the average of each
+stereo pair) peaks at -1 dBFS, like a mixed instrument, unless one channel would then pass
+full scale. The envelope (`rmse`) is that of the mono mix, one value per 1024 frames.
+Whether the stock Mimic plays user instruments with several mics is **unknown**.
 
 ### Choke samples
 

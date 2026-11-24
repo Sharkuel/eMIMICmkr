@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "../Core/HitRenderer.h"
 #include "../Core/KitMap.h"
 #include "../Core/SoundPrint.h"
 #include "LiveHost.h"
@@ -136,6 +137,12 @@ private:
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
     juce::ToggleButton fitLimits { "Fit Editor limits" },
                      lighter { "Stock sound limits" };
+    // Separate mics: which plugin outputs carry the close mics, overheads and room (by bus name).
+    juce::TextButton micsButton;
+    void chooseMics();
+    void showMics();
+    emk::HitRenderer::Settings::MicBuses micBuses() const;   // for the loaded plugin; none when off
+    emk::HitRenderer::Settings renderSettings() const;       // the app's rate and block size, and the mics
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
     juce::TextEditor kitName, hitsPerZone, pluginSearch;

@@ -10,7 +10,8 @@ namespace emk
 
         <root>/<kit>/<kit> <piece>/<LABEL>/<kit> <piece> - <LABEL> - 001v127.wav
 
-    one folder per zone, mono 32-bit float 44.1 kHz, hardest hit first. */
+    one folder per zone, mono 32-bit float 44.1 kHz, hardest hit first. With separate mics
+    (HitRenderer::Settings::mics) each WAV holds five channels: close, OH L/R, room L/R. */
 class BatchRecorder
 {
 public:

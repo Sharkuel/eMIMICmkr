@@ -184,15 +184,16 @@ def test_three_zone_ride(tmp_path, flags):
     convert_both(tmp_path, tmp_path / "in" / "14 Test Crash", *flags)
 
 
-def write_float_wav(path, samples, extensible=False):
-    """Mono 32-bit float, as the recorder writes it (values may pass full scale)."""
+def write_float_wav(path, samples, extensible=False, channels=1):
+    """32-bit float, as the recorder writes it (values may pass full scale); samples interleaved."""
     path.parent.mkdir(parents=True, exist_ok=True)
     data = struct.pack(f"<{len(samples)}f", *samples)
+    c = channels
     if extensible:
         guid = struct.pack("<H", 3) + bytes([0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71])
-        fmt = struct.pack("<HHIIHHHHI", 0xFFFE, 1, 44100, 44100 * 4, 4, 32, 22, 32, 4) + guid
+        fmt = struct.pack("<HHIIHHHHI", 0xFFFE, c, 44100, 44100 * 4 * c, 4 * c, 32, 22, 32, 4) + guid
     else:
-        fmt = struct.pack("<HHIIHH", 3, 1, 44100, 44100 * 4, 4, 32)
+        fmt = struct.pack("<HHIIHH", 3, c, 44100, 44100 * 4 * c, 4 * c, 32)
     body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(data)) + data
     path.write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
 
@@ -326,6 +327,9 @@ def test_rejects_other_sample_rates(tmp_path):
 def test_recorded_stand_in_kit(tmp_path):
     run = subprocess.run([KIT_EXE, str(tmp_path / "rec")], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+    # The recorder's mimic.txt names the pieces for the app; the Python reference doesn't read it.
+    for info in (tmp_path / "rec" / "Test Kit").rglob("mimic.*"):
+        info.unlink()
     _, cpp_out, _ = convert_both(tmp_path, tmp_path / "rec" / "Test Kit")
     assert len(list(cpp_out.glob("*.mci"))) == 10
 
@@ -425,3 +429,77 @@ def test_tamtams_ring_like_cymbals_and_timp_toms_like_toms(tmp_path):
         f = mci.read_mci(str(out / f"{piece}.mci"))
         lengths[piece] = max(f.get("INST0pool0fcnt"))
     assert lengths == {"Kit Tamtam": 16 * 44100, "Kit LeftFloor": 5 * 44100, "Kit Cowbell": 3 * 44100}
+
+
+def mic_kit(root, length=4000):
+    """A kit recorded with separate mics: five-channel float WAVs (close, OH L/R, room L/R)."""
+    kit = root / "Mic Kit"
+    zones = [  # (piece, zone label, velocities)
+        ("22 Kick_K1", "KICK1", [127, 90, 40]),
+        ("14 Snare_S1", "SNARE1 CENTER", [127, 100, 60, 20]),
+        ("14 Snare_S1", "SNARE1 RIMSHOT", [127, 50]),
+        ("12 Tom_T1", "TOM1 CENTER", [127, 64]),
+        ("16 Crash_C1", "CRASH1 EDGE", [127, 96, 64, 32]),
+        ("16 Crash_C1", "CRASH1 BOW", [120, 60]),
+        ("20 Ride_R1", "RIDE1 BOW", [127, 80, 30]),
+        ("20 Ride_R1", "RIDE1 BELL", [127, 70]),
+        ("20 Ride_R1", "RIDE1 EDGE", [127, 60]),
+    ]
+    seed = 0
+    for piece, label, vels in zones:
+        for i, v in enumerate(vels, 1):
+            seed += 1
+            rnd = random.Random(seed)
+            frames = []
+            for k in range(length):
+                env = v / 127 * math.exp(-k / (length / 4))
+                # past full scale on the loudest hits, as float recordings can be
+                frames.extend(env * g * (rnd.random() * 2 - 1) for g in (1.4, 0.6, 0.5, 0.3, 0.35))
+            write_float_wav(kit / f"{piece} - {label}" / f"{piece} - {label} - {i:03d}v{v}.wav", frames, channels=5)
+    return kit
+
+
+def test_separate_mics_kit(tmp_path):
+    kit = mic_kit(tmp_path)
+    py_out, _, log = convert_both(tmp_path, kit)
+    assert "separate mics" in log
+    layouts = {"22 Kick": ("Kick", [("Kick", 2, 0, 0), ("Room", 6, 1, 1)]),
+               "14 Snare": ("Snare", [("Snare", 0, 0, 0), ("Room", 6, 1, 1)]),
+               "12 Tom": ("Tom", [("Tom", 0, 0, 0), ("Room", 6, 1, 1)]),
+               "16 Crash": ("Cymbal", [("OH", 5, 1, 1), ("Room", 6, 1, 1)]),
+               "20 Ride": ("Ride", [("Ride", 0, 0, 0), ("OH", 5, 1, 1), ("Room", 6, 1, 1)])}
+    for name, (kind, mics) in layouts.items():
+        f = mci.read_mci(str(py_out / f"{name}.mci"))
+        assert f.get("INST0instyp") == kind
+        assert f.get("INST0micnt") == len(mics)
+        got = [(f.get(f"INST0micinf{i}micn"), f.get(f"INST0micinf{i}micpos"), f.get(f"INST0micinf{i}mict"),
+                f.get(f"INST0micinf{i}isst")) for i in range(len(mics))]
+        assert got == mics, name
+        nchn = sum(2 if m[3] else 1 for m in mics)
+        assert set(f.get("INST0pool0nchn")) == {nchn}
+        assert all(n % nchn == 0 for n in f.get("INST0pool0fcnt"))
+        peak = max(abs(v) for i in range(f.get("INST0pool0psz")) for v in mci.sample(f, i))
+        assert peak <= mci.FULL_SCALE
+    # The crash's choke ring was made from all five channels and stored as OH + room.
+    crash = mci.read_mci(str(py_out / "16 Crash.mci"))
+    assert crash.get("INST0artic2numlay") == 1
+
+
+def test_separate_mics_mixed(tmp_path):
+    kit = mic_kit(tmp_path, length=2000)
+    py_out, _, log = convert_both(tmp_path, kit, "--mix-mics")
+    assert "separate mics" not in log
+    f = mci.read_mci(str(py_out / "14 Snare.mci"))
+    assert f.get("INST0micnt") == 1 and set(f.get("INST0pool0nchn")) == {1}
+
+
+def test_separate_mics_must_not_mix_with_plain_hits(tmp_path):
+    kit = mic_kit(tmp_path, length=1000)
+    d = kit / "22 Kick_K1 - KICK1"
+    write_wav(d / "22 Kick_K1 - KICK1 - 004v20.wav", noisy_hit(20, 1000, 3, 1, 9))
+    with pytest.raises(ValueError, match="recorder's 5 mics"):
+        wav2mci.main([str(kit / "22 Kick_K1 - KICK1"), "--out", str(tmp_path / "py")])
+    code, log = run_cpp(kit, tmp_path / "cpp")
+    assert not (tmp_path / "cpp" / "22 Kick.mci").exists(), log
+    assert (tmp_path / "cpp" / "14 Snare.mci").exists(), log      # the other pieces still convert
+    assert "recorder's 5 mics" in log

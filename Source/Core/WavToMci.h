@@ -25,6 +25,7 @@ public:
         int cellsPercent = 100;   // share of each instrument's wave-cell limit used
         bool fullLength = false;  // keep every tail as recorded instead of cutting it (maxSeconds)
         juce::String name;        // instrument name, used only when the input holds one piece
+        bool mixMics = false;     // mix hits recorded with separate mics into one, as a plain recording
     };
 
     struct Report
@@ -83,7 +84,8 @@ public:
     static double maxSeconds (const juce::String& family, bool hasBell, const juce::String& zone = {});
     /** x cut to maxFrames with its last fadeFrames faded out to 0 along the square of a straight
         line (falls fast, then trails off like a ringing tail); unchanged when shorter. */
-    static void fitLength (mci::Samples& x, int maxFrames, int fadeFrames = (int) (shortFadeSeconds * sampleRate + 0.5));
+    static void fitLength (mci::Samples& x, int maxFrames, int fadeFrames = (int) (shortFadeSeconds * sampleRate + 0.5),
+                           int channels = 1);   // x holds that many interleaved channels, cut and faded together
 
     /** Wave cells per instrument, shared by its zones; 0 = no limit known. By default the most the
         Mimic Instrument Editor allows; with stock, the sizes of Pearl's own factory instruments. */
@@ -174,12 +176,17 @@ public:
     static juce::String pieceTitle (const Piece&, const Input&);
 
     /** Mono samples on the 24-bit scale. Stereo is averaged; 16-bit lands on the Editor's grid.
-        Throws mci::Error for anything but 44.1 kHz PCM. */
-    static mci::Samples readWav (const juce::MemoryBlock&);
+        Throws mci::Error for anything but 44.1 kHz PCM.
+        A five-channel WAV is the recorder's separate mics (close, OH L/R, room L/R): with
+        keepMics it comes back as is, interleaved, else as their mono mix (mci::micMix), which
+        is what the plugin's own output plays. keepMics refuses any other WAV. */
+    static mci::Samples readWav (const juce::MemoryBlock&, bool keepMics = false);
+    /** The channel count in a WAV's fmt chunk (0 when there is none). */
+    static int wavChannels (const juce::MemoryBlock&);
 
     static mci::MciFile build (const Piece&, const Input&, const juce::String& name, bool choke, bool hatAsRide,
                                const std::function<void (const juce::String&)>& log,
                                const std::function<void()>& onWavRead = {}, bool fullLength = false,
-                               int cellsPercent = 100, bool stockLimits = false);
+                               int cellsPercent = 100, bool stockLimits = false, bool mixMics = false);
 };
 } // namespace emk

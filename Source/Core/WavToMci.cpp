@@ -673,7 +673,23 @@ juce::String WavToMci::pieceTitle (const Piece& piece, const Input& src)
     return shortName;
 }
 
-mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
+int WavToMci::wavChannels (const juce::MemoryBlock& block)
+{
+    auto* d = static_cast<const juce::uint8*> (block.getData());
+    const auto size = block.getSize();
+    if (size < 12 || std::memcmp (d, "RIFF", 4) != 0 || std::memcmp (d + 8, "WAVE", 4) != 0)
+        return 0;
+    for (size_t pos = 12; pos + 8 <= size;)
+    {
+        const auto chunkSize = (size_t) juce::ByteOrder::littleEndianInt (d + pos + 4);
+        if (std::memcmp (d + pos, "fmt ", 4) == 0 && pos + 12 <= size)
+            return juce::ByteOrder::littleEndianShort (d + pos + 10);
+        pos += 8 + chunkSize + (chunkSize & 1);
+    }
+    return 0;
+}
+
+mci::Samples WavToMci::readWav (const juce::MemoryBlock& block, bool keepMics)
 {
     // Parsed by hand rather than through juce::WavAudioFormat, so the integers are exactly
     // those Python's wave module reads.
@@ -762,6 +778,20 @@ mci::Samples WavToMci::readWav (const juce::MemoryBlock& block)
         else
             vals[i] = (int) juce::ByteOrder::littleEndianInt (p) >> 8;
     }
+    if (channels == mci::recordedMics)
+    {
+        if (keepMics)
+            return vals;
+        const auto mix = mci::micMix (vals, mci::recordedStereo());
+        const juce::int64 top = 1 << 30;
+        mci::Samples out (mix.size());
+        for (size_t i = 0; i < mix.size(); ++i)
+            out[i] = (int) juce::jlimit (-top, top, mix[i]);
+        return out;
+    }
+    if (keepMics)
+        throw Error (std::to_string (channels) + " channels where the piece's other hits have the recorder's "
+                     + std::to_string (mci::recordedMics) + " mics");
     if (channels == 1)
         return vals;
     mci::Samples out;
@@ -818,25 +848,41 @@ double WavToMci::fadeSeconds (const juce::String& family, bool hasBell, const ju
     return family == "cymbal" || ringsOpen (family, zone) ? maxSeconds (family, hasBell, zone) * 0.5 : shortFadeSeconds;
 }
 
-void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames)
+void WavToMci::fitLength (mci::Samples& x, int maxFrames, int fadeFrames, int channels)
 {
-    if ((int) x.size() <= maxFrames)
+    const auto ch = (size_t) std::max (1, channels);
+    if (x.size() <= (size_t) maxFrames * ch)
         return;
-    x.resize ((size_t) maxFrames);
+    x.resize ((size_t) maxFrames * ch);
     const auto fade = std::min (fadeFrames, maxFrames);
     const auto start = maxFrames - fade;
     for (int i = 0; i < fade; ++i)
     {
         const auto left = (juce::int64) (fade - 1 - i);
-        x[(size_t) (start + i)] = (int) floorDiv ((juce::int64) x[(size_t) (start + i)] * left * left, (juce::int64) fade * fade);
+        for (size_t c = 0; c < ch; ++c)
+        {
+            auto& v = x[(size_t) (start + i) * ch + c];
+            v = (int) floorDiv ((juce::int64) v * left * left, (juce::int64) fade * fade);
+        }
     }
 }
 
 mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::String& name, bool choke, bool hatAsRide,
                               const std::function<void (const juce::String&)>& log,
                               const std::function<void()>& onWavRead, bool fullLength,
-                              int cellsPercent, bool stockLimits)
+                              int cellsPercent, bool stockLimits, bool mixMics)
 {
+    // Recorded with separate mics (five-channel WAVs): kept apart unless mixMics.
+    bool mics = false;
+    for (const auto& [key, hits] : piece.zones)
+        if (! hits.empty())
+        {
+            mics = ! mixMics && wavChannels (src.read (hits.front().path)) == mci::recordedMics;
+            break;
+        }
+    const int ch = mics ? mci::recordedMics : 1;
+    if (mics)
+        log ("  " + name + ": separate mics (close, overheads, room)");
     // The instrument's wave-cell budget, cut to cellsPercent.
     auto cells = [cellsPercent, stockLimits] (const juce::String& kind)
         { return std::max (2, cellLimit (kind, stockLimits) * cellsPercent / 100); };
@@ -849,10 +895,10 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             onWavRead();
         try
         {
-            auto x = readWav (src.read (h.path));
+            auto x = readWav (src.read (h.path), mics);
             if (h.blend.isEmpty())
                 return x;
-            auto y = readWav (src.read (h.blend));
+            auto y = readWav (src.read (h.blend), mics);
             if (y.size() > x.size())
                 std::swap (x, y);
             for (size_t i = 0; i < x.size(); ++i)
@@ -914,7 +960,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             {
                 z.audio.back().push_back (readOne (h));
                 if (maxFrames > 0)
-                    fitLength (z.audio.back().back(), maxFrames, fadeFrames);
+                    fitLength (z.audio.back().back(), maxFrames, fadeFrames, ch);
             }
         }
         z.velocities = minVelocities (split);
@@ -969,7 +1015,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             arts[0].minVelocities = bow.velocities;
             arts[1].minVelocities = bell.velocities;
             arts[2].minVelocities = edge.velocities;
-            return mci::buildInstrument (name, "Ride", arts, thumbnail(), {}, "Ride");
+            return mci::buildInstrument (name, "Ride", arts, thumbnail(), {}, "Ride", 0.52, {}, mics);
         }
 
         auto steps = [&] (const juce::String& area)
@@ -995,7 +1041,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             log ("  " + name + ": no foot splash recording, that zone stays silent");
         const auto hat = mci::hatArticulations (std::move (tip), std::move (shank), std::move (edge),
                                                 std::move (pedal), std::move (splash));
-        return mci::buildInstrument (name, "Hat", hat.articulations, thumbnail(), {}, "Hi-Hat", 0.52, hat.controllerZones);
+        return mci::buildInstrument (name, "Hat", hat.articulations, thumbnail(), {}, "Hi-Hat", 0.52, hat.controllerZones, mics);
     }
 
     if (piece.family == "perc")
@@ -1038,7 +1084,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             a.minVelocities = z.velocities;
             arts.push_back (std::move (a));
         }
-        return mci::buildInstrument (name, "Perc", arts, thumbnail(), {}, "Perc");
+        return mci::buildInstrument (name, "Perc", arts, thumbnail(), {}, "Perc", 0.52, {}, mics);
     }
 
     if (piece.family == "kick")
@@ -1051,7 +1097,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         a.minVelocities = z.velocities;
         std::vector<mci::Articulation> arts;
         arts.push_back (std::move (a));
-        return mci::buildInstrument (name, "Kick", arts, thumbnail(), {}, "Kick");
+        return mci::buildInstrument (name, "Kick", arts, thumbnail(), {}, "Kick", 0.52, {}, mics);
     }
 
     if (piece.family == "cymbal")
@@ -1083,7 +1129,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         else if (choke)
         {
             const auto x = readOne (hardest (hitsOf (edgeKey)));
-            const auto ring = mci::makeChoke (std::vector<double> (x.begin(), x.end()), sampleRate);
+            const auto ring = mci::makeChoke (std::vector<double> (x.begin(), x.end()), sampleRate, 3.0, 0.005, 1.0, ch);
             const int top = (1 << 23) - 1;
             mci::Samples s (ring.size());
             for (size_t i = 0; i < ring.size(); ++i)
@@ -1106,7 +1152,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
             arts[0].minVelocities = edge.velocities;
             arts[1].minVelocities = bow.velocities;
         }
-        return mci::buildInstrument (name, kind, arts, thumbnail(), {}, kind);
+        return mci::buildInstrument (name, kind, arts, thumbnail(), {}, kind, 0.52, {}, mics);
     }
 
     if (piece.family != "snare" && piece.family != "tom")
@@ -1146,7 +1192,7 @@ mci::MciFile WavToMci::build (const Piece& piece, const Input& src, const juce::
         a.minVelocities = z.velocities;
         arts.push_back (std::move (a));
     }
-    return mci::buildInstrument (name, kind, arts, thumbnail(), {}, kind, snare ? 0.599 : 0.52);
+    return mci::buildInstrument (name, kind, arts, thumbnail(), {}, kind, snare ? 0.599 : 0.52, {}, mics);
 }
 
 //==============================================================================
@@ -1280,7 +1326,7 @@ WavToMci::Report WavToMci::run (const juce::Array<juce::File>& inputs, const juc
             try
             {
                 auto f = build (piece, src, title, options.choke, asRide, log, onWavRead, options.fullLength, options.cellsPercent,
-                                options.stockLimits);
+                                options.stockLimits, options.mixMics);
                 if (info.library.isNotEmpty())
                     f.set ("INST0libnam", mci::Value::ofString (info.library));
                 if (info.image.getSize() > 0)

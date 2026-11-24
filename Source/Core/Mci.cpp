@@ -584,6 +584,69 @@ std::pair<int, int> micDefaults (const juce::String& instrumentType)
     return { 0, 0 };
 }
 
+const std::vector<bool>& recordedStereo()
+{
+    static const std::vector<bool> v { false, true, true };
+    return v;
+}
+
+std::vector<Mic> micLayout (const juce::String& type, const juce::String& closeMicName)
+{
+    const Mic close { closeMicName.isNotEmpty() ? closeMicName : type, type == "Kick" ? 2 : 0, 0, false };
+    const Mic overheads { "OH", 5, 1, true }, room { "Room", 6, 1, true };
+    if (type == "Kick" || type == "Snare" || type == "Tom")
+        return { close, room };
+    if (type == "Cymbal")
+        return { overheads, room };
+    return { close, overheads, room };
+}
+
+namespace
+{
+juce::int64 floorHalf (juce::int64 v) { return v >= 0 ? v / 2 : -((-v + 1) / 2); }   // Python's v // 2
+
+/** One recorded frame (close, OH L, OH R, room L, room R) in the type's mic layout. */
+void layOutFrame (const juce::String& type, const juce::int64* f, std::vector<juce::int64>& out)
+{
+    const auto d = f[0], ol = f[1], orr = f[2], rl = f[3], rr = f[4];
+    if (type == "Kick" || type == "Snare" || type == "Tom")
+        out.insert (out.end(), { d, rl + ol, rr + orr });
+    else if (type == "Cymbal")
+        out.insert (out.end(), { ol + d, orr + d, rl, rr });
+    else
+        out.insert (out.end(), { d, ol, orr, rl, rr });
+}
+} // namespace
+
+std::vector<juce::int64> micMix (const juce::int64* values, size_t count, const std::vector<bool>& stereo)
+{
+    size_t width = 0;
+    for (bool st : stereo)
+        width += st ? 2 : 1;
+    std::vector<juce::int64> out;
+    if (width == 0)
+        return out;
+    out.reserve (count / width);
+    for (size_t i = 0; i + width <= count; i += width)
+    {
+        juce::int64 m = 0;
+        size_t c = i;
+        for (bool st : stereo)
+        {
+            m += st ? floorHalf (values[c] + values[c + 1]) : values[c];
+            c += st ? 2 : 1;
+        }
+        out.push_back (m);
+    }
+    return out;
+}
+
+std::vector<juce::int64> micMix (const Samples& s, const std::vector<bool>& stereo)
+{
+    std::vector<juce::int64> wide (s.begin(), s.end());
+    return micMix (wide.data(), wide.size(), stereo);
+}
+
 namespace
 {
 std::vector<Articulation> cymbalZones (std::vector<std::pair<juce::String, Layers>> zones, const juce::StringArray& keys,
@@ -714,8 +777,28 @@ HatLayout hatArticulations (std::vector<Layers> tip, std::vector<Layers> shank, 
     return out;
 }
 
-std::vector<double> makeChoke (const std::vector<double>& samples, int rate, double length, double fadeIn, double fadeOut)
+std::vector<double> makeChoke (const std::vector<double>& input, int rate, double length, double fadeIn, double fadeOut,
+                               int channels)
 {
+    // Separate mics: the cut is found on their mono mix and made at the same frame in every channel.
+    std::vector<double> mix;
+    if (channels > 1)
+    {
+        const auto& stereo = recordedStereo();
+        for (size_t i = 0; i + (size_t) channels <= input.size(); i += (size_t) channels)
+        {
+            double m = 0.0;
+            size_t c = i;
+            for (bool st : stereo)
+            {
+                m += st ? std::floor ((input[c] + input[c + 1]) / 2.0) : input[c];
+                c += st ? 2 : 1;
+            }
+            mix.push_back (m);
+        }
+    }
+    const auto& samples = channels > 1 ? mix : input;
+    const auto ch = (size_t) std::max (1, channels);
     const auto n = samples.size();
     if (n == 0)
         return {};
@@ -739,12 +822,13 @@ std::vector<double> makeChoke (const std::vector<double>& samples, int rate, dou
     const auto m = std::min (keep, n - start);
     const auto fi = (double) std::max (1, (int) (fadeIn * rate));
     const auto fo = (double) std::max (1, (int) (fadeOut * rate));
-    std::vector<double> out (m);
+    std::vector<double> out (m * ch);
     for (size_t i = 0; i < m; ++i)
     {
         const double g = std::min (1.0, (double) i / fi)
                        * std::min (1.0, (double) m > fo ? (double) (m - 1 - i) / fo : 1.0);
-        out[i] = samples[start + i] * g;
+        for (size_t c = 0; c < ch; ++c)
+            out[i * ch + c] = input[(start + i) * ch + c] * g;
     }
     return out;
 }
@@ -790,8 +874,19 @@ std::vector<int> velocityThresholds (const std::vector<double>& loudness)
 MciFile buildInstrument (const juce::String& name, const juce::String& instrumentType,
                          const std::vector<Articulation>& articulations, const juce::MemoryBlock& image,
                          const juce::String& library, const juce::String& mic,
-                         double sampleVolume, const std::vector<ControllerZone>& controllerZones)
+                         double sampleVolume, const std::vector<ControllerZone>& controllerZones, bool mics)
 {
+    // With separate mics, loudness is measured on their mono mix.
+    auto envelopeOf = [mics] (const Samples& s)
+    {
+        if (! mics)
+            return rmsEnvelope (s);
+        const auto mix = micMix (s, recordedStereo());
+        Samples m (mix.size());
+        for (size_t i = 0; i < mix.size(); ++i)
+            m[i] = (int) juce::jlimit ((juce::int64) std::numeric_limits<int>::min(), (juce::int64) std::numeric_limits<int>::max(), mix[i]);
+        return rmsEnvelope (m);
+    };
     MciFile f;
     auto put = [&f] (const std::string& key, Value v) { f.set (key, std::move (v)); };
     auto releaseArray = [] (double first)
@@ -832,7 +927,7 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
             juce::int64 sum = 0;
             for (const auto& s : layer)
             {
-                envelopes.push_back (rmsEnvelope (s));
+                envelopes.push_back (envelopeOf (s));
                 if (envelopes.back().empty())
                     envelopes.back().push_back (0);
                 sum += *std::max_element (envelopes.back().begin(), envelopes.back().end());
@@ -870,45 +965,105 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
         }
     }
 
-    // The whole instrument is scaled so its loudest sample peaks at targetPeak (-1 dBFS): a quiet
-    // recording is turned up, as SDSE's are (Alexandre 2026-10-14), and one past full scale is
-    // turned down instead of clipped. One gain keeps the balance between layers and zones.
-    int peak = 0;
-    for (const auto* s : pool)
-        for (auto v : *s)
-            peak = std::max (peak, std::abs (v));
-    std::vector<Samples> scaled;
-    if (peak != 0 && peak != targetPeak)
+    std::vector<Mic> micList;
+    int nchn = 1;
+    std::vector<Samples> stored;
+    stored.reserve (pool.size());
+    if (mics)
     {
-        scaled.reserve (pool.size());   // no reallocation: pool points into it
-        for (size_t i = 0; i < pool.size(); ++i)
+        // Separate mics, in Pearl's layout for the type. Scaled as below, but on the mono mix
+        // (so the instrument plays as loud as a mixed one), unless that would push one channel
+        // past full scale: then that channel's peak sets the gain.
+        micList = micLayout (instrumentType, mic);
+        std::vector<bool> stereo;
+        nchn = 0;
+        for (const auto& m : micList)
         {
-            Samples t (pool[i]->size());
+            stereo.push_back (m.stereo);
+            nchn += m.stereo ? 2 : 1;
+        }
+        std::vector<std::vector<juce::int64>> laid;
+        juce::int64 mixPeak = 0, peak = 0;
+        for (const auto* s : pool)
+        {
+            std::vector<juce::int64> wide (s->begin(), s->end()), out;
+            out.reserve (wide.size() / recordedMics * (size_t) nchn);
+            for (size_t i = 0; i + recordedMics <= wide.size(); i += recordedMics)
+                layOutFrame (instrumentType, wide.data() + i, out);
+            for (auto v : micMix (out.data(), out.size(), stereo))
+                mixPeak = std::max (mixPeak, v < 0 ? -v : v);
+            for (auto v : out)
+                peak = std::max (peak, v < 0 ? -v : v);
+            laid.push_back (std::move (out));
+        }
+        juce::int64 num = 1, den = 1;
+        if (mixPeak != 0)
+        {
+            num = targetPeak;
+            den = mixPeak;
+            if (peak * targetPeak > (juce::int64) fullScale * mixPeak)
+            {
+                num = fullScale;
+                den = peak;
+            }
+        }
+        for (size_t i = 0; i < laid.size(); ++i)
+        {
+            Samples t (laid[i].size());
             for (size_t k = 0; k < t.size(); ++k)
             {
-                const auto v = (juce::int64) (*pool[i])[k] * targetPeak;   // Python's floor division
-                t[k] = (int) (v / peak - (v % peak != 0 && v < 0 ? 1 : 0));
+                const auto v = laid[i][k] * num;   // Python's floor division
+                t[k] = (int) (v / den - (v % den != 0 && v < 0 ? 1 : 0));
             }
-            scaled.push_back (std::move (t));
-            pool[i] = &scaled.back();
-            envelopes[i] = rmsEnvelope (*pool[i]);
+            stored.push_back (std::move (t));
+            const auto mix = micMix (stored.back(), stereo);
+            envelopes[i] = rmsEnvelope (Samples (mix.begin(), mix.end()));
             if (envelopes[i].empty())
                 envelopes[i].push_back (0);
         }
     }
-
-    // Types on the Mimic's stereo overhead mic play a mono sample on the left side only; they
-    // are written as two identical channels, as the stereo cymbals Pearl sells are.
-    const int nchn = instrumentType == "Ride" || instrumentType == "Cymbal" ? 2 : 1;
-    std::vector<Samples> stored;
-    stored.reserve (pool.size());
-    for (const auto* s : pool)
+    else
     {
-        Samples t;
-        t.reserve (s->size() * (size_t) nchn);
-        for (auto v : *s)
-            t.insert (t.end(), (size_t) nchn, v);
-        stored.push_back (std::move (t));
+        // The whole instrument is scaled so its loudest sample peaks at targetPeak (-1 dBFS): a quiet
+        // recording is turned up, as SDSE's are (Alexandre 2026-10-14), and one past full scale is
+        // turned down instead of clipped. One gain keeps the balance between layers and zones.
+        int peak = 0;
+        for (const auto* s : pool)
+            for (auto v : *s)
+                peak = std::max (peak, std::abs (v));
+        std::vector<Samples> scaled;
+        if (peak != 0 && peak != targetPeak)
+        {
+            scaled.reserve (pool.size());   // no reallocation: pool points into it
+            for (size_t i = 0; i < pool.size(); ++i)
+            {
+                Samples t (pool[i]->size());
+                for (size_t k = 0; k < t.size(); ++k)
+                {
+                    const auto v = (juce::int64) (*pool[i])[k] * targetPeak;   // Python's floor division
+                    t[k] = (int) (v / peak - (v % peak != 0 && v < 0 ? 1 : 0));
+                }
+                scaled.push_back (std::move (t));
+                pool[i] = &scaled.back();
+                envelopes[i] = rmsEnvelope (*pool[i]);
+                if (envelopes[i].empty())
+                    envelopes[i].push_back (0);
+            }
+        }
+
+        // Types on the Mimic's stereo overhead mic play a mono sample on the left side only; they
+        // are written as two identical channels, as the stereo cymbals Pearl sells are.
+        nchn = instrumentType == "Ride" || instrumentType == "Cymbal" ? 2 : 1;
+        for (const auto* s : pool)
+        {
+            Samples t;
+            t.reserve (s->size() * (size_t) nchn);
+            for (auto v : *s)
+                t.insert (t.end(), (size_t) nchn, v);
+            stored.push_back (std::move (t));
+        }
+        const auto [micpos, mict] = micDefaults (instrumentType);
+        micList.push_back ({ mic.isNotEmpty() ? mic : instrumentType, micpos, mict, nchn > 1 });
     }
 
     // Pool: compress every sample, then lay out the RAM heads, first round robins first.
@@ -982,28 +1137,35 @@ MciFile buildInstrument (const juce::String& name, const juce::String& instrumen
     }
 
     // Instrument-wide values, as written by the Editor.
-    const auto [micpos, mict] = micDefaults (instrumentType);
     for (const auto& [k, v] : std::initializer_list<std::pair<const char*, int>> {
-             { "INST0chkn", 0 }, { "INST0ecov", 0 }, { "INST0insv", 1 }, { "INST0micnt", 1 },
+             { "INST0chkn", 0 }, { "INST0ecov", 0 }, { "INST0insv", 1 }, { "INST0micnt", (int) micList.size() },
              { "INST0numart", (int) articulations.size() }, { "INST0nznctrl", (int) controllerZones.size() },
-             { "INST0zonecnt", (int) zones.size() }, { "INST0micinf0micpos", micpos }, { "INST0micinf0mict", mict } })
+             { "INST0zonecnt", (int) zones.size() } })
         put (k, Value::ofInt (v));
-    for (const auto& [k, v] : std::initializer_list<std::pair<const char*, double>> {
-             { "att", 0.0 }, { "att2", 0.0 }, { "dmp", 0.0 }, { "dmp2", 0.0 }, { "micp", 0.5 }, { "micpz", 1.0 },
-             { "micrs", 0.0 }, { "mictn", 0.5 }, { "micv", 1.0 }, { "rel", 1.0 }, { "rel2", 1.0 },
-             { "sus", 1.0 }, { "sus2", 1.0 } })
-        put (std::string ("INST0micinf0") + k, Value::ofFloat (v));
     for (const auto& [k, v] : std::initializer_list<std::pair<const char*, int>> {
-             { "INST0dav2", 1 }, { "INST0micinf0enven", 1 }, { "INST0micinf0isst", nchn > 1 ? 1 : 0 },
-             { "INST0micinf0micen", 1 }, { "INST0micinf0micm", 0 }, { "INST0tmr", 1 },
-             { "INSTedtr", 1 }, { "INSTmnlth", 1 } })
+             { "INST0dav2", 1 }, { "INST0tmr", 1 }, { "INSTedtr", 1 }, { "INSTmnlth", 1 } })
         put (k, Value::ofU8 (v));
     put ("INST0insdat", Value::ofString ({}));
     put ("INST0insimj", Value::ofString ({}));
     put ("INST0insnam", Value::ofString (name));
     put ("INST0instyp", Value::ofString (instrumentType));
     put ("INST0libnam", Value::ofString (library));
-    put ("INST0micinf0micn", Value::ofString (mic.isNotEmpty() ? mic : instrumentType));
+    // One micinf per mic. Every level is 1.0, so the Mimic's mix of the mics is the plugin's own.
+    for (size_t m = 0; m < micList.size(); ++m)
+    {
+        const auto M = "INST0micinf" + std::to_string (m);
+        put (M + "micpos", Value::ofInt (micList[m].micpos));
+        put (M + "mict", Value::ofInt (micList[m].mict));
+        for (const auto& [k, v] : std::initializer_list<std::pair<const char*, double>> {
+                 { "att", 0.0 }, { "att2", 0.0 }, { "dmp", 0.0 }, { "dmp2", 0.0 }, { "micp", 0.5 }, { "micpz", 1.0 },
+                 { "micrs", 0.0 }, { "mictn", 0.5 }, { "micv", 1.0 }, { "rel", 1.0 }, { "rel2", 1.0 },
+                 { "sus", 1.0 }, { "sus2", 1.0 } })
+            put (M + k, Value::ofFloat (v));
+        for (const auto& [k, v] : std::initializer_list<std::pair<const char*, int>> {
+                 { "enven", 1 }, { "isst", micList[m].stereo ? 1 : 0 }, { "micen", 1 }, { "micm", 0 } })
+            put (M + k, Value::ofU8 (v));
+        put (M + "micn", Value::ofString (micList[m].name));
+    }
 
     f.image = image;
     f.heads = heads.getMemoryBlock();

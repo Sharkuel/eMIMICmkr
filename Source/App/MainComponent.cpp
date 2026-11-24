@@ -188,6 +188,9 @@ MainComponent::MainComponent()
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
     addAndMakeVisible (lighter);
+    addAndMakeVisible (micsButton);
+    micsButton.onClick = [this] { chooseMics(); };
+    showMics();
     lighter.setToggleState (settings->getBoolValue ("stockLimits", false), juce::dontSendNotification);
     lighter.onClick = [this]
     {
@@ -470,12 +473,13 @@ void MainComponent::resized()
 
     settingsGroup.setBounds (boxes);
     inside = boxes.withTrimmedTop (frameTop).reduced (frameSide, 0);
-    inside.removeFromTop (buttonH / 2);   // two rows, centred in the three-row box
     row = inside.removeFromTop (buttonH).reduced (0, 1);
     hitsLabel.setBounds (row.removeFromLeft (128));
     hitsPerZone.setBounds (row.removeFromLeft (44));
     row.removeFromLeft (16);
     lighter.setBounds (row);
+    row = inside.removeFromTop (buttonH).reduced (0, 1);
+    micsButton.setBounds (row.removeFromLeft (188));
     row = inside.removeFromTop (buttonH).reduced (0, 1);
     saveToLabel.setBounds (row.removeFromLeft (60));
     saveToButton.setBounds (row.removeFromRight (80));
@@ -575,6 +579,12 @@ void MainComponent::setUpHelp()
     add (lighter, "Stock sound limits",
          "Sizes each instrument like Pearl's stock sounds (kick 48, snare 140, tom 70, cymbal 64, ride 112 wave "
          "cells) instead of the Instrument Editor's limits. Use it if the Mimic glitches with many instruments loaded.");
+    add (micsButton, "Mics",
+         "One mix (the default) records the plugin's main output as one sound. Separate mics records the close "
+         "mics, overheads and room from the plugin's own outputs (route them there in the plugin, Superior "
+         "Drummer 3: Mixer > output of each channel), and builds instruments the way Pearl's own are: kick, snare "
+         "and toms with close + room mics, crashes with overheads + room, rides, hi-hats and percussion with all "
+         "three. The Mimic's kit mixer then sets each mic's level. They take 3 to 5 times the memory of one mix.");
     add (saveToPath, "Save to", "Where recordings go: <this folder>/<kit name>, with the Mimic files in it.");
     add (saveToButton, "Change...", "Picks the folder recordings and Mimic files are saved to.");
     add (auditionButton, "Listen to zone", "Plays the selected row's note through the plugin, at full strength.");
@@ -1270,8 +1280,8 @@ void MainComponent::auditionSelectedZone()
     const auto zone = kitMap.zones[row];
     juce::AudioBuffer<float> hit;
     {
-        emk::HitRenderer renderer (*plugin, {});
-        hit = renderer.renderHit (zone.note, 100, zone.cc4);
+        emk::HitRenderer renderer (*plugin, renderSettings());
+        hit = emk::HitRenderer::mixDown (renderer.renderHit (zone.note, 100, zone.cc4));
     }
     plugin->prepareToPlay (sampleRate, blockSize);
     setLive (true);
@@ -1296,6 +1306,93 @@ void MainComponent::auditionSelectedZone()
                + juce::String (hit.getNumSamples() / sampleRate, 2) + " s. Saved to " + file.getFullPathName());
 }
 
+void MainComponent::showMics()
+{
+    const bool on = settings->getBoolValue ("separateMics", false);
+    micsButton.setButtonText (on ? (settings->getBoolValue ("mixMics", false) ? "Mics: separate, built as one"
+                                                                                : "Mics: separate")
+                                 : "Mics: one mix");
+}
+
+emk::HitRenderer::Settings::MicBuses MainComponent::micBuses() const
+{
+    emk::HitRenderer::Settings::MicBuses mics;
+    if (plugin == nullptr || ! settings->getBoolValue ("separateMics", false))
+        return mics;
+    const auto names = emk::HitRenderer::outputBusNames (*plugin);
+    mics.close = names.indexOf (settings->getValue ("micClose"));
+    mics.overheads = names.indexOf (settings->getValue ("micOverheads"));
+    mics.room = names.indexOf (settings->getValue ("micRoom"));
+    return mics;
+}
+
+emk::HitRenderer::Settings MainComponent::renderSettings() const
+{
+    emk::HitRenderer::Settings s;
+    s.sampleRate = sampleRate;
+    s.blockSize = blockSize;
+    s.mics = micBuses();
+    return s;
+}
+
+void MainComponent::chooseMics()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first: the mics are picked from its outputs.");
+    const auto names = emk::HitRenderer::outputBusNames (*plugin);
+    juce::StringArray choices { "(none)" };
+    choices.addArray (names);
+
+    auto* w = new juce::AlertWindow ("Mics",
+                                     "Separate mics records the close mics, the overheads and the room from "
+                                     + plugin->getName() + "'s own outputs. In the plugin, send every close mic "
+                                     "to one output, the overheads to another and the room mics to a third; "
+                                     "the main output then plays nothing.\n\nOne mix records the main output, "
+                                     "as before.",
+                                     juce::MessageBoxIconType::NoIcon, this);
+    auto pick = [&] (const char* key, const juce::String& label, int fallback)
+    {
+        w->addComboBox (key, choices, label);
+        auto* box = w->getComboBoxComponent (key);
+        const int at = names.indexOf (settings->getValue (key));
+        box->setSelectedItemIndex (at >= 0 ? at + 1 : juce::jmin (fallback, choices.size() - 1), juce::dontSendNotification);
+    };
+    pick ("micClose", "Close mics", 1);
+    pick ("micOverheads", "Overheads", 2);
+    pick ("micRoom", "Room", 3);
+    auto mix = std::make_unique<juce::ToggleButton> ("Build them as one mix anyway (for a Mimic that won't play them apart)");
+    mix->setSize (420, 24);
+    mix->setToggleState (settings->getBoolValue ("mixMics", false), juce::dontSendNotification);
+    w->addCustomComponent (mix.get());
+    w->addButton ("Separate mics", 1);
+    w->addButton ("One mix", 2);
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w, names, mix = std::move (mix)] (int result)
+    {
+        if (result == 1)
+        {
+            for (auto* key : { "micClose", "micOverheads", "micRoom" })
+            {
+                const int at = w->getComboBoxComponent (key)->getSelectedItemIndex() - 1;
+                settings->setValue (key, juce::isPositiveAndBelow (at, names.size()) ? names[at] : juce::String());
+            }
+            settings->setValue ("separateMics", true);
+            settings->setValue ("mixMics", mix->getToggleState());
+            const auto m = micBuses();
+            setStatus (m.enabled() ? "Separate mics: kits are recorded as close, overhead and room channels."
+                                   : "Pick at least one output for the mics.");
+            if (! m.enabled())
+                settings->setValue ("separateMics", false);
+        }
+        else if (result == 2)
+        {
+            settings->setValue ("separateMics", false);
+            setStatus ("One mix: kits are recorded from the plugin's main output.");
+        }
+        showMics();
+    }), true);
+}
+
 void MainComponent::recordKit()
 {
     if (plugin == nullptr)
@@ -1313,8 +1410,10 @@ void MainComponent::recordKit()
     s.hitsPerZone = maxHits();
     s.fitMimicLimits = fitLimits.getToggleState();
     s.stockLimits = lighter.getToggleState();
-    s.render.sampleRate = sampleRate;
-    s.render.blockSize = blockSize;
+    s.render = renderSettings();
+    if (settings->getBoolValue ("separateMics", false) && ! s.render.mics.enabled())
+        return setStatus ("Separate mics is on, but " + plugin->getName() + " has none of the outputs picked for them. "
+                          "Pick them again with the Mics button.");
 
     player.setSource (nullptr);
     const auto map = kitMap;
@@ -1412,6 +1511,7 @@ juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inpu
 {
     emk::WavToMci::Options options;
     options.stockLimits = light;
+    options.mixMics = settings->getBoolValue ("mixMics", false);
     w.setProgress (0.0);
     w.setStatusMessage ("Building Mimic instruments");
     outDir.createDirectory();
@@ -1681,12 +1781,11 @@ void MainComponent::findNotes()
         return setStatus ("Load a plugin first.");
 
     player.setSource (nullptr);
-    emk::HitRenderer::Settings renderSettings;
     auto found = std::make_shared<juce::Array<int>>();
     runJob ("Finding the notes " + plugin->getName() + " plays",
-            [this, renderSettings, found] (juce::ThreadWithProgressWindow& w)
+            [this, rs = renderSettings(), found] (juce::ThreadWithProgressWindow& w)
     {
-        *found = emk::BatchRecorder::findSoundingNotes (*plugin, renderSettings, [&w] (int note)
+        *found = emk::BatchRecorder::findSoundingNotes (*plugin, rs, [&w] (int note)
         {
             w.setProgress (note / 128.0);
             w.setStatusMessage ("Trying note " + juce::String (note) + " of 127");
@@ -1938,9 +2037,7 @@ void MainComponent::startLearning()
     // Short renders: the start of each hit is all the comparison needs.
     player.setSource (nullptr);
     auto prints = std::make_shared<std::map<int, emk::SoundPrint>>();
-    emk::HitRenderer::Settings quick;
-    quick.sampleRate = sampleRate;
-    quick.blockSize = blockSize;
+    auto quick = renderSettings();
     quick.maxSeconds = emk::SoundPrint::seconds + 0.2;
     quick.giveUpSeconds = 0.3;
     quick.silenceSeconds = 0.05;
@@ -1952,7 +2049,7 @@ void MainComponent::startLearning()
         {
             w.setProgress (note / 128.0);
             w.setStatusMessage ("Note " + juce::String (note));
-            const auto hit = renderer.renderHit (note, 100);
+            const auto hit = emk::HitRenderer::mixDown (renderer.renderHit (note, 100));
             if (hit.getNumSamples() > 0)
                 (*prints)[note] = emk::SoundPrint::of (hit.getReadPointer (0), hit.getNumSamples(), quick.sampleRate);
         }

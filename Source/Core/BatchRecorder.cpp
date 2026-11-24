@@ -57,7 +57,7 @@ bool BatchRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<fl
         return false;
     auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}
                                                    .withSampleRate (sampleRate)
-                                                   .withNumChannels (1)
+                                                   .withNumChannels (audio.getNumChannels())
                                                    .withBitsPerSample (32)   // float: a hit past full scale isn't clipped
                                                    .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
     return writer != nullptr && writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples());

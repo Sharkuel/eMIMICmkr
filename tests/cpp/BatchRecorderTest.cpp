@@ -76,6 +76,126 @@ private:
     double level = 0.0, decay = 0.0;
     juce::Random random { 1 };
 };
+/** A multi-out drum plugin: every hit plays on its Close output (left only), its OH output
+    (half as loud, both sides) and its Room output (a quarter left, a fifth right), never on Main.
+    Its extra outputs start off, as SD3's do. */
+class FakeMultiOut final : public juce::AudioPluginInstance
+{
+public:
+    FakeMultiOut() : AudioPluginInstance (BusesProperties().withOutput ("Main", juce::AudioChannelSet::stereo())
+                                                           .withOutput ("Close", juce::AudioChannelSet::stereo(), false)
+                                                           .withOutput ("OH", juce::AudioChannelSet::stereo(), false)
+                                                           .withOutput ("Room", juce::AudioChannelSet::stereo(), false)) {}
+
+    const juce::String getName() const override { return "Fake Multi Out"; }
+    void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = getName(); d.isInstrument = true; }
+    void prepareToPlay (double rate, int) override { decay = std::exp (-1.0 / (0.05 * rate)); }
+    void releaseResources() override {}
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override { return true; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+    bool isBusesLayoutSupported (const BusesLayout&) const override { return true; }
+
+    using AudioPluginInstance::processBlock;
+    void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
+    {
+        buffer.clear();
+        auto put = [&] (int bus, int ch, int pos, float v)
+        {
+            if (const auto* b = getBus (false, bus); b != nullptr && b->isEnabled() && ch < b->getNumberOfChannels())
+                buffer.setSample (b->getChannelIndexInProcessBlockBuffer (ch), pos, v);
+        };
+        int pos = 0;
+        auto render = [&] (int end)
+        {
+            for (; pos < end; ++pos, level *= decay)
+                if (level > 1.0e-6)
+                {
+                    const auto v = (float) (level * (random.nextFloat() * 2.0f - 1.0f));
+                    put (1, 0, pos, v);
+                    put (2, 0, pos, 0.5f * v);
+                    put (2, 1, pos, 0.5f * v);
+                    put (3, 0, pos, 0.25f * v);
+                    put (3, 1, pos, 0.2f * v);
+                }
+        };
+        for (const auto m : midi)
+        {
+            render (m.samplePosition);
+            if (m.getMessage().isNoteOn())
+                level = m.getMessage().getFloatVelocity() * 0.9;
+        }
+        render (buffer.getNumSamples());
+    }
+
+private:
+    double level = 0.0, decay = 0.0;
+    juce::Random random { 2 };
+};
+
+/** Records a snare and a ride with separate mics and builds them: five-channel WAVs, then
+    instruments in Pearl's factory mic layouts. */
+bool separateMicsRecord (const juce::File& root)
+{
+    FakeMultiOut plugin;
+    emk::KitMap map;
+    map.kitName = "Mic Kit";
+    map.zones.add ({ "Snare", "SNARE1 CENTER", 38 });
+    map.zones.add ({ "Ride", "RIDE1 BOW", 51 });
+    map.zones.add ({ "Ride", "RIDE1 BELL", 53 });
+    emk::BatchRecorder::Settings settings;
+    settings.hitsPerZone = 4;
+    settings.render.maxSeconds = 1.0;
+    settings.render.mics = { 1, 2, 3 };
+    const auto names = emk::HitRenderer::outputBusNames (plugin);
+    emk::BatchRecorder::record (plugin, map, settings, root, [] (const auto&) { return true; });
+
+    // close = the Close bus averaged (left only: half), OH = half on both sides, room 1/4 and 1/5.
+    const auto wav = emk::BatchRecorder::fileFor (root, map.kitName, map.zones[0], 1, 127);
+    juce::WavAudioFormat format;
+    std::unique_ptr<juce::AudioFormatReader> reader (format.createReaderFor (wav.createInputStream().release(), true));
+    bool wavOk = reader != nullptr && reader->numChannels == 5;
+    if (wavOk)
+    {
+        juce::AudioBuffer<float> b (5, (int) reader->lengthInSamples);
+        reader->read (&b, 0, b.getNumSamples(), 0, true, true);
+        auto peak = [&] (int c) { return b.getMagnitude (c, 0, b.getNumSamples()); };
+        wavOk = peak (0) > 0.1f && std::abs (peak (1) / peak (0) - 1.0f) < 0.01f && std::abs (peak (2) / peak (0) - 1.0f) < 0.01f
+                && std::abs (peak (3) / peak (0) - 0.5f) < 0.01f && std::abs (peak (4) / peak (0) - 0.4f) < 0.01f;
+    }
+    const auto made = emk::WavToMci::run (root.getChildFile ("Mic Kit"), root.getChildFile ("mic mimic"), {},
+                                          [] (const juce::String&) {}, [] (double) { return true; });
+    bool built = made.written.size() == 2;
+    for (const auto& path : made.written)
+    {
+        const auto f = emk::mci::readMci (juce::File (path));
+        const auto type = f.getString ("INST0instyp");
+        const int mics = f.getInt ("INST0micnt"), nchn = f.getInts ("INST0pool0nchn").front();
+        built = built && (type == "Snare" ? mics == 2 && nchn == 3 && f.getString ("INST0micinf1micn") == "Room"
+                                          : type == "Ride" && mics == 3 && nchn == 5 && f.getString ("INST0micinf1micn") == "OH"
+                                                && f.getInt ("INST0micinf2micpos") == 6);
+    }
+    emk::WavToMci::Options mixed;
+    mixed.mixMics = true;
+    const auto one = emk::WavToMci::run (root.getChildFile ("Mic Kit"), root.getChildFile ("mic mimic mixed"), mixed,
+                                         [] (const juce::String&) {}, [] (double) { return true; });
+    const bool mixOk = one.written.size() == 2
+                       && emk::mci::readMci (juce::File (one.written[0])).getInt ("INST0micnt") == 1;
+    const bool ok = names == juce::StringArray { "Main", "Close", "OH", "Room" } && wavOk && built && mixOk;
+    std::printf ("separate mics %s (wav %s, built %s, mixed %s)\n", ok ? "ok" : "WRONG", wavOk ? "ok" : "WRONG",
+                 built ? "ok" : "WRONG", mixOk ? "ok" : "WRONG");
+    return ok;
+}
+
 /** Just enough of a sound card to drive LiveHost. */
 class FakeDevice final : public juce::AudioIODevice
 {
@@ -1115,7 +1235,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && mimicDriveSends (root) && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && mimicDriveSends (root) && separateMicsRecord (root) && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
