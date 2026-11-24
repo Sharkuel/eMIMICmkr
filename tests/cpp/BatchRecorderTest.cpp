@@ -196,6 +196,49 @@ bool separateMicsRecord (const juce::File& root)
     return ok;
 }
 
+/** Recording again keeps the hits made the same way and records only the missing ones; a zone
+    recorded another way is recorded again, its old hits removed. */
+bool resumeKeepsWhatWasRecorded (const juce::File& root)
+{
+    FakeDrums plugin;
+    emk::KitMap map;
+    map.kitName = "Resume Kit";
+    map.zones.add ({ "Snare", "SNARE1 CENTER", 38 });
+    map.zones.add ({ "Kick", "KICK1", 36 });
+    emk::BatchRecorder::Settings settings;
+    settings.hitsPerZone = 4;
+    settings.fitMimicLimits = false;
+    settings.render.maxSeconds = 0.5;
+    auto record = [&]
+    {
+        int rendered = 0;
+        emk::BatchRecorder::record (plugin, map, settings, root, [&] (const auto&) { ++rendered; return true; });
+        return rendered;
+    };
+    record();
+    const auto first = emk::BatchRecorder::fileFor (root, map.kitName, map.zones[0], 1, 127);
+    const auto gone = emk::BatchRecorder::fileFor (root, map.kitName, map.zones[0], 3, 43);
+    const auto before = first.getLastModificationTime();
+    gone.deleteFile();
+    map.zones.getReference (1).note = 35;   // the kick moves: recorded again
+    const auto plan = emk::BatchRecorder::plan (map, settings, root, plugin.getName());
+    settings.keepExisting = true;
+    juce::Thread::sleep (1100);   // file times have one-second steps on some systems
+    record();
+    const bool kept = first.getLastModificationTime() == before && gone.existsAsFile();
+    // Fewer hits: the old fourth hit goes, so it can't end up in the instrument.
+    settings.hitsPerZone = 3;
+    settings.keepExisting = false;
+    record();
+    const auto snareFolder = first.getParentDirectory();
+    const int left = snareFolder.getNumberOfChildFiles (juce::File::findFiles, "*.wav");
+    const bool ok = plan.kept == 3 && plan.toRecord == 5 && plan.zonesChanged == 2 && kept && left == 3
+                    && snareFolder.getChildFile (emk::BatchRecorder::zoneInfoFile).existsAsFile();
+    std::printf ("resume %s (kept %d, to record %d, zones changed %d, untouched %s, wavs left %d)\n", ok ? "ok" : "WRONG",
+                 plan.kept, plan.toRecord, plan.zonesChanged, kept ? "yes" : "no", left);
+    return ok;
+}
+
 /** Just enough of a sound card to drive LiveHost. */
 class FakeDevice final : public juce::AudioIODevice
 {
@@ -1235,7 +1278,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && mimicDriveSends (root) && separateMicsRecord (root) && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && mimicDriveSends (root) && separateMicsRecord (root) && resumeKeepsWhatWasRecorded (root) && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;

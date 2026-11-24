@@ -193,6 +193,12 @@ table column shows what it does instead of running it. Click **Help** again to l
    three. Their files are 3 to 5 times bigger, but the Mimic preloads the same amount of each hit (the
 first 32768 values), so the memory a kit needs stays about the same. Not tried yet on a Mimic: if yours won't play
    them apart, tick **Build them as one mix anyway**, which mixes them back into one sound when converting.
+   Recording a kit again finds the hits already made: each zone folder's `recording.txt` says how
+   they were made (note, pedal, velocities, mics, length, plugin). **Record what's missing** keeps those
+   made the same way and records the rest, to finish a recording that stopped or after changing a few
+   rows; **Record everything again** starts over. eMIMICmkr can't hear a change made inside the plugin
+   (another kit piece on the same note, a mic or an effect), so after one of those record everything
+   again. Either way, a zone's old hits that the new recording doesn't make are removed.
 5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
    **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;
    **Choose folder...** builds them anywhere else, such as a USB stick for the Mimic (remembered for next time);

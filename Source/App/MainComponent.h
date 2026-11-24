@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "../Core/BatchRecorder.h"
 #include "../Core/HitRenderer.h"
 #include "../Core/KitMap.h"
 #include "../Core/SoundPrint.h"
@@ -140,6 +141,7 @@ private:
     // Separate mics: which plugin outputs carry the close mics, overheads and room (by bus name).
     juce::TextButton micsButton;
     void chooseMics();
+    void startRecording (const emk::KitMap&, const emk::BatchRecorder::Settings&);
     void showMics();
     emk::HitRenderer::Settings::MicBuses micBuses() const;   // for the loaded plugin; none when off
     emk::HitRenderer::Settings renderSettings() const;       // the app's rate and block size, and the mics

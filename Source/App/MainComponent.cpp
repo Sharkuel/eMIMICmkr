@@ -1416,8 +1416,44 @@ void MainComponent::recordKit()
         return setStatus ("Separate mics is on, but " + plugin->getName() + " has none of the outputs picked for them. "
                           "Pick them again with the Mics button.");
 
+    // Hits already recorded the same way can be kept: to finish a recording that stopped, or
+    // after changing a few rows.
+    const auto plan = emk::BatchRecorder::plan (kitMap, s, outputFolder(), plugin->getName());
+    if (plan.kept == 0)
+        return startRecording (kitMap, s);
+    const auto folder = outputFolder().getChildFile (emk::BatchRecorder::safeName (kitMap.kitName));
+    juce::String what;
+    what << plan.kept << " hits of " << kitMap.kitName << " are already recorded the same way in\n"
+         << folder.getFullPathName() << "\n\n";
+    if (plan.toRecord == 0)
+        what << "Nothing is missing or changed.";
+    else
+        what << plan.toRecord << " hits are missing or changed (" << plan.zonesChanged + plan.zonesNew
+             << (plan.zonesChanged + plan.zonesNew == 1 ? " zone)." : " zones).");
+    what << "\n\nRecord only those, or everything again? Record everything again if you changed the sound in the "
+            "plugin (another kit, mic or effect): eMIMICmkr can't tell.";
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                      .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                      .withTitle ("Keep what's recorded?")
+                                      .withMessage (what)
+                                      .withButton (plan.toRecord == 0 ? "Keep it all" : "Record what's missing")
+                                      .withButton ("Record everything again")
+                                      .withButton ("Cancel")
+                                      .withAssociatedComponent (this),
+                                  [this, map = kitMap, s] (int button) mutable
+    {
+        if (button == 0)
+            return;
+        s.keepExisting = button == 1;
+        startRecording (map, s);
+    });
+}
+
+void MainComponent::startRecording (const emk::KitMap& map, const emk::BatchRecorder::Settings& s)
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
     player.setSource (nullptr);
-    const auto map = kitMap;
     runJob ("Recording " + map.kitName, [this, map, s, root = outputFolder()] (juce::ThreadWithProgressWindow& w)
     {
         auto report = emk::BatchRecorder::record (*plugin, map, s, root, [&w] (const auto& p)
