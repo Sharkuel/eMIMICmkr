@@ -112,6 +112,7 @@ private:
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" },
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
+        queueButton { "Queue..." },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
         namesButton { "Read plugin" },
@@ -142,6 +143,11 @@ private:
     juce::TextButton micsButton;
     void chooseMics();
     void startRecording (const emk::KitMap&, const emk::BatchRecorder::Settings&);
+    emk::BatchRecorder::Settings recordSettings();
+    // Kits queued to record one after another (RecordQueue), say overnight.
+    void showQueue();
+    void addToQueue();
+    void runQueue();
     void showMics();
     emk::HitRenderer::Settings::MicBuses micBuses() const;   // for the loaded plugin; none when off
     emk::HitRenderer::Settings renderSettings() const;       // the app's rate and block size, and the mics

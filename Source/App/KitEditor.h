@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../Core/MimicKit.h"
 #include "IconButton.h"
+#include "InstrumentPlayer.h"
 
 /** A page to put together a Pearl Mimic kit (.kit): which instrument each of its 26 slots
     loads, and each slot's volume, tune and mic levels and pans. A new kit starts from one of
@@ -20,6 +21,7 @@ public:
     bool openKit (const juce::File&);
 
     std::function<void (const juce::String&)> onTitleChange;   // "Kit editor - <name>"
+    InstrumentPlayer::Play onPlay;                               // plays a hit on the audio output
 
     class SlotTile;   // one slot in the SLOTS box
     class MicRow;     // one mic of the selected slot
@@ -34,6 +36,8 @@ private:
     void chooseInstrument();
     void placeFiles (const juce::String& slot, const juce::StringArray& files);
     void emptySelected();
+    void playSelected();     // the slot's instrument, or a .mci the user picks
+    void openPlayer (const juce::File&);
     void select (const juce::String& slot);
     void refresh();          // tiles and the selected slot's controls, from `kit`
     void showSlot();
@@ -59,7 +63,9 @@ private:
     juce::OwnedArray<SlotTile> tiles;
 
     juce::Label slotTitle, instrumentLabel;
-    juce::TextButton chooseButton { "Choose .mci..." }, emptyButton { "Empty slot" };
+    juce::TextButton chooseButton { "Choose .mci..." }, emptyButton { "Empty slot" },
+        playButton { "Play..." };
+    std::unique_ptr<InstrumentPlayerWindow> playerWindow;
     juce::ToggleButton enabledButton { "Slot on" };
     juce::Label volumeLabel { {}, "Volume" }, tuneLabel { {}, "Tune" };
     juce::Slider volume, tune;

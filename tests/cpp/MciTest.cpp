@@ -10,6 +10,7 @@
 //                                            build a kit preset from instruments
 //
 // tests/test_cpp_converter.py compares --convert with tools/mci/wav2mci.py.
+#include "../../Source/Core/MciPlayer.h"
 #include "../../Source/Core/MimicKit.h"
 #include "../../Source/Core/WavToMci.h"
 #include <cstdio>
@@ -457,6 +458,56 @@ int rewrite (const juce::String& in, const juce::String& out)
 }
 } // namespace
 
+void checkPlayer()
+{
+    // A kick of three layers, two round robins each; amplitude per layer as given.
+    auto kickOf = [] (std::vector<double> amps)
+    {
+        mci::Articulation kick;
+        kick.name = "Kick";
+        kick.zoneType = 36;
+        kick.minVelocities = { 1, 40, 90 };
+        for (auto a : amps)
+        {
+            mci::Layers::value_type layer;
+            for (int rr = 0; rr < 2; ++rr)
+            {
+                mci::Samples x (4000);
+                for (size_t i = 0; i < x.size(); ++i)
+                    x[i] = (int) (std::sin ((double) i / (7.0 + rr)) * a * (1 << 22) * std::exp (-(double) i / 1500.0)) * 256;
+                layer.push_back (x);
+            }
+            kick.layers.push_back (layer);
+        }
+        return MciPlayer (mci::buildInstrument ("Test Kick", "Kick", { kick }, WavToMci::thumbnail()));
+    };
+    auto even = kickOf ({ 0.2, 0.3, 0.9 });
+    const auto& art = even.articulations().at (0);
+    check (art.layers.size() == 3 && MciPlayer::layerFor (art, 1) == 0 && MciPlayer::layerFor (art, 39) == 0
+               && MciPlayer::layerFor (art, 40) == 1 && MciPlayer::layerFor (art, 127) == 2, "player picks the layer");
+    const auto a = even.hit (0, 127), b = even.hit (0, 127), c = even.hit (0, 127);
+    auto same = [] (const juce::AudioBuffer<float>& x, const juce::AudioBuffer<float>& y)
+    {
+        if (x.getNumSamples() != y.getNumSamples())
+            return false;
+        for (int i = 0; i < x.getNumSamples(); ++i)
+            if (! juce::exactlyEqual (x.getSample (0, i), y.getSample (0, i)))
+                return false;
+        return true;
+    };
+    check (a.getNumChannels() == 2 && a.getNumSamples() == 4000 && ! same (a, b) && same (a, c), "player rotates round robins");
+    check (even.hit (0, 89).getMagnitude (0, 0, 4000) < a.getMagnitude (0, 0, 4000), "softer hit plays softer");
+    const auto levels = even.layerLevels (0);
+    check (levels.size() == 3 && levels[0] < levels[1] && levels[1] < levels[2] && levels[2] < 0.0, "layer levels rise");
+    // 0.2 to 0.3 is +3.5 dB, 0.3 to 0.9 +9.5 dB (a jump); 0.9 under 0.3 is a layer louder than the one above.
+    check (even.layerProblems (0, 12.0).isEmpty() && even.layerProblems (0).size() == 1
+               && even.layerProblems (0)[0].contains ("layer 3 (from velocity 90) jumps"), "player flags a level jump");
+    auto swapped = kickOf ({ 0.1, 0.9, 0.3 });
+    const auto problems = swapped.layerProblems (0, 20.0);
+    check (problems.size() == 1 && problems[0].contains ("layer 2 (from velocity 40) is") && problems[0].contains ("louder than layer 3"),
+           "player flags a layer louder than the next");
+}
+
 int main (int argc, char** argv)
 {
     juce::StringArray args;
@@ -490,6 +541,7 @@ int main (int argc, char** argv)
         checkCodec();
         checkBuilders();
         checkContainer();
+        checkPlayer();
         checkKits();
     }
     catch (const std::exception& e)

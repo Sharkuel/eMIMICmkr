@@ -215,7 +215,7 @@ KitEditor::KitEditor (juce::PropertiesFile& s) : settings (s)
                                                              &saveButton, &saveAsButton, &status, &empty })
         addAndMakeVisible (c);
     for (auto* c : std::initializer_list<juce::Component*> { &slotTitle, &instrumentLabel, &chooseButton, &emptyButton,
-                                                             &enabledButton, &volumeLabel, &volume, &tuneLabel, &tune,
+                                                             &playButton, &enabledButton, &volumeLabel, &volume, &tuneLabel, &tune,
                                                              &noMics, &kitVolumeLabel, &kitVolume, &centreButton })
         addAndMakeVisible (c);
 
@@ -247,6 +247,9 @@ KitEditor::KitEditor (juce::PropertiesFile& s) : settings (s)
                              "so copy that instrument to the Mimic too.");
     emptyButton.onClick = [this] { emptySelected(); };
     emptyButton.setTooltip ("Takes the instrument out of this slot.");
+    playButton.onClick = [this] { playSelected(); };
+    playButton.setTooltip ("Plays this slot's instrument the way the Mimic does, with a velocity slider and round "
+                           "robins, and checks its layers rise evenly. With no instrument found, pick any .mci.");
     enabledButton.onClick = [this]
     {
         MimicKit::setEnabled (kit, selected, enabledButton.getToggleState());
@@ -386,6 +389,8 @@ void KitEditor::resized()
     chooseButton.setBounds (row.removeFromLeft (140));
     row.removeFromLeft (gap);
     emptyButton.setBounds (row.removeFromLeft (110));
+    row.removeFromLeft (gap);
+    playButton.setBounds (row.removeFromLeft (90));
     row = inside.removeFromTop (32);
     volumeLabel.setBounds (row.removeFromLeft (80));
     volume.setBounds (row);
@@ -697,6 +702,43 @@ void KitEditor::learn (const MimicKit::Instrument& in)
     known.push_back (in);
 }
 
+void KitEditor::playSelected()
+{
+    for (const auto& s : hasKit ? MimicKit::slotList (kit) : std::vector<MimicKit::Slot>())
+        if (s.name == selected && s.loaded)
+            for (const auto& k : known)
+                if (k.name() == s.instrument && k.settings.getString ("INST0libnam") == s.library && k.file.existsAsFile())
+                {
+                    openPlayer (k.file);
+                    return;
+                }
+    chooser = std::make_unique<juce::FileChooser> ("Pick an instrument to play", startFolder(), "*.mci");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+    {
+        if (fc.getResult().existsAsFile())
+            openPlayer (fc.getResult());
+    });
+}
+
+void KitEditor::openPlayer (const juce::File& f)
+{
+    try
+    {
+        auto mci = emk::mci::readMci (f);
+        playerWindow = nullptr;
+        playerWindow = std::make_unique<InstrumentPlayerWindow> (f, std::move (mci), [this] (const juce::AudioBuffer<float>& b)
+        {
+            if (onPlay)
+                onPlay (b);
+        });
+    }
+    catch (const std::exception& e)
+    {
+        setStatus (f.getFileName() + " can't be played: " + e.what());
+    }
+}
+
 void KitEditor::showMemory()
 {
     memory.setVisible (hasKit);
@@ -729,6 +771,7 @@ void KitEditor::showSlot()
                              juce::dontSendNotification);
     chooseButton.setEnabled (any);
     emptyButton.setEnabled (slot.loaded);
+    playButton.setEnabled (hasKit);
     enabledButton.setEnabled (any);
     enabledButton.setToggleState (slot.enabled, juce::dontSendNotification);
     volume.setEnabled (slot.loaded);

@@ -204,6 +204,16 @@ first 32768 values), so the memory a kit needs stays about the same. Not tried y
    **Choose folder...** builds them anywhere else, such as a USB stick for the Mimic (remembered for next time);
    **Not now** leaves the WAV files for **Convert WAV folder...** later.
 
+**Queue...** (under Record kit) records several kits one after another, say overnight. Load a kit in
+the plugin, set its rows and name here, and **Add this kit**; then the next kit, and so on. Each queued
+kit keeps the plugin's whole state and the rows, in `<Save to folder>/Queue/`. **Record the queue**
+loads each kit in the plugin in turn, waits until it sounds (up to 5 minutes while it loads its samples),
+records it with the export settings as they are then, and converts it into its `Mimic/` folder. A kit
+leaves the queue once it's done, and a queue that stopped carries on where it was, keeping the hits
+already recorded. Afterwards the plugin gets its own kit back, and `Queue/last run.txt` says how each
+kit went. Superior Drummer 3 and BFD3 keep the loaded kit in their state; with another plugin, check
+that a queued kit really comes back before leaving a queue overnight.
+
 **Send to Mimic** (with [Mimic OS 2](https://github.com/Sharkuel/Pearl-Mimic-OS-2.0)): its
 mimic-share puts the Mimic's Instruments and Kits folders on the computer as `~/Mimic`, over a USB
 Ethernet adapter. When that drive is there, the question after a recording also offers **Send to
@@ -250,6 +260,12 @@ on or off, set its volume and tune, and each mic's level, pan and mute; **Centre
 every mic in the kit. Double-click a fader to reset it. **Save** writes over the kit, or saves a
 new one beside it when you changed its name; **Save as...** asks for a folder.
 
+**Play...** (under the selected slot) plays its instrument on the PC the way the Mimic does: pick an
+articulation and a velocity and press **Hit** (each hit takes the layer's next round robin), or
+**Play every layer** to hear them soft to hard. It lists each layer's level and flags a layer louder
+than the one above it, or more than 6 dB above the one below, so a bad layer shows up before you copy
+anything over. With no instrument found for the slot, it asks for any `.mci`.
+
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 32-bit float WAVs (so a hit louder than full scale isn't clipped) under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
 the layout the converter reads (below). Each hit runs until it has rung down to 90 dB below
@@ -259,6 +275,8 @@ five channels: close (the close-mic output averaged to mono), overheads left and
 
 `cmake --build build --target eMIMICmkr_tests` builds a check of the recorder against a
 stand-in plugin; `tests/test_batch_recording.py` runs it and converts the result.
+Every push runs these checks on GitHub (`.github/workflows/tests.yml`): both C++ test programs, the
+Python tests, and Mimic OS 2's own reader opening what eMIMICmkr writes.
 
 ## The .mci tools
 

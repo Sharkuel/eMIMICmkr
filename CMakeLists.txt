@@ -30,6 +30,7 @@ juce_add_binary_data(eMIMICmkr_assets SOURCES assets/logo.png assets/banner.png 
 
 target_sources(eMIMICmkr PRIVATE
     Source/App/Main.cpp
+    Source/App/InstrumentPlayer.cpp
     Source/App/KitEditor.cpp
     Source/App/MainComponent.cpp
     Source/App/MockupExport.cpp
@@ -38,8 +39,10 @@ target_sources(eMIMICmkr PRIVATE
     Source/Core/KitMap.cpp
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp
+    Source/Core/RecordQueue.cpp
     Source/Core/Mci.cpp
     Source/Core/MimicKit.cpp
+    Source/Core/MciPlayer.cpp
     Source/Core/WavToMci.cpp
     Source/Core/SoundPrint.cpp
     Source/Core/MimicImage.cpp
@@ -82,6 +85,7 @@ target_sources(eMIMICmkr_tests PRIVATE
     Source/Core/KitMap.cpp
     Source/Core/HitRenderer.cpp
     Source/Core/BatchRecorder.cpp
+    Source/Core/RecordQueue.cpp
     Source/Core/Mci.cpp
     Source/Core/MimicKit.cpp
     Source/Core/WavToMci.cpp
@@ -106,10 +110,12 @@ juce_add_console_app(eMIMICmkr_mci_tests PRODUCT_NAME "eMIMICmkr_mci_tests")
 target_sources(eMIMICmkr_mci_tests PRIVATE
     tests/cpp/MciTest.cpp
     Source/Core/Mci.cpp
+    Source/Core/MciPlayer.cpp
     Source/Core/MimicKit.cpp
     Source/Core/WavToMci.cpp)
 target_compile_definitions(eMIMICmkr_mci_tests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(eMIMICmkr_mci_tests PRIVATE
+    juce::juce_audio_basics
     juce::juce_cryptography
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

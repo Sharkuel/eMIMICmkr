@@ -2,6 +2,7 @@
 // without a commercial plugin. Usage: eMIMICmkr_tests OUTPUT_FOLDER
 // tests/test_batch_recording.py then converts the result with wav2mci.
 #include "../../Source/Core/BatchRecorder.h"
+#include "../../Source/Core/RecordQueue.h"
 #include "../../Source/App/LiveHost.h"
 #include "../../Source/Core/SoundPrint.h"
 #include "../../Source/Core/WavToMci.h"
@@ -236,6 +237,40 @@ bool resumeKeepsWhatWasRecorded (const juce::File& root)
                     && snareFolder.getChildFile (emk::BatchRecorder::zoneInfoFile).existsAsFile();
     std::printf ("resume %s (kept %d, to record %d, zones changed %d, untouched %s, wavs left %d)\n", ok ? "ok" : "WRONG",
                  plan.kept, plan.toRecord, plan.zonesChanged, kept ? "yes" : "no", left);
+    return ok;
+}
+
+/** Kits queued keep their plugin state and map, in order; a preset that stays silent is waited
+    for, then given up on. */
+bool queueKeepsKits (const juce::File& root)
+{
+    emk::KitMap a, b;
+    a.kitName = "Queue One";
+    a.zones.add ({ "Snare", "SNARE1 CENTER", 38 });
+    b.kitName = "Queue: Two";
+    b.zones.add ({ "Silent", "NOTHING", 90 });
+    const juce::MemoryBlock stateA ("state A", 7), stateB ("state B", 7);
+    const bool added = emk::RecordQueue::add (root, "Fake Drums", stateA, a).wasOk()
+                       && emk::RecordQueue::add (root, "Fake Drums", stateB, b).wasOk()
+                       && emk::RecordQueue::add (root, "Fake Drums", stateB, emk::KitMap()).failed();
+    auto list = emk::RecordQueue::list (root);
+    const bool listed = list.size() == 2 && list[0].kitName == "Queue One" && list[1].kitName == "Queue: Two"
+                        && list[0].state == stateA && list[1].state == stateB && list[0].pluginName == "Fake Drums"
+                        && list[0].map.zones.size() == 1 && list[0].map.zones[0].note == 38
+                        && list[1].folder.getFileName() == "02 Queue Two";
+    FakeDrums plugin;
+    emk::HitRenderer::Settings render;
+    render.maxSeconds = 0.5;
+    const bool sounds = list.size() == 2 && emk::RecordQueue::waitForSound (plugin, list[0].map, render, 1.0, [] { return false; }, 0.05);
+    const auto start = juce::Time::getMillisecondCounterHiRes();
+    FakeDrums quiet;   // a fresh one: the first still rings
+    const bool silent = list.size() == 2 && ! emk::RecordQueue::waitForSound (quiet, list[1].map, render, 0.3, [] { return false; }, 0.05);
+    const bool gaveUp = juce::Time::getMillisecondCounterHiRes() - start < 5000.0;
+    const bool removed = list.size() == 2 && emk::RecordQueue::remove (list[0]) && emk::RecordQueue::list (root).size() == 1;
+    const bool ok = added && listed && sounds && silent && gaveUp && removed;
+    std::printf ("queue %s (added %s, listed %d, sounds %s, silent %s, removed %s)\n", ok ? "ok" : "WRONG",
+                 added ? "yes" : "no", (int) list.size(), sounds ? "yes" : "no", silent ? "yes" : "no", removed ? "yes" : "no");
+    emk::RecordQueue::folderIn (root).deleteRecursively();
     return ok;
 }
 
@@ -1278,7 +1313,7 @@ int main (int argc, char** argv)
                     && calls == enabled * settings.hitsPerZone
                     && plugin.ccCount > 0 && plugin.ccCount <= 11
                     && sounding.size() == 51 && sounding.getFirst() == 20 && sounding.getLast() == 70
-                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && mimicDriveSends (root) && separateMicsRecord (root) && resumeKeepsWhatWasRecorded (root) && infoOk;
+                    && csvOk && badError.isNotEmpty() && limitsOk && namesOk && setOk && liveHostWorks() && soundPrintsMatch() && sd3KitReads() && bfd3KitReads() && bfd3MapsEveryDrum() && bfd3CustomCrashIsNoTom() && modoKitReads() && ugritoneKitReads() && mlDrumsKitReads() && soundworksKitReads() && addictiveKitReads() && mdlToneMapReads() && kontaktLibrariesRead() && mimicDriveSends (root) && separateMicsRecord (root) && resumeKeepsWhatWasRecorded (root) && queueKeepsKits (root) && infoOk;
     std::printf ("velocities %s, name \"%s\"\n%s\n", juce::String (v[1]).toRawUTF8(),
                  emk::BatchRecorder::safeName ("A - B/C").toRawUTF8(), ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
