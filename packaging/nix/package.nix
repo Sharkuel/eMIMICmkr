@@ -20,7 +20,7 @@ let
 in
 stdenv.mkDerivation {
   pname = "emimicmkr";
-  version = "1.1.0";
+  version = "1.2.0";
   inherit src;
 
   nativeBuildInputs = [ cmake ninja pkg-config makeWrapper ];
