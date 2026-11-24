@@ -584,7 +584,8 @@ void MainComponent::setUpHelp()
          "mics, overheads and room from the plugin's own outputs (route them there in the plugin, Superior "
          "Drummer 3: Mixer > output of each channel), and builds instruments the way Pearl's own are: kick, snare "
          "and toms with close + room mics, crashes with overheads + room, rides, hi-hats and percussion with all "
-         "three. The Mimic's kit mixer then sets each mic's level. They take 3 to 5 times the memory of one mix.");
+         "three. The Mimic's kit mixer then sets each mic's level. The files are 3 to 5 times bigger; the memory "
+         "the Mimic preloads for them stays about the same.");
     add (saveToPath, "Save to", "Where recordings go: <this folder>/<kit name>, with the Mimic files in it.");
     add (saveToButton, "Change...", "Picks the folder recordings and Mimic files are saved to.");
     add (auditionButton, "Listen to zone", "Plays the selected row's note through the plugin, at full strength.");
@@ -1716,6 +1717,7 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
                 text << "\nNo slot for: " << report.leftOut.joinIntoString (", ") << ".";
             for (const auto& note : report.notes)
                 text << "\n" << note;
+            text << "\nMemory: " << report.load.describe() << ".";
             setStatus (text);
             if (button != 3)
                 return out.revealToUser();

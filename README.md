@@ -190,7 +190,8 @@ table column shows what it does instead of running it. Click **Help** again to l
    each Mixer channel), then pick those three outputs here. The instruments are built the way Pearl's
    are: kick, snare and toms get a close mic and a stereo room (their overheads go into the room
    pair), crashes, splashes and chinas stereo overheads and room, rides, hi-hats and percussion all
-   three. They take 3 to 5 times the memory of one mix. Not tried yet on a Mimic: if yours won't play
+   three. Their files are 3 to 5 times bigger, but the Mimic preloads the same amount of each hit (the
+first 32768 values), so the memory a kit needs stays about the same. Not tried yet on a Mimic: if yours won't play
    them apart, tick **Build them as one mix anyway**, which mixes them back into one sound when converting.
 5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
    **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;
@@ -227,6 +228,13 @@ crashes, then Aux and Xtra), every other slot is emptied, and each channel is pa
 centre. The kit is written next to the instruments as `<kit name>.mdp/[U] <kit name>.kit`,
 the way the Mimic stores its own. The Mimic finds a slot's instrument by its name and library,
 so keep the `.mci` files as they were made, and copy them to the Mimic along with the kit.
+
+Both Build Mimic kit and the Kit editor say how much memory the kit asks of the Mimic: the start of
+every sample it preloads (about 107 KB per wave cell), against Pearl's own 105 kits, which preload 88 to
+169 MB. Green is within that, yellow up to a quarter past Pearl's biggest kit, red beyond, where a kit may
+glitch (how far past it a Mimic still plays clean hasn't been tried). The Kit editor finds the instruments
+of an opened kit among the .mci files beside it, as Build Mimic kit leaves them; any it can't find are
+listed as not counted.
 
 **Kit editor** (in the BUILDER box) opens a page to edit a Mimic kit: **Open kit...** one of
 yours, or **New kit...** to start an empty one from one of your kits (its pad settings carry

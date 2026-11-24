@@ -301,6 +301,8 @@ KitEditor::KitEditor (juce::PropertiesFile& s) : settings (s)
     empty.setJustificationType (juce::Justification::centred);
     empty.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
     status.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.8f));
+    addChildComponent (memory);
+    memory.setMinimumHorizontalScale (0.6f);
     status.setMinimumHorizontalScale (0.6f);
 
     setSize (1100, 740);
@@ -337,6 +339,7 @@ void KitEditor::resized()
     area.removeFromTop (gap);
 
     status.setBounds (area.removeFromBottom (24));
+    memory.setBounds (area.removeFromBottom (22));
     area.removeFromBottom (gap);
 
     // Left: the slots, two columns in the Mimic's order with a little gap between kinds.
@@ -438,6 +441,8 @@ bool KitEditor::openKit (const juce::File& f)
         kit = std::move (read);
         hasKit = true;
         file = f;
+        for (const auto& in : MimicKit::instrumentsNear (f))
+            learn (in);
         settings.setValue ("kitEditorFolder", MimicKit::kitFolderOf (f).getFullPathName());
         kitName.setText (MimicKit::kitName (f), juce::dontSendNotification);
         dirty = false;
@@ -513,6 +518,8 @@ void KitEditor::fillFromFolder()
             std::vector<MimicKit::Instrument> instruments;
             for (const auto& f : files)
                 instruments.push_back (MimicKit::readInstrument (f));
+            for (const auto& in : instruments)
+                learn (in);
             std::stable_sort (instruments.begin(), instruments.end(), [] (const auto& a, const auto& b)
                               { return a.file.getFileName() < b.file.getFileName(); });
             MimicKit::Report report;
@@ -605,6 +612,7 @@ void KitEditor::placeFiles (const juce::String& slot, const juce::StringArray& f
             if (! MimicKit::canTake (slot, in, why))
                 return setStatus (in.name() + " can't go in " + slot + ". " + why);
             MimicKit::place (kit, slot, in);
+            learn (in);
             settings.setValue ("mimicFolder", f.getParentDirectory().getFullPathName());
             changed();
             refresh();
@@ -674,7 +682,35 @@ void KitEditor::refresh()
         b->setEnabled (hasKit);
     kitVolume.setValue (kit.getFloat ("KitVol", 1.0f), juce::dontSendNotification);
     showSlot();
+    showMemory();
     resized();
+}
+
+void KitEditor::learn (const MimicKit::Instrument& in)
+{
+    for (auto& k : known)
+        if (k.name() == in.name() && k.settings.getString ("INST0libnam") == in.settings.getString ("INST0libnam"))
+        {
+            k = in;
+            return;
+        }
+    known.push_back (in);
+}
+
+void KitEditor::showMemory()
+{
+    memory.setVisible (hasKit);
+    if (! hasKit)
+        return;
+    const auto load = MimicKit::kitLoad (kit, known);
+    using L = MimicKit::Load::Level;
+    memory.setText ("Memory: " + load.describe(), juce::dontSendNotification);
+    memory.setColour (juce::Label::textColourId, load.level() == L::fine  ? juce::Colour (0xff8fd18f)
+                                                 : load.level() == L::big ? juce::Colour (0xffe8c15a)
+                                                                          : juce::Colour (0xffe86a5a));
+    memory.setTooltip ("The Mimic preloads the start of every sample of a kit (about 107 KB per wave cell). Pearl's "
+                       "own 105 kits preload 88 to 169 MB. Past that, nobody has checked yet how far a Mimic still "
+                       "plays clean: if a big kit glitches, Stock sound limits builds lighter instruments.");
 }
 
 void KitEditor::showSlot()

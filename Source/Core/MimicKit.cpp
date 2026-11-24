@@ -421,6 +421,79 @@ juce::File kitFile (const juce::File& folder, const juce::String& kitName)
     return folder.getChildFile (name + ".mdp").getChildFile ("[U] " + name + ".kit");
 }
 
+Load::Level Load::level() const
+{
+    const double mb = (double) bytes / (1024.0 * 1024.0);
+    return mb <= factoryMostMB ? Level::fine : mb <= factoryMostMB * 1.25 ? Level::big : Level::tooBig;
+}
+
+juce::String Load::describe() const
+{
+    auto text = juce::String ((double) bytes / (1024.0 * 1024.0), 0) + " MB preloaded in "
+                + juce::String (cells) + " wave cells (Pearl's own kits: " + juce::String (factoryLeastMB, 0)
+                + " to " + juce::String (factoryMostMB, 0) + " MB)";
+    if (level() == Level::big)
+        text << ", more than any of Pearl's kits";
+    else if (level() == Level::tooBig)
+        text << ", far more than any of Pearl's kits: it may glitch";
+    if (! unknown.isEmpty())
+        text << ". Not counted (file not found): " << unknown.joinIntoString (", ");
+    return text;
+}
+
+Load loadOf (const mci::MciFile& in)
+{
+    Load load;
+    for (auto desc : in.getInts ("INST0pool0desc"))
+        load.bytes += (juce::int64) desc * 4;   // float32 values
+    load.cells = in.getInt ("INST0pool0psz");
+    load.instruments = 1;
+    return load;
+}
+
+Load kitLoad (const mci::MciFile& kit, const std::vector<Instrument>& known)
+{
+    Load total;
+    for (const auto& slot : slotList (kit))
+    {
+        if (! slot.loaded)
+            continue;
+        const Instrument* found = nullptr;
+        for (const auto& in : known)
+            if (in.name() == slot.instrument && in.settings.getString ("INST0libnam") == slot.library)
+                found = &in;
+        if (found == nullptr)
+        {
+            total.unknown.add (slot.name + " (" + slot.instrument + ")");
+            continue;
+        }
+        const auto one = loadOf (found->settings);
+        total.bytes += one.bytes;
+        total.cells += one.cells;
+        ++total.instruments;
+    }
+    return total;
+}
+
+std::vector<Instrument> instrumentsNear (const juce::File& kitFile)
+{
+    std::vector<Instrument> out;
+    juce::Array<juce::File> folders { kitFile.getParentDirectory() };
+    if (kitFile.getParentDirectory().hasFileExtension ("mdp"))
+        folders.add (kitFile.getParentDirectory().getParentDirectory());
+    std::set<juce::String> seen;
+    for (const auto& folder : folders)
+        for (const auto& f : folder.findChildFiles (juce::File::findFiles, false, "*.mci;*.MCI"))
+            if (seen.insert (f.getFullPathName()).second)
+                try { out.push_back (readInstrument (f)); } catch (const std::exception&) {}
+    for (const auto& folder : folders)
+        for (const auto& sub : folder.findChildFiles (juce::File::findDirectories, false))
+            for (const auto& f : sub.findChildFiles (juce::File::findFiles, false, "*.mci;*.MCI"))
+                if (seen.insert (f.getFullPathName()).second)
+                    try { out.push_back (readInstrument (f)); } catch (const std::exception&) {}
+    return out;
+}
+
 Report buildFile (const juce::Array<juce::File>& mciFiles, const juce::File& templateKit, const juce::File& out)
 {
     std::vector<Instrument> instruments;
@@ -436,6 +509,7 @@ Report buildFile (const juce::Array<juce::File>& mciFiles, const juce::File& tem
     const auto result = mci::writeKitFile (kit, out);
     if (result.failed())
         throw mci::Error (result.getErrorMessage().toStdString());
+    report.load = kitLoad (kit, instruments);
     return report;
 }
 } // namespace emk::MimicKit

@@ -71,6 +71,11 @@ private:
     juce::TextButton centreButton { "Centre all pans" };
 
     juce::Label status;
+    // How much the kit asks of the Mimic's memory, against Pearl's own kits.
+    juce::Label memory;
+    std::vector<emk::MimicKit::Instrument> known;   // instruments placed, or found beside the kit
+    void learn (const emk::MimicKit::Instrument&);
+    void showMemory();
     juce::Label empty { {}, "Open one of your Mimic kits, or start a new kit from one, to edit it here." };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KitEditor)

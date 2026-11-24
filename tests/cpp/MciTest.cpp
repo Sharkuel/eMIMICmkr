@@ -286,6 +286,29 @@ void checkKits()
     check (kit.getInt ("insstCSRide 2enb") == 0 && in ("Ride 2").isEmpty(), "disabled slot left alone");
     check (report.placed.size() == 9 && report.leftOut.isEmpty() && report.notes.isEmpty(), "report");
 
+    // The memory meter: every placed instrument's RAM heads, found by name and library.
+    juce::int64 heads = 0;
+    int cells = 0;
+    for (const auto& f : files)
+    {
+        const auto settings = mci::readSettings (f);
+        for (auto d : settings.getInts ("INST0pool0desc"))
+            heads += (juce::int64) d * 4;
+        cells += settings.getInt ("INST0pool0psz");
+    }
+    const auto near = MimicKit::kitLoad (kit, MimicKit::instrumentsNear (out));
+    check (report.load.bytes == heads && report.load.cells == cells && report.load.instruments == 9
+           && report.load.unknown.isEmpty() && report.load.level() == MimicKit::Load::Level::fine, "kit memory");
+    check (near.bytes == heads && near.instruments == 9, "kit memory from the files beside the kit");
+    const auto none = MimicKit::kitLoad (kit, {});
+    check (none.bytes == 0 && none.unknown.size() == 9 && none.describe().contains ("Not counted"), "kit memory, files missing");
+    MimicKit::Load big;
+    big.bytes = (juce::int64) (180.0 * 1024 * 1024);
+    MimicKit::Load huge;
+    huge.bytes = (juce::int64) (300.0 * 1024 * 1024);
+    check (big.level() == MimicKit::Load::Level::big && huge.level() == MimicKit::Load::Level::tooBig
+           && huge.describe().contains ("may glitch"), "kit memory levels");
+
     check (kit.getInt ("CMEKicknm") == 1 && kit.find ("CMEKickmi1micv") == nullptr
            && kit.getString ("CMEKickmi0micn") == "Kick", "kick channel has the instrument's one mic");
     check (juce::exactlyEqual (kit.getFloat ("CMEKickmi0micp"), 0.5f) && juce::exactlyEqual (kit.getFloat ("CMEKickmi0micv"), 0.8f), "kick mic centred at the template level");
