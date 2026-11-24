@@ -1,0 +1,54 @@
+name: Format tests
+
+# The .mci format checks on every push, on any branch: the Python reference (tools/mci), the C++
+# writer against it byte for byte (eMIMICmkr_mci_tests), the recorder against a stand-in plugin
+# (eMIMICmkr_tests), and Mimic OS 2's own reader (tools/xplay/mci.c) opening what both write.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libfreetype-dev libfontconfig1-dev libxcomposite-dev ninja-build zlib1g-dev
+          pip install pytest
+
+      - name: Build the test programs
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target eMIMICmkr_tests eMIMICmkr_mci_tests --parallel 4
+
+      - name: C++ checks
+        run: |
+          build/eMIMICmkr_mci_tests_artefacts/Release/eMIMICmkr_mci_tests
+          build/eMIMICmkr_tests_artefacts/Release/eMIMICmkr_tests "$RUNNER_TEMP/emimicmkr-test"
+
+      - name: Python reference and C++ against it
+        run: python3 -m pytest tests -q
+
+      # Mimic OS 2's player reads what eMIMICmkr writes. Skipped, with a warning, if its
+      # repository can't be fetched.
+      - uses: actions/checkout@v4
+        id: os2
+        continue-on-error: true
+        with:
+          repository: Sharkuel/Pearl-Mimic-OS-2.0
+          path: os2
+
+      - name: Mimic OS 2 reads eMIMICmkr's files
+        if: steps.os2.outcome == 'success'
+        run: |
+          cd os2/tools/xplay
+          cc -O2 -Wall -o "$RUNNER_TEMP/test_mci" test_mci.c mci.c -lz
+          python3 test_emimicmkr.py "$RUNNER_TEMP/test_mci" "$GITHUB_WORKSPACE"
