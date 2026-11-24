@@ -10,7 +10,8 @@ namespace emk
 
         <root>/<kit>/<kit> <piece>/<LABEL>/<kit> <piece> - <LABEL> - 001v127.wav
 
-    one folder per zone, mono 32-bit float 44.1 kHz, hardest hit first. */
+    one folder per zone, mono 32-bit float 44.1 kHz, hardest hit first. With separate mics
+    (HitRenderer::Settings::mics) each WAV holds five channels: close, OH L/R, room L/R. */
 class BatchRecorder
 {
 public:
@@ -22,7 +23,23 @@ public:
         int softestVelocity = 1;
         int hardestVelocity = 127;
         HitRenderer::Settings render;
+        /** Keep the hits already recorded the same way (same note, pedal, velocities, mics,
+            length and plugin, as each zone folder's recording.txt says) and record only the
+            missing ones: to finish a recording that stopped, or after changing a few rows.
+            Off, every zone is recorded again. Either way a zone's old hits that this
+            recording doesn't make are removed, so they can't end up in its instrument. */
+        bool keepExisting = false;
     };
+
+    static constexpr const char* zoneInfoFile = "recording.txt";
+
+    /** How a recording would go with keepExisting: hits already there and hits to record. */
+    struct Plan
+    {
+        int kept = 0, toRecord = 0;
+        int zonesKept = 0, zonesChanged = 0, zonesNew = 0;
+    };
+    static Plan plan (const KitMap&, const Settings&, const juce::File& root, const juce::String& pluginName);
 
     struct Progress
     {
@@ -43,6 +60,10 @@ public:
     /** Returns a short report. onProgress returns false to stop early. */
     static juce::String record (juce::AudioPluginInstance&, const KitMap&, const Settings&,
                                 const juce::File& root, std::function<bool (const Progress&)> onProgress);
+
+    /** What recording.txt holds for a zone: how its hits are made. */
+    static juce::String zoneInfo (const KitZone&, const juce::Array<int>& velocities, const Settings&,
+                                  const juce::String& pluginName);
 
     /** Plays every MIDI note once at velocity 100 and returns those that make a sound.
         onProgress gets the note being tried and returns false to stop. */

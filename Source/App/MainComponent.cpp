@@ -5,6 +5,7 @@
 #include "../Core/MimicImage.h"
 #include "../Core/MimicKit.h"
 #include "../Core/MimicDrive.h"
+#include "../Core/RecordQueue.h"
 #include "PluginScanner.h"
 #include <BinaryData.h>
 
@@ -182,12 +183,15 @@ MainComponent::MainComponent()
     audioDevices.initialiseWithDefaultDevices (0, 2);
     audioDevices.addAudioCallback (&player);
 
-    for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &learnButton,
+    for (auto* b : { &scanButton, &loadButton, &showButton, &auditionButton, &recordButton, &queueButton, &learnButton,
                      &findButton, &addButton, &removeButton, &loadMapButton, &saveMapButton, &namesButton, (juce::TextButton*) &convertButton, (juce::TextButton*) &kitButton,
                      (juce::TextButton*) &kitEditorButton })
         addAndMakeVisible (b);
     addAndMakeVisible (fitLimits);
     addAndMakeVisible (lighter);
+    addAndMakeVisible (micsButton);
+    micsButton.onClick = [this] { chooseMics(); };
+    showMics();
     lighter.setToggleState (settings->getBoolValue ("stockLimits", false), juce::dontSendNotification);
     lighter.onClick = [this]
     {
@@ -269,6 +273,7 @@ MainComponent::MainComponent()
     showButton.onClick = [this] { showPluginWindow(); };
     auditionButton.onClick = [this] { auditionSelectedZone(); };
     recordButton.onClick = [this] { recordKit(); };
+    queueButton.onClick = [this] { showQueue(); };
     findButton.onClick = [this] { findNotes(); };
     addButton.onClick = [this] { addZone(); };
     removeButton.onClick = [this] { removeZone(); };
@@ -465,17 +470,20 @@ void MainComponent::resized()
     exportGroup.setBounds (frame);
     inside = frame.withTrimmedTop (frameTop).reduced (frameSide + 6, 0).withTrimmedBottom (frameSide);
     fitLimits.setBounds (inside.removeFromRight (130).withSizeKeepingCentre (130, buttonH));
-    recordButton.setBounds (inside.removeFromLeft (140).withSizeKeepingCentre (140, 32));
+    auto recordColumn = inside.removeFromLeft (140);
+    recordButton.setBounds (recordColumn.removeFromTop (2 * buttonH).withSizeKeepingCentre (140, 32));
+    queueButton.setBounds (recordColumn.removeFromTop (buttonH).reduced (0, 1));
     boxes.removeFromRight (gap);
 
     settingsGroup.setBounds (boxes);
     inside = boxes.withTrimmedTop (frameTop).reduced (frameSide, 0);
-    inside.removeFromTop (buttonH / 2);   // two rows, centred in the three-row box
     row = inside.removeFromTop (buttonH).reduced (0, 1);
     hitsLabel.setBounds (row.removeFromLeft (128));
     hitsPerZone.setBounds (row.removeFromLeft (44));
     row.removeFromLeft (16);
     lighter.setBounds (row);
+    row = inside.removeFromTop (buttonH).reduced (0, 1);
+    micsButton.setBounds (row.removeFromLeft (188));
     row = inside.removeFromTop (buttonH).reduced (0, 1);
     saveToLabel.setBounds (row.removeFromLeft (60));
     saveToButton.setBounds (row.removeFromRight (80));
@@ -575,6 +583,13 @@ void MainComponent::setUpHelp()
     add (lighter, "Stock sound limits",
          "Sizes each instrument like Pearl's stock sounds (kick 48, snare 140, tom 70, cymbal 64, ride 112 wave "
          "cells) instead of the Instrument Editor's limits. Use it if the Mimic glitches with many instruments loaded.");
+    add (micsButton, "Mics",
+         "One mix (the default) records the plugin's main output as one sound. Separate mics records the close "
+         "mics, overheads and room from the plugin's own outputs (route them there in the plugin, Superior "
+         "Drummer 3: Mixer > output of each channel), and builds instruments the way Pearl's own are: kick, snare "
+         "and toms with close + room mics, crashes with overheads + room, rides, hi-hats and percussion with all "
+         "three. The Mimic's kit mixer then sets each mic's level. The files are 3 to 5 times bigger; the memory "
+         "the Mimic preloads for them stays about the same.");
     add (saveToPath, "Save to", "Where recordings go: <this folder>/<kit name>, with the Mimic files in it.");
     add (saveToButton, "Change...", "Picks the folder recordings and Mimic files are saved to.");
     add (auditionButton, "Listen to zone", "Plays the selected row's note through the plugin, at full strength.");
@@ -588,6 +603,13 @@ void MainComponent::setUpHelp()
     add (recordButton, "Record kit",
          "Records every ticked row at several velocities. When it's done, it offers to build the Mimic "
          "instruments (.mci) from them, in the kit's folder or straight onto a USB stick for the Mimic.");
+    add (queueButton, "Queue...",
+         "Records several kits one after another, say overnight. Set up a kit in the plugin and its rows here, "
+         "then Queue... > Add this kit; do the same for the next kit. Record the queue loads each kit in the "
+         "plugin in turn, waits for it to sound, records it and makes its Mimic files in its Mimic folder. A kit "
+         "leaves the queue once it's done, so a queue that stopped carries on where it was, keeping the hits "
+         "already recorded. Superior Drummer 3 and BFD3 keep the kit in their state; with other plugins, check "
+         "a queued kit really loads.");
     add (stateButton, "Save state...",
          "Explains how to ask us to add a plugin eMIMICmkr doesn't read yet, saves the plugin's state for the "
          "request and opens it on GitHub.");
@@ -1270,8 +1292,8 @@ void MainComponent::auditionSelectedZone()
     const auto zone = kitMap.zones[row];
     juce::AudioBuffer<float> hit;
     {
-        emk::HitRenderer renderer (*plugin, {});
-        hit = renderer.renderHit (zone.note, 100, zone.cc4);
+        emk::HitRenderer renderer (*plugin, renderSettings());
+        hit = emk::HitRenderer::mixDown (renderer.renderHit (zone.note, 100, zone.cc4));
     }
     plugin->prepareToPlay (sampleRate, blockSize);
     setLive (true);
@@ -1296,6 +1318,93 @@ void MainComponent::auditionSelectedZone()
                + juce::String (hit.getNumSamples() / sampleRate, 2) + " s. Saved to " + file.getFullPathName());
 }
 
+void MainComponent::showMics()
+{
+    const bool on = settings->getBoolValue ("separateMics", false);
+    micsButton.setButtonText (on ? (settings->getBoolValue ("mixMics", false) ? "Mics: separate, built as one"
+                                                                                : "Mics: separate")
+                                 : "Mics: one mix");
+}
+
+emk::HitRenderer::Settings::MicBuses MainComponent::micBuses() const
+{
+    emk::HitRenderer::Settings::MicBuses mics;
+    if (plugin == nullptr || ! settings->getBoolValue ("separateMics", false))
+        return mics;
+    const auto names = emk::HitRenderer::outputBusNames (*plugin);
+    mics.close = names.indexOf (settings->getValue ("micClose"));
+    mics.overheads = names.indexOf (settings->getValue ("micOverheads"));
+    mics.room = names.indexOf (settings->getValue ("micRoom"));
+    return mics;
+}
+
+emk::HitRenderer::Settings MainComponent::renderSettings() const
+{
+    emk::HitRenderer::Settings s;
+    s.sampleRate = sampleRate;
+    s.blockSize = blockSize;
+    s.mics = micBuses();
+    return s;
+}
+
+void MainComponent::chooseMics()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first: the mics are picked from its outputs.");
+    const auto names = emk::HitRenderer::outputBusNames (*plugin);
+    juce::StringArray choices { "(none)" };
+    choices.addArray (names);
+
+    auto* w = new juce::AlertWindow ("Mics",
+                                     "Separate mics records the close mics, the overheads and the room from "
+                                     + plugin->getName() + "'s own outputs. In the plugin, send every close mic "
+                                     "to one output, the overheads to another and the room mics to a third; "
+                                     "the main output then plays nothing.\n\nOne mix records the main output, "
+                                     "as before.",
+                                     juce::MessageBoxIconType::NoIcon, this);
+    auto pick = [&] (const char* key, const juce::String& label, int fallback)
+    {
+        w->addComboBox (key, choices, label);
+        auto* box = w->getComboBoxComponent (key);
+        const int at = names.indexOf (settings->getValue (key));
+        box->setSelectedItemIndex (at >= 0 ? at + 1 : juce::jmin (fallback, choices.size() - 1), juce::dontSendNotification);
+    };
+    pick ("micClose", "Close mics", 1);
+    pick ("micOverheads", "Overheads", 2);
+    pick ("micRoom", "Room", 3);
+    auto mix = std::make_unique<juce::ToggleButton> ("Build them as one mix anyway (for a Mimic that won't play them apart)");
+    mix->setSize (420, 24);
+    mix->setToggleState (settings->getBoolValue ("mixMics", false), juce::dontSendNotification);
+    w->addCustomComponent (mix.get());
+    w->addButton ("Separate mics", 1);
+    w->addButton ("One mix", 2);
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w, names, mix = std::move (mix)] (int result)
+    {
+        if (result == 1)
+        {
+            for (auto* key : { "micClose", "micOverheads", "micRoom" })
+            {
+                const int at = w->getComboBoxComponent (key)->getSelectedItemIndex() - 1;
+                settings->setValue (key, juce::isPositiveAndBelow (at, names.size()) ? names[at] : juce::String());
+            }
+            settings->setValue ("separateMics", true);
+            settings->setValue ("mixMics", mix->getToggleState());
+            const auto m = micBuses();
+            setStatus (m.enabled() ? "Separate mics: kits are recorded as close, overhead and room channels."
+                                   : "Pick at least one output for the mics.");
+            if (! m.enabled())
+                settings->setValue ("separateMics", false);
+        }
+        else if (result == 2)
+        {
+            settings->setValue ("separateMics", false);
+            setStatus ("One mix: kits are recorded from the plugin's main output.");
+        }
+        showMics();
+    }), true);
+}
+
 void MainComponent::recordKit()
 {
     if (plugin == nullptr)
@@ -1309,15 +1418,198 @@ void MainComponent::recordKit()
         return;
     }
 
+    auto s = recordSettings();
+    if (settings->getBoolValue ("separateMics", false) && ! s.render.mics.enabled())
+        return setStatus ("Separate mics is on, but " + plugin->getName() + " has none of the outputs picked for them. "
+                          "Pick them again with the Mics button.");
+
+    // Hits already recorded the same way can be kept: to finish a recording that stopped, or
+    // after changing a few rows.
+    const auto plan = emk::BatchRecorder::plan (kitMap, s, outputFolder(), plugin->getName());
+    if (plan.kept == 0)
+        return startRecording (kitMap, s);
+    const auto folder = outputFolder().getChildFile (emk::BatchRecorder::safeName (kitMap.kitName));
+    juce::String what;
+    what << plan.kept << " hits of " << kitMap.kitName << " are already recorded the same way in\n"
+         << folder.getFullPathName() << "\n\n";
+    if (plan.toRecord == 0)
+        what << "Nothing is missing or changed.";
+    else
+        what << plan.toRecord << " hits are missing or changed (" << plan.zonesChanged + plan.zonesNew
+             << (plan.zonesChanged + plan.zonesNew == 1 ? " zone)." : " zones).");
+    what << "\n\nRecord only those, or everything again? Record everything again if you changed the sound in the "
+            "plugin (another kit, mic or effect): eMIMICmkr can't tell.";
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                      .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                      .withTitle ("Keep what's recorded?")
+                                      .withMessage (what)
+                                      .withButton (plan.toRecord == 0 ? "Keep it all" : "Record what's missing")
+                                      .withButton ("Record everything again")
+                                      .withButton ("Cancel")
+                                      .withAssociatedComponent (this),
+                                  [this, map = kitMap, s] (int button) mutable
+    {
+        if (button == 0)
+            return;
+        s.keepExisting = button == 1;
+        startRecording (map, s);
+    });
+}
+
+emk::BatchRecorder::Settings MainComponent::recordSettings()
+{
     emk::BatchRecorder::Settings s;
     s.hitsPerZone = maxHits();
     s.fitMimicLimits = fitLimits.getToggleState();
     s.stockLimits = lighter.getToggleState();
-    s.render.sampleRate = sampleRate;
-    s.render.blockSize = blockSize;
+    s.render = renderSettings();
+    return s;
+}
 
+void MainComponent::showQueue()
+{
+    const auto entries = emk::RecordQueue::list (outputFolder());
+    juce::String what;
+    if (entries.empty())
+        what << "No kits are queued.\n\n";
+    else
+    {
+        what << "Queued, recorded in this order:\n";
+        for (size_t i = 0; i < entries.size(); ++i)
+            what << "  " << (int) i + 1 << ". " << entries[i].kitName << "  (" << entries[i].pluginName << ", "
+                 << entries[i].map.zones.size() << " rows)\n";
+        what << "\n";
+    }
+    what << "Add this kit keeps the plugin's kit as it is now and the rows below, under the name "
+         << (kitMap.kitName.isNotEmpty() ? kitMap.kitName.quoted() : juce::String ("you give it"))
+         << ". Record the queue then records every kit in turn with the export settings here, and makes its "
+            "Mimic files.";
+    auto options = juce::MessageBoxOptions()
+                       .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                       .withTitle ("Record several kits")
+                       .withMessage (what)
+                       .withButton ("Add this kit");
+    if (! entries.empty())
+        options = options.withButton ("Record the queue").withButton ("Clear the queue");
+    options = options.withButton ("Close").withAssociatedComponent (this);
+    juce::AlertWindow::showAsync (options, [this, queued = ! entries.empty()] (int button)
+    {
+        if (button == 1)
+            return addToQueue();
+        if (! queued)
+            return;
+        if (button == 2)
+            return runQueue();
+        if (button == 3)
+        {
+            for (const auto& e : emk::RecordQueue::list (outputFolder()))
+                emk::RecordQueue::remove (e);
+            setStatus ("Cleared the queue.");
+        }
+    });
+}
+
+void MainComponent::addToQueue()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first, and the kit in it.");
+    if (kitMap.kitName.trim().isEmpty())
+        return setStatus ("Give the kit a name first; it names the folders and files.");
+    juce::MemoryBlock state;
+    plugin->getStateInformation (state);
+    const auto result = emk::RecordQueue::add (outputFolder(), plugin->getName(), state, kitMap);
+    if (result.failed())
+        return setStatus (result.getErrorMessage());
+    const auto n = emk::RecordQueue::list (outputFolder()).size();
+    setStatus ("Queued " + kitMap.kitName + " (" + juce::String ((int) n) + (n == 1 ? " kit" : " kits")
+               + " in the queue). Load the next kit in the plugin, set its rows, give it a name and add it too, "
+                 "or Queue... > Record the queue.");
+}
+
+void MainComponent::runQueue()
+{
+    if (plugin == nullptr)
+        return setStatus ("Load the plugin the kits were queued with first.");
+    const auto entries = emk::RecordQueue::list (outputFolder());
+    if (entries.empty())
+        return setStatus ("No kits are queued.");
+    auto s = recordSettings();
+    if (settings->getBoolValue ("separateMics", false) && ! s.render.mics.enabled())
+        return setStatus ("Separate mics is on, but " + plugin->getName() + " has none of the outputs picked for them. "
+                          "Pick them again with the Mics button.");
+    s.keepExisting = true;   // a queue that stopped carries on
+    juce::MemoryBlock before;
+    plugin->getStateInformation (before);
     player.setSource (nullptr);
-    const auto map = kitMap;
+    runJob ("Recording the queue", [this, entries, s, before, root = outputFolder(), light = lighter.getToggleState()]
+                                   (juce::ThreadWithProgressWindow& w)
+    {
+        // Plugins take their state on the message thread.
+        auto load = [this] (const juce::MemoryBlock& state)
+        {
+            juce::WaitableEvent loaded;
+            juce::MessageManager::callAsync ([this, &state, &loaded]
+            {
+                plugin->setStateInformation (state.getData(), (int) state.getSize());
+                loaded.signal();
+            });
+            loaded.wait (-1);
+        };
+        const int n = (int) entries.size();
+        int done = 0;
+        juce::StringArray lines;
+        for (int i = 0; i < n && ! w.threadShouldExit(); ++i)
+        {
+            const auto& e = entries[(size_t) i];
+            const auto title = "Kit " + juce::String (i + 1) + " of " + juce::String (n) + ", " + e.kitName;
+            w.setProgress ((double) i / n);
+            if (e.pluginName != plugin->getName())
+            {
+                lines.add (e.kitName + ": skipped, it was queued in " + e.pluginName + ".");
+                continue;
+            }
+            w.setStatusMessage (title + ": loading it in the plugin");
+            load (e.state);
+            w.setStatusMessage (title + ": waiting for the plugin to load its sounds");
+            if (! emk::RecordQueue::waitForSound (*plugin, e.map, s.render, 300.0, [&w] { return w.threadShouldExit(); }))
+            {
+                if (! w.threadShouldExit())
+                    lines.add (e.kitName + ": the plugin stayed silent for 5 minutes after loading it, so it wasn't "
+                                           "recorded. It stays in the queue.");
+                continue;
+            }
+            const auto report = emk::BatchRecorder::record (*plugin, e.map, s, root, [&] (const auto& p)
+            {
+                w.setProgress ((i + (p.total > 0 ? (double) p.done / p.total : 0.0)) / n);
+                w.setStatusMessage (title + ": " + p.current + "  (" + juce::String (p.done + 1) + " of "
+                                    + juce::String (p.total) + ")");
+                return ! w.threadShouldExit();
+            });
+            if (w.threadShouldExit())
+            {
+                lines.add (e.kitName + ": stopped. " + report + " It stays in the queue.");
+                break;
+            }
+            w.setStatusMessage (title + ": making the Mimic files");
+            const auto kitFolder = root.getChildFile (emk::BatchRecorder::safeName (e.kitName));
+            lines.add (e.kitName + ": " + report + " " + buildMimicFiles ({ kitFolder }, kitFolder.getChildFile ("Mimic"), light, w, {}));
+            emk::RecordQueue::remove (e);
+            ++done;
+        }
+        load (before);   // the plugin's kit as it was before the queue
+        const auto summary = juce::String (done) + " of " + juce::String (n) + " queued kits recorded, each with its "
+                             "Mimic files in its Mimic folder.\n" + lines.joinIntoString ("\n");
+        emk::RecordQueue::folderIn (root).getChildFile ("last run.txt").replaceWithText (summary);
+        return summary;
+    },
+    [this] (const juce::String& report) { setStatus (report); });
+}
+
+void MainComponent::startRecording (const emk::KitMap& map, const emk::BatchRecorder::Settings& s)
+{
+    if (plugin == nullptr)
+        return setStatus ("Load a plugin first.");
+    player.setSource (nullptr);
     runJob ("Recording " + map.kitName, [this, map, s, root = outputFolder()] (juce::ThreadWithProgressWindow& w)
     {
         auto report = emk::BatchRecorder::record (*plugin, map, s, root, [&w] (const auto& p)
@@ -1412,6 +1704,7 @@ juce::String MainComponent::buildMimicFiles (const juce::Array<juce::File>& inpu
 {
     emk::WavToMci::Options options;
     options.stockLimits = light;
+    options.mixMics = settings->getBoolValue ("mixMics", false);
     w.setProgress (0.0);
     w.setStatusMessage ("Building Mimic instruments");
     outDir.createDirectory();
@@ -1510,6 +1803,7 @@ void MainComponent::convertWavFolder()
 void MainComponent::showKitEditor()
 {
     if (kitEditor == nullptr)
+    {
         kitEditor = std::make_unique<KitEditorWindow> (*settings, [this]
         {
             // The window can't delete itself from inside its own close button.
@@ -1520,6 +1814,14 @@ void MainComponent::showKitEditor()
                     safe->kitEditor = nullptr;
             });
         });
+        kitEditor->editor().onPlay = [this] (const juce::AudioBuffer<float>& hit)
+        {
+            juce::AudioBuffer<float> copy (hit);
+            player.setSource (nullptr);
+            playing = std::make_unique<juce::MemoryAudioSource> (copy, true, false);
+            player.setSource (playing.get());
+        };
+    }
     kitEditor->toFront (true);
 }
 
@@ -1616,6 +1918,7 @@ void MainComponent::buildMimicKitWith (const juce::Array<juce::File>& instrument
                 text << "\nNo slot for: " << report.leftOut.joinIntoString (", ") << ".";
             for (const auto& note : report.notes)
                 text << "\n" << note;
+            text << "\nMemory: " << report.load.describe() << ".";
             setStatus (text);
             if (button != 3)
                 return out.revealToUser();
@@ -1681,12 +1984,11 @@ void MainComponent::findNotes()
         return setStatus ("Load a plugin first.");
 
     player.setSource (nullptr);
-    emk::HitRenderer::Settings renderSettings;
     auto found = std::make_shared<juce::Array<int>>();
     runJob ("Finding the notes " + plugin->getName() + " plays",
-            [this, renderSettings, found] (juce::ThreadWithProgressWindow& w)
+            [this, rs = renderSettings(), found] (juce::ThreadWithProgressWindow& w)
     {
-        *found = emk::BatchRecorder::findSoundingNotes (*plugin, renderSettings, [&w] (int note)
+        *found = emk::BatchRecorder::findSoundingNotes (*plugin, rs, [&w] (int note)
         {
             w.setProgress (note / 128.0);
             w.setStatusMessage ("Trying note " + juce::String (note) + " of 127");
@@ -1938,9 +2240,7 @@ void MainComponent::startLearning()
     // Short renders: the start of each hit is all the comparison needs.
     player.setSource (nullptr);
     auto prints = std::make_shared<std::map<int, emk::SoundPrint>>();
-    emk::HitRenderer::Settings quick;
-    quick.sampleRate = sampleRate;
-    quick.blockSize = blockSize;
+    auto quick = renderSettings();
     quick.maxSeconds = emk::SoundPrint::seconds + 0.2;
     quick.giveUpSeconds = 0.3;
     quick.silenceSeconds = 0.05;
@@ -1952,7 +2252,7 @@ void MainComponent::startLearning()
         {
             w.setProgress (note / 128.0);
             w.setStatusMessage ("Note " + juce::String (note));
-            const auto hit = renderer.renderHit (note, 100);
+            const auto hit = emk::HitRenderer::mixDown (renderer.renderHit (note, 100));
             if (hit.getNumSamples() > 0)
                 (*prints)[note] = emk::SoundPrint::of (hit.getReadPointer (0), hit.getNumSamples(), quick.sampleRate);
         }

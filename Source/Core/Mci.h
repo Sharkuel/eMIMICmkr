@@ -148,6 +148,27 @@ int zoneType (const juce::String& name);
 /** (micpos, mict) the Editor writes for an instrument type; anything else gets (0, 0). */
 std::pair<int, int> micDefaults (const juce::String& instrumentType);
 
+/** Separate mics. The recorder writes every hit as five channels: the close (direct) mic, the
+    overheads (left, right), then the room (left, right). buildInstrument (..., mics = true)
+    lays them out the way Pearl's factory instruments do (Mimic_Factory.lib, read 2026-11-24):
+    Kick, Snare and Tom get close + Room (3 channels, the overheads going into the room pair),
+    Cymbal OH + Room (4, any close mic going into the overheads), Ride, Hat and Perc close + OH
+    + Room (5). A mono mic is one channel, a stereo mic two, interleaved in mic order. */
+constexpr int recordedMics = 5;
+struct Mic
+{
+    juce::String name;
+    int micpos = 0, mict = 0;
+    bool stereo = false;
+};
+std::vector<Mic> micLayout (const juce::String& instrumentType, const juce::String& closeMicName);
+/** The recorder's five channels as mics: close (mono), OH (stereo), room (stereo). */
+const std::vector<bool>& recordedStereo();
+/** The mono mix of interleaved mic channels, as the plugin's own output sums them: every mono
+    mic plus the average (rounded down) of every stereo pair. */
+std::vector<juce::int64> micMix (const juce::int64* values, size_t count, const std::vector<bool>& stereo);
+std::vector<juce::int64> micMix (const Samples&, const std::vector<bool>& stereo);
+
 /** Bow/Bell/Edge/Choke Ring in the order the Editor saves a ride (also a 3-zone crash).
     An empty choke leaves the Choke Ring silent, as the Editor does. */
 std::vector<Articulation> rideArticulations (Layers bow, Layers bell, Layers edge, Layers choke = {},
@@ -179,7 +200,7 @@ HatLayout hatArticulations (std::vector<Layers> tip, std::vector<Layers> shank, 
     cut where the envelope, after its peak, first falls 6 dB below it (at least 20 ms after
     the peak), then up to `length` seconds of ring are kept, faded in and out. */
 std::vector<double> makeChoke (const std::vector<double>& samples, int rate = 44100, double length = 3.0,
-                               double fadeIn = 0.005, double fadeOut = 1.0);
+                               double fadeIn = 0.005, double fadeOut = 1.0, int channels = 1);   // 5: separate mics, cut on their mix
 
 /** Floats in [-1, 1] to the 16-bit grid on the 24-bit scale, as the Editor stores them. */
 Samples quantize (const float* samples, size_t count);
@@ -192,5 +213,6 @@ std::vector<int> velocityThresholds (const std::vector<double>& loudness);
 MciFile buildInstrument (const juce::String& name, const juce::String& instrumentType,
                          const std::vector<Articulation>& articulations, const juce::MemoryBlock& image,
                          const juce::String& library = {}, const juce::String& mic = {},
-                         double sampleVolume = 0.52, const std::vector<ControllerZone>& controllerZones = {});
+                         double sampleVolume = 0.52, const std::vector<ControllerZone>& controllerZones = {},
+                         bool mics = false);   // every sample holds the recorder's five mic channels
 } // namespace emk::mci

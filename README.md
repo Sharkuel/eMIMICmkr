@@ -183,10 +183,36 @@ table column shows what it does instead of running it. Click **Help** again to l
    (kick 48, snare 140, toms 70, crashes 64, rides 112): the Mimic keeps part of every hit in
    memory, and on the stock disk kits with more glitch once several instruments are loaded. The **Hits** column shows the count per row. Double-click a Hits cell to set a zone's
    count yourself (marked *); the piece's other ticked zones share what is left.
+   **Mics** picks how each hit is recorded. **One mix** (the default) records the plugin's main
+   output. **Separate mics** records the close mics, the overheads and the room apart, so the Mimic's
+   kit mixer can set each one like on Pearl's own kits. In the plugin, send every close mic to one
+   output, the overheads to a second and the room mics to a third (Superior Drummer 3: the output of
+   each Mixer channel), then pick those three outputs here. The instruments are built the way Pearl's
+   are: kick, snare and toms get a close mic and a stereo room (their overheads go into the room
+   pair), crashes, splashes and chinas stereo overheads and room, rides, hi-hats and percussion all
+   three. Their files are 3 to 5 times bigger, but the Mimic preloads the same amount of each hit (the
+first 32768 values), so the memory a kit needs stays about the same. Not tried yet on a Mimic: if yours won't play
+   them apart, tick **Build them as one mix anyway**, which mixes them back into one sound when converting.
+   Recording a kit again finds the hits already made: each zone folder's `recording.txt` says how
+   they were made (note, pedal, velocities, mics, length, plugin). **Record what's missing** keeps those
+   made the same way and records the rest, to finish a recording that stopped or after changing a few
+   rows; **Record everything again** starts over. eMIMICmkr can't hear a change made inside the plugin
+   (another kit piece on the same note, a mic or an effect), so after one of those record everything
+   again. Either way, a zone's old hits that the new recording doesn't make are removed.
 5. When the recording ends, the app asks whether to convert the WAV files to Mimic instruments now.
    **Convert** builds them into `<Save to folder>/<kit name>/Mimic/` and opens that folder;
    **Choose folder...** builds them anywhere else, such as a USB stick for the Mimic (remembered for next time);
    **Not now** leaves the WAV files for **Convert WAV folder...** later.
+
+**Queue...** (under Record kit) records several kits one after another, say overnight. Load a kit in
+the plugin, set its rows and name here, and **Add this kit**; then the next kit, and so on. Each queued
+kit keeps the plugin's whole state and the rows, in `<Save to folder>/Queue/`. **Record the queue**
+loads each kit in the plugin in turn, waits until it sounds (up to 5 minutes while it loads its samples),
+records it with the export settings as they are then, and converts it into its `Mimic/` folder. A kit
+leaves the queue once it's done, and a queue that stopped carries on where it was, keeping the hits
+already recorded. Afterwards the plugin gets its own kit back, and `Queue/last run.txt` says how each
+kit went. Superior Drummer 3 and BFD3 keep the loaded kit in their state; with another plugin, check
+that a queued kit really comes back before leaving a queue overnight.
 
 **Send to Mimic** (with [Mimic OS 2](https://github.com/Sharkuel/Pearl-Mimic-OS-2.0)): its
 mimic-share puts the Mimic's Instruments and Kits folders on the computer as `~/Mimic`, over a USB
@@ -219,6 +245,13 @@ centre. The kit is written next to the instruments as `<kit name>.mdp/[U] <kit n
 the way the Mimic stores its own. The Mimic finds a slot's instrument by its name and library,
 so keep the `.mci` files as they were made, and copy them to the Mimic along with the kit.
 
+Both Build Mimic kit and the Kit editor say how much memory the kit asks of the Mimic: the start of
+every sample it preloads (about 107 KB per wave cell), against Pearl's own 105 kits, which preload 88 to
+169 MB. Green is within that, yellow up to a quarter past Pearl's biggest kit, red beyond, where a kit may
+glitch (how far past it a Mimic still plays clean hasn't been tried). The Kit editor finds the instruments
+of an opened kit among the .mci files beside it, as Build Mimic kit leaves them; any it can't find are
+listed as not counted.
+
 **Kit editor** (in the BUILDER box) opens a page to edit a Mimic kit: **Open kit...** one of
 yours, or **New kit...** to start an empty one from one of your kits (its pad settings carry
 over). Drop a `.mci` on any of the 26 slots (or double-click a slot to pick one), or **Fill from
@@ -227,14 +260,23 @@ on or off, set its volume and tune, and each mic's level, pan and mute; **Centre
 every mic in the kit. Double-click a fader to reset it. **Save** writes over the kit, or saves a
 new one beside it when you changed its name; **Save as...** asks for a folder.
 
+**Play...** (under the selected slot) plays its instrument on the PC the way the Mimic does: pick an
+articulation and a velocity and press **Hit** (each hit takes the layer's next round robin), or
+**Play every layer** to hear them soft to hard. It lists each layer's level and flags a layer louder
+than the one above it, or more than 6 dB above the one below, so a bad layer shows up before you copy
+anything over. With no instrument found for the slot, it asks for any `.mci`.
+
 Hits are recorded offline at 44.1 kHz, mixed to centred mono from the plugin's main output,
 and saved as 32-bit float WAVs (so a hit louder than full scale isn't clipped) under `<Save to folder>/<kit name>/` (Documents/eMIMICmkr unless you pick another with **Change...**), one folder per zone, in
 the layout the converter reads (below). Each hit runs until it has rung down to 90 dB below
 its own peak (or to -100 dBFS), up to 30 s, so soft hits keep their whole tail too. The hi-hat is recorded at five pedal positions
-(CC4 127, 96, 64, 32, 0) on both bow and edge, plus the pedal chick.
+(CC4 127, 96, 64, 32, 0) on both bow and edge, plus the pedal chick. With separate mics each WAV holds
+five channels: close (the close-mic output averaged to mono), overheads left and right, room left and right.
 
 `cmake --build build --target eMIMICmkr_tests` builds a check of the recorder against a
 stand-in plugin; `tests/test_batch_recording.py` runs it and converts the result.
+Every push runs these checks on GitHub (`.github/workflows/tests.yml`): both C++ test programs, the
+Python tests, and Mimic OS 2's own reader opening what eMIMICmkr writes.
 
 ## The .mci tools
 
@@ -276,6 +318,10 @@ over the second half of that length, so the fade blends into
 their own ring instead of sounding like a cutoff; the rest fade over their last half second.
 Shorter hits are left as they are. `--full-length` keeps every tail as recorded.
 
+Five-channel WAVs (the recorder's separate mics) become instruments with Pearl's mic layout for
+the type, described in [docs/mci-format.md](docs/mci-format.md#separate-mics); `--mix-mics` mixes them
+into one sound instead.
+
 Each instrument is then turned up (or down) as a whole so its loudest hit peaks at -1 dBFS,
 as SDSE's are. Quiet libraries play as loud as the rest, and the balance between soft and
 hard hits stays as recorded.
@@ -303,7 +349,7 @@ build/eMIMICmkr_mci_tests_artefacts/Release/eMIMICmkr_mci_tests --convert "My Ki
 ```
 
 Options: `--out DIR` (default: next to the input, or for several, the folder holding them all), `--name NAME` (only when the input holds
-one piece), `--no-choke` (leave the Choke Ring empty), `--hat-as-ride`, `--full-length`, `--stock-limits` and `--cells-percent N`. Run with no
+one piece), `--no-choke` (leave the Choke Ring empty), `--hat-as-ride`, `--full-length`, `--stock-limits`, `--cells-percent N` and `--mix-mics`. Run with no
 arguments, the tool checks the codec and builders instead.
 
 `tools/mci/wav2mci.py` stays as the reference implementation and takes the same options:

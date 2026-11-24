@@ -1,5 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "../Core/BatchRecorder.h"
+#include "../Core/HitRenderer.h"
 #include "../Core/KitMap.h"
 #include "../Core/SoundPrint.h"
 #include "LiveHost.h"
@@ -110,6 +112,7 @@ private:
 
     juce::TextButton scanButton { "Find plugins" }, loadButton { "Load plugin" },
         showButton { "Show plugin" }, auditionButton { "Listen to zone" }, recordButton { "Record kit" },
+        queueButton { "Queue..." },
         learnButton { "Learn notes" }, findButton { "Find notes" }, addButton { "Add row" },
         removeButton { "Remove row" }, loadMapButton { "Open map..." }, saveMapButton { "Save map..." },
         namesButton { "Read plugin" },
@@ -136,6 +139,18 @@ private:
     juce::Label saveToLabel { {}, "Save to" }, saveToPath;
     juce::ToggleButton fitLimits { "Fit Editor limits" },
                      lighter { "Stock sound limits" };
+    // Separate mics: which plugin outputs carry the close mics, overheads and room (by bus name).
+    juce::TextButton micsButton;
+    void chooseMics();
+    void startRecording (const emk::KitMap&, const emk::BatchRecorder::Settings&);
+    emk::BatchRecorder::Settings recordSettings();
+    // Kits queued to record one after another (RecordQueue), say overnight.
+    void showQueue();
+    void addToQueue();
+    void runQueue();
+    void showMics();
+    emk::HitRenderer::Settings::MicBuses micBuses() const;   // for the loaded plugin; none when off
+    emk::HitRenderer::Settings renderSettings() const;       // the app's rate and block size, and the mics
     juce::ComboBox pluginChoice, mapChoice;
     juce::Label kitLabel { {}, "Kit name" }, hitsLabel { {}, "Most hits per zone" };
     juce::TextEditor kitName, hitsPerZone, pluginSearch;

@@ -49,49 +49,173 @@ juce::Array<int> BatchRecorder::findSoundingNotes (juce::AudioPluginInstance& pl
 
 bool BatchRecorder::writeWav (const juce::File& file, const juce::AudioBuffer<float>& audio, double sampleRate)
 {
+    // Through a temporary file, so a recording stopped mid-write leaves no cut-off hit to keep.
     file.getParentDirectory().createDirectory();
+    const auto temp = file.getSiblingFile ("." + file.getFileName() + ".part");
+    temp.deleteFile();
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream (temp.createOutputStream());
+        if (stream == nullptr)
+            return false;
+        auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}
+                                                       .withSampleRate (sampleRate)
+                                                       .withNumChannels (audio.getNumChannels())
+                                                       .withBitsPerSample (32)   // float: a hit past full scale isn't clipped
+                                                       .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
+        if (writer == nullptr || ! writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples()))
+        {
+            writer.reset();
+            temp.deleteFile();
+            return false;
+        }
+    }
     file.deleteFile();
-    juce::WavAudioFormat wav;
-    std::unique_ptr<juce::OutputStream> stream (file.createOutputStream());
-    if (stream == nullptr)
-        return false;
-    auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}
-                                                   .withSampleRate (sampleRate)
-                                                   .withNumChannels (1)
-                                                   .withBitsPerSample (32)   // float: a hit past full scale isn't clipped
-                                                   .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
-    return writer != nullptr && writer->writeFromAudioSampleBuffer (audio, 0, audio.getNumSamples());
+    return temp.moveFileTo (file);
+}
+
+juce::String BatchRecorder::zoneInfo (const KitZone& zone, const juce::Array<int>& vels, const Settings& settings,
+                                      const juce::String& pluginName)
+{
+    juce::StringArray v;
+    for (auto x : vels)
+        v.add (juce::String (x));
+    const auto& m = settings.render.mics;
+    juce::String text;
+    text << "note: " << zone.note << "\n"
+         << "cc4: " << zone.cc4 << "\n"
+         << "velocities: " << v.joinIntoString (",") << "\n"
+         << "mics: " << (m.enabled() ? "close " + juce::String (m.close) + ", overheads " + juce::String (m.overheads)
+                                           + ", room " + juce::String (m.room)
+                                     : juce::String ("one mix")) << "\n"
+         << "longest: " << settings.render.maxSeconds << " s\n"
+         << "rate: " << settings.render.sampleRate << "\n"
+         << "plugin: " << pluginName << "\n";
+    return text;
+}
+
+namespace
+{
+struct ZoneJob
+{
+    KitZone zone;
+    juce::Array<int> velocities;
+    juce::File folder;
+    juce::String info;
+};
+
+std::vector<ZoneJob> jobsFor (const KitMap& map, const BatchRecorder::Settings& settings, const juce::File& root,
+                              const juce::String& pluginName)
+{
+    std::vector<ZoneJob> jobs;
+    for (int i = 0; i < map.zones.size(); ++i)
+        if (map.zones[i].enabled)
+        {
+            ZoneJob j;
+            j.zone = map.zones[i];
+            j.velocities = BatchRecorder::velocities (map.hitsFor (i, settings.hitsPerZone, settings.fitMimicLimits, settings.stockLimits),
+                                                      settings.softestVelocity, settings.hardestVelocity);
+            j.folder = BatchRecorder::fileFor (root, map.kitName, j.zone, 1, 1).getParentDirectory();
+            j.info = BatchRecorder::zoneInfo (j.zone, j.velocities, settings, pluginName);
+            jobs.push_back (std::move (j));
+        }
+    return jobs;
+}
+
+bool sameInfo (const ZoneJob& job)
+{
+    const auto file = job.folder.getChildFile (BatchRecorder::zoneInfoFile);
+    return file.existsAsFile() && file.loadFileAsString() == job.info;
+}
+
+/** The zone's hit files: "<piece> - <label> - NNNvVV.wav". */
+juce::Array<juce::File> hitFiles (const ZoneJob& job, const KitMap& map, const juce::File& root)
+{
+    const auto prefix = BatchRecorder::fileFor (root, map.kitName, job.zone, 1, 1).getFileName()
+                            .upToLastOccurrenceOf (" - ", true, false);
+    juce::Array<juce::File> out;
+    for (const auto& f : job.folder.findChildFiles (juce::File::findFiles, false, "*.wav;*.WAV"))
+        if (f.getFileName().startsWith (prefix))
+            out.add (f);
+    return out;
+}
+} // namespace
+
+BatchRecorder::Plan BatchRecorder::plan (const KitMap& map, const Settings& settings, const juce::File& root,
+                                         const juce::String& pluginName)
+{
+    Plan p;
+    for (const auto& job : jobsFor (map, settings, root, pluginName))
+    {
+        if (! job.folder.isDirectory())
+        {
+            ++p.zonesNew;
+            p.toRecord += job.velocities.size();
+            continue;
+        }
+        if (! sameInfo (job))
+        {
+            ++p.zonesChanged;
+            p.toRecord += job.velocities.size();
+            continue;
+        }
+        int kept = 0;
+        for (int i = 0; i < job.velocities.size(); ++i)
+            kept += fileFor (root, map.kitName, job.zone, i + 1, job.velocities[i]).existsAsFile() ? 1 : 0;
+        p.kept += kept;
+        p.toRecord += job.velocities.size() - kept;
+        ++(kept == job.velocities.size() ? p.zonesKept : p.zonesChanged);
+    }
+    return p;
 }
 
 juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const KitMap& map, const Settings& settings,
                                     const juce::File& root, std::function<bool (const Progress&)> onProgress)
 {
+    const auto jobs = jobsFor (map, settings, root, plugin.getName());
     juce::Array<KitZone> zones;
-    juce::Array<juce::Array<int>> zoneVelocities;
     Progress progress;
-    for (int i = 0; i < map.zones.size(); ++i)
-        if (map.zones[i].enabled)
-        {
-            const int hits = map.hitsFor (i, settings.hitsPerZone, settings.fitMimicLimits, settings.stockLimits);
-            zones.add (map.zones[i]);
-            zoneVelocities.add (velocities (hits, settings.softestVelocity, settings.hardestVelocity));
-            progress.total += hits;
-        }
+    for (const auto& job : jobs)
+    {
+        zones.add (job.zone);
+        progress.total += job.velocities.size();
+    }
 
-    int written = 0;
+    int written = 0, kept = 0;
     juce::StringArray silent, failed;
 
     HitRenderer renderer (plugin, settings.render);
-    for (int z = 0; z < zones.size(); ++z)
+    for (const auto& job : jobs)
     {
-        const auto& zone = zones.getReference (z);
-        const auto& vels = zoneVelocities.getReference (z);
+        const auto& zone = job.zone;
+        const auto& vels = job.velocities;
+        const bool keep = settings.keepExisting && sameInfo (job);
+        // Old hits this recording doesn't make (another count, another velocity) would end up in
+        // the instrument: take them out. With keep, those it makes again stay until replaced.
+        juce::Array<juce::File> wanted;
+        for (int i = 0; i < vels.size(); ++i)
+            wanted.add (fileFor (root, map.kitName, zone, i + 1, vels[i]));
+        for (const auto& f : hitFiles (job, map, root))
+            if (! keep || ! wanted.contains (f))
+                f.deleteFile();
+        // Written first, so a recording that stops halfway keeps what it made.
+        job.folder.createDirectory();
+        job.folder.getChildFile (zoneInfoFile).replaceWithText (job.info, false, false, "\n");
+
         int silentHits = 0;
         for (int i = 0; i < vels.size(); ++i)
         {
             progress.current = zone.piece + " - " + zone.label + " v" + juce::String (vels[i]);
             if (! onProgress (progress))
-                return "Stopped after " + juce::String (written) + " hits.";
+                return "Stopped after " + juce::String (written) + " hits. Record kit again to finish it: the hits "
+                       "already made are kept.";
+            const auto& file = wanted.getReference (i);
+            if (keep && file.existsAsFile())
+            {
+                ++progress.done;
+                ++kept;
+                continue;
+            }
 
             auto hit = renderer.renderHit (zone.note, vels[i], zone.cc4);
             ++progress.done;
@@ -100,7 +224,6 @@ juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const Kit
                 ++silentHits;
                 continue;
             }
-            const auto file = fileFor (root, map.kitName, zone, i + 1, vels[i]);
             if (writeWav (file, hit, settings.render.sampleRate))
                 ++written;
             else
@@ -138,6 +261,8 @@ juce::String BatchRecorder::record (juce::AudioPluginInstance& plugin, const Kit
 
     juce::String report = "Recorded " + juce::String (written) + " hits to "
                           + root.getChildFile (safeName (map.kitName)).getFullPathName() + ".";
+    if (kept > 0)
+        report << " Kept " << kept << " recorded before.";
     if (! silent.isEmpty())
         report << "\nNo sound from: " << silent.joinIntoString (", ") << ".";
     if (! failed.isEmpty())

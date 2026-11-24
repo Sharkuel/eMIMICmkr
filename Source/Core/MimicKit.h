@@ -23,6 +23,27 @@ struct Instrument
 
 Instrument readInstrument (const juce::File&);
 
+/** What a kit asks of the Mimic's memory: the RAM heads of its instruments, which the Mimic
+    preloads (each sample's first 32768 values, about 107 KB per wave cell), and their wave cells.
+    Pearl's 105 factory kits (Mimic_Factory.lib, 2026-11-24) preload 88 to 169 MB (median 131),
+    in 806 to 1633 cells; how far past that a Mimic still plays clean is not known. */
+struct Load
+{
+    juce::int64 bytes = 0;
+    int cells = 0, instruments = 0;
+    juce::StringArray unknown;   // loaded slots whose instrument file wasn't found: "Ride 1 (22 K Ride)"
+    enum class Level { fine, big, tooBig };
+    Level level() const;         // fine up to Pearl's biggest kit, big up to 25% past it, then tooBig
+    juce::String describe() const;   // "142 MB preloaded in 1,350 wave cells (Pearl's own kits: 88 to 169 MB)"
+};
+constexpr double factoryLeastMB = 88.4, factoryMedianMB = 131.0, factoryMostMB = 169.1;
+Load loadOf (const mci::MciFile& instrumentSettings);
+/** The loaded slots of a kit, each found by its instrument's name and library among `known`. */
+Load kitLoad (const mci::MciFile& kit, const std::vector<Instrument>& known);
+/** .mci files that may hold a kit's instruments: those beside it (and beside its .mdp folder),
+    one folder down, read without their audio. Unreadable files are skipped. */
+std::vector<Instrument> instrumentsNear (const juce::File& kitFile);
+
 /** Slot names in slot-number order, read from a kit. */
 juce::StringArray slotsOf (const mci::MciFile& kit);
 
@@ -31,6 +52,7 @@ struct Report
     std::vector<std::pair<juce::String, juce::String>> placed;   // slot, instrument name
     juce::StringArray leftOut;                                    // instruments with no free slot
     juce::StringArray notes;                                      // things to check on the Mimic
+    Load load;                                                    // of the instruments placed
 };
 
 /** Puts each instrument in a slot (kick, snare, hi-hat, ride, toms smallest first, crashes,

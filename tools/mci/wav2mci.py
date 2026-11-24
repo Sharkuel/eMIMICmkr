@@ -175,11 +175,28 @@ def _float_wav(data: bytes):
     raise ValueError("WAV fmt chunk and/or data chunk missing")
 
 
-def read_wav(data: bytes) -> list[int]:
+def wav_channels(data: bytes) -> int:
+    """The channel count in a WAV's fmt chunk (0 when there is none)."""
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return 0
+    pos = 12
+    while pos + 8 <= len(data):
+        kind, size = data[pos:pos + 4], int.from_bytes(data[pos + 4:pos + 8], "little")
+        if kind == b"fmt " and pos + 12 <= len(data):
+            return struct.unpack_from("<H", data, pos + 10)[0]
+        pos += 8 + size + (size & 1)
+    return 0
+
+
+def read_wav(data: bytes, keep_mics: bool = False) -> list[int]:
     """Mono samples on the 24-bit scale. Stereo is averaged; 16-bit lands on the Editor's grid.
 
     32-bit float WAVs (what the recorder writes) may go past full scale; build_instrument()
     turns such an instrument down as a whole.
+
+    A five-channel WAV is the recorder's separate mics (close, OH L/R, room L/R): with
+    keep_mics it comes back as is, interleaved, else as their mono mix (mci.mic_mix), which is
+    what the plugin's own output plays. keep_mics refuses any other WAV.
     """
     flt = _float_wav(data)
     if flt is not None:
@@ -203,6 +220,13 @@ def read_wav(data: bytes) -> list[int]:
             vals = [v >> 8 for v in struct.unpack(f"<{len(raw) // 4}i", raw)]
         else:
             raise ValueError(f"unsupported sample width {width * 8} bit")
+    if ch == mci.RECORDED_MICS:
+        if keep_mics:
+            return vals
+        top = 2 ** 30
+        return [max(-top, min(top, v)) for v in mci.mic_mix(vals, mci.RECORDED_STEREO)]
+    if keep_mics:
+        raise ValueError(f"{ch} channels where the piece's other hits have the recorder's {mci.RECORDED_MICS} mics")
     if ch > 1:
         vals = [sum(vals[i:i + ch]) // ch for i in range(0, len(vals), ch)]
     return vals
@@ -391,34 +415,48 @@ def fade_seconds(piece: Piece, key: str | None = None) -> float:
     return SHORT_FADE_SECONDS
 
 
-def fit_length(x: list[int], max_frames: int, fade_frames: int = round(SHORT_FADE_SECONDS * SAMPLE_RATE)) -> list[int]:
+def fit_length(x: list[int], max_frames: int, fade_frames: int = round(SHORT_FADE_SECONDS * SAMPLE_RATE),
+               channels: int = 1) -> list[int]:
     """x cut to max_frames, its last fade_frames faded out to 0; x itself when shorter.
+    channels: x holds that many interleaved channels, cut and faded together.
 
     The fade follows the square of a straight line, which falls quickly at first and then
     trails off, like a ringing tail, instead of stopping on a corner."""
-    if len(x) <= max_frames:
+    if len(x) <= max_frames * channels:
         return x
-    x = x[:max_frames]
+    x = x[:max_frames * channels]
     fade = min(fade_frames, max_frames)
     start = max_frames - fade
     for i in range(fade):
         left = fade - 1 - i
-        x[start + i] = x[start + i] * left * left // (fade * fade)
+        for c in range(channels):
+            k = (start + i) * channels + c
+            x[k] = x[k] * left * left // (fade * fade)
     return x
 
 
 def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
           hat_as_ride: bool = False, full_length: bool = False, cells_percent: int = 100,
-          stock_limits: bool = False) -> mci.MciFile:
+          stock_limits: bool = False, mix_mics: bool = False) -> mci.MciFile:
 
     def cells(kind):     # the instrument's wave-cell budget, cut to cells_percent
         return max(2, (STOCK_CELL_LIMITS if stock_limits else CELL_LIMITS)[kind] * cells_percent // 100)
 
+    # Recorded with separate mics (five-channel WAVs): kept apart unless mix_mics.
+    first = next(h for hits in piece.zones.values() for h in hits)
+    mics = not mix_mics and wav_channels(src.read(first.path)) == mci.RECORDED_MICS
+    ch = mci.RECORDED_MICS if mics else 1
+    if mics:
+        log(f"  {name}: separate mics (close, overheads, room)")
+
     def read(h):
-        x = read_wav(src.read(h.path))
-        if h.blend is None:
-            return x
-        y = read_wav(src.read(h.blend))
+        try:
+            x = read_wav(src.read(h.path), mics)
+            if h.blend is None:
+                return x
+            y = read_wav(src.read(h.blend), mics)
+        except ValueError as e:
+            raise ValueError(f"{h.path}: {e}") from None
         if len(y) > len(x):
             x, y = y, x
         return [(a + (y[i] if i < len(y) else 0)) // 2 for i, a in enumerate(x)]
@@ -428,7 +466,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
             return [[read(h) for h in layer] for layer in hits_layers]
         max_frames = round(max_seconds(piece, key) * SAMPLE_RATE)
         fade_frames = round(fade_seconds(piece, key) * SAMPLE_RATE)
-        return [[fit_length(read(h), max_frames, fade_frames) for h in layer] for layer in hits_layers]
+        return [[fit_length(read(h), max_frames, fade_frames, ch) for h in layer] for layer in hits_layers]
 
     zones = dict(piece.zones)
     if piece.family == "snare" and "rimshotside" not in zones and "rimshot" in zones:
@@ -448,12 +486,12 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         return load(layers, key), min_velocities(layers)
 
     if piece.family == "hat":
-        return build_hat(piece, zone, name, hat_as_ride, log, hat_hits=max(1, HAT_HITS * cells_percent // 100))
+        return build_hat(piece, zone, name, hat_as_ride, log, hat_hits=max(1, HAT_HITS * cells_percent // 100), mics=mics)
 
     if piece.family == "kick":
         audio, vel = zone("kick", max_hits=cells("Kick"), rr=round_robins("kick", "kick"))
         arts = [mci.Articulation("Kick", mci.ZONE_TYPES["kick"], audio, vel)]
-        return mci.build_instrument(name, "Kick", arts, thumbnail(), mic="Kick")
+        return mci.build_instrument(name, "Kick", arts, thumbnail(), mic="Kick", mics=mics)
 
     if piece.family == "cymbal":
         z = piece.zones
@@ -476,12 +514,12 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         choke_layers = None
         if "choke" in z:      # the Mimic keeps one choke-ring cell: the hardest recording
             hardest = max(z["choke"], key=lambda h: h.velocity)
-            choke_layers = [[read_wav(src.read(hardest.path))]]
+            choke_layers = [[read(hardest)]]
         elif choke:
             hardest = max(z[edge_key], key=lambda h: h.velocity)
-            x = read_wav(src.read(hardest.path))
+            x = read(hardest)
             top = 2 ** 23 - 1
-            choke_layers = [[[max(-top, min(top, round(v))) for v in mci.make_choke(x, SAMPLE_RATE)]]]
+            choke_layers = [[[max(-top, min(top, round(v))) for v in mci.make_choke(x, SAMPLE_RATE, channels=ch)]]]
         if has_bell:
             bell, bell_vel = zone("bell", max_hits=shares["bell"], rr=round_robins("cymbal", "bell"))
             arts = mci.ride_articulations(bow, bell, edge, choke=choke_layers)
@@ -491,7 +529,7 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
             vels = [edge_vel, bow_vel]
         for art, v in zip(arts, vels):
             art.min_velocities = v
-        return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind)
+        return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind, mics=mics)
 
     zone_ids = ({"center": "drum center", "side": "snare side", "rimshot": "drum rimshot", "rimclick": "drum rimclick",
                  "rimshotside": "snare rimshot side", "sidestick": "snare sidestick"})
@@ -509,13 +547,14 @@ def build(piece: Piece, src: Source, name: str, choke: bool = True, log=print,
         label = f"{'Snare' if piece.family == 'snare' else 'Tom'} {names[key]}"
         arts.append(mci.Articulation(label, mci.ZONE_TYPES[zone_ids[key]], audio, vel))
     return mci.build_instrument(name, kind, arts, thumbnail(), mic=kind,
-                                sample_volume=0.599 if kind == "Snare" else 0.52)
+                                sample_volume=0.599 if kind == "Snare" else 0.52, mics=mics)
 
 
 HAT_LAYERS, HAT_HITS = 8, 32     # per articulation; 17 of them would otherwise run to gigabytes
 
 
-def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print, hat_hits: int = HAT_HITS) -> mci.MciFile:
+def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print, hat_hits: int = HAT_HITS,
+              mics: bool = False) -> mci.MciFile:
     """SDSE hi-hat folders -> the factory Hat layout, or a ride-style 3-zone instrument.
 
     Mapping (inferred, not from Pearl): the Mimic's tip zone plays BOW, its shank
@@ -548,7 +587,7 @@ def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print, hat_hits:
         arts = mci.ride_articulations(bow, bell, edge)
         for art, v in zip(arts, [bow_vel, bell_vel, edge_vel]):
             art.min_velocities = v
-        return mci.build_instrument(name, "Ride", arts, thumbnail(), mic="Ride")
+        return mci.build_instrument(name, "Ride", arts, thumbnail(), mic="Ride", mics=mics)
 
     tip, shank, edge = steps(tip_area), steps(shank_area), steps(third_area)
     pedal = zone("pedal", HAT_LAYERS, hat_hits)[0] if "pedal" in piece.zones else []
@@ -557,7 +596,7 @@ def build_hat(piece: Piece, zone, name: str, as_ride: bool, log=print, hat_hits:
         if not got:
             log(f"  {name}: no {missing} recording, that zone stays silent")
     arts, ctrl = mci.hat_articulations(tip, shank, edge, pedal, splash)
-    return mci.build_instrument(name, "Hat", arts, thumbnail(), mic="Hi-Hat", controller_zones=ctrl)
+    return mci.build_instrument(name, "Hat", arts, thumbnail(), mic="Hi-Hat", controller_zones=ctrl, mics=mics)
 
 
 def main(argv=None) -> int:
@@ -575,6 +614,8 @@ def main(argv=None) -> int:
                     help="use this percentage of each instrument's wave-cell limit (fewer hits, lighter instruments)")
     ap.add_argument("--full-length", action="store_true",
                     help="keep every hit's whole tail instead of cutting it to suit the piece")
+    ap.add_argument("--mix-mics", action="store_true",
+                    help="mix hits recorded with separate mics into one, as a plain recording")
     args = ap.parse_args(argv)
 
     src = Source(args.input)
@@ -600,7 +641,7 @@ def main(argv=None) -> int:
         for title, as_ride in builds:
             f = build(piece, src, title, choke=not args.no_choke, hat_as_ride=as_ride,
                       full_length=args.full_length, cells_percent=args.cells_percent,
-                      stock_limits=args.stock_limits)
+                      stock_limits=args.stock_limits, mix_mics=args.mix_mics)
             path = os.path.join(out_dir, f"{title}.mci")
             with open(path, "wb") as fh:
                 fh.write(mci.write_mci(f))
