@@ -137,6 +137,21 @@ private:
     juce::String report;
 };
 
+/** AlertWindow::showAsync with MessageBoxOptions shows at most three buttons: given a fourth,
+    JUCE's look and feel adds none at all. This takes any number, numbered the same way: the
+    first button 1, the second 2 and so on, the last 0 (also Esc). */
+void askAsync (const juce::MessageBoxOptions& o, std::function<void (int)> done)
+{
+    if (o.getNumButtons() <= 3)
+        return juce::AlertWindow::showAsync (o, std::move (done));
+    auto* w = new juce::AlertWindow (o.getTitle(), o.getMessage(), o.getIconType(), o.getAssociatedComponent());
+    const int n = o.getNumButtons();
+    for (int i = 0; i < n; ++i)
+        w->addButton (o.getButtonText (i), i == n - 1 ? 0 : i + 1,
+                      i == n - 1 ? juce::KeyPress (juce::KeyPress::escapeKey) : juce::KeyPress());
+    w->enterModalState (true, juce::ModalCallbackFunction::create (std::move (done)), true);
+}
+
 /** A drum plugin's own kit map, from its state or a preset file: Superior Drummer 3 or BFD3.
     found is false when the data is neither's. */
 emk::KitMap kitFromPluginData (const juce::MemoryBlock& data, juce::String& error, bool& found)
@@ -1492,7 +1507,7 @@ void MainComponent::showQueue()
     if (! entries.empty())
         options = options.withButton ("Record the queue").withButton ("Clear the queue");
     options = options.withButton ("Close").withAssociatedComponent (this);
-    juce::AlertWindow::showAsync (options, [this, queued = ! entries.empty()] (int button)
+    askAsync (options, [this, queued = ! entries.empty()] (int button)
     {
         if (button == 1)
             return addToQueue();
@@ -1646,7 +1661,7 @@ void MainComponent::startRecording (const emk::KitMap& map, const emk::BatchReco
         if (drive != juce::File())
             options = options.withButton ("Send to Mimic");
         options = options.withButton ("Choose folder...").withButton ("Not now").withAssociatedComponent (this);
-        juce::AlertWindow::showAsync (options, [this, report, kitFolder, mimic, kitName, drive] (int button)
+        askAsync (options, [this, report, kitFolder, mimic, kitName, drive] (int button)
         {
             auto convert = [this, report, kitFolder, kitName] (const juce::File& outDir, const juce::File& sendTo)
             {
