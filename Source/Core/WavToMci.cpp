@@ -449,6 +449,8 @@ std::pair<juce::String, juce::String> WavToMci::classify (const juce::String& zo
         return { family, "rimshotside" };
     if (family == "snare" && zone == "edge")
         return { family, "side" };        // a hit near the edge of the head: the Mimic's Side zone
+    if (family == "cymbal" && zone == "bell" && words.contains ("TIP"))
+        return { family, "belltip" };     // struck with the stick's tip; see scan()
     return { family, zone.isNotEmpty() ? zone : family == "cymbal" ? "bow" : "center" };
 }
 
@@ -484,6 +486,28 @@ std::vector<WavToMci::Piece> WavToMci::scan (const Input& src, juce::StringArray
             it = pieces.end() - 1;
         }
         it->add (kind.second).push_back ({ velocity, name, {} });
+    }
+    // A cymbal recorded on its bell with both the stick's tip and its shank (Superior Drummer 3's
+    // BT and BL) gets one Mimic bell from both: tip hits as velocities 1 to 64, shank hits as 65
+    // to 127, each keeping its own order. Played soft the bell sounds like the tip, hard like the shank.
+    for (auto& p : pieces)
+    {
+        auto tip = std::find_if (p.zones.begin(), p.zones.end(), [] (const auto& z) { return z.first == "belltip"; });
+        if (tip == p.zones.end())
+            continue;
+        auto shank = std::find_if (p.zones.begin(), p.zones.end(), [] (const auto& z) { return z.first == "bell"; });
+        if (shank == p.zones.end())
+        {
+            tip->first = "bell";   // the tip alone is the bell
+            continue;
+        }
+        Hits both;
+        for (auto h : tip->second)
+            both.push_back ({ 1 + (h.velocity - 1) * 63 / 126, h.path, h.blend });
+        for (auto h : shank->second)
+            both.push_back ({ 65 + (h.velocity - 1) * 62 / 126, h.path, h.blend });
+        shank->second = std::move (both);
+        p.zones.erase (tip);
     }
     return pieces;
 }

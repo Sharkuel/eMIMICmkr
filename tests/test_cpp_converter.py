@@ -503,3 +503,26 @@ def test_separate_mics_must_not_mix_with_plain_hits(tmp_path):
     assert not (tmp_path / "cpp" / "22 Kick.mci").exists(), log
     assert (tmp_path / "cpp" / "14 Snare.mci").exists(), log      # the other pieces still convert
     assert "recorder's 5 mics" in log
+
+
+def test_bell_tip_and_shank_make_one_bell(tmp_path):
+    """A ride's BELL TIP (soft) and BELL (shank, hard) hits become one bell: tip below velocity 65."""
+    rnd = random.Random(11)
+    piece = tmp_path / "in" / "Bell Kit"
+    zones = [("RIDE1 BOW", [127, 64, 20], 0.8), ("RIDE1 BELL TIP", [127, 96, 64, 32, 1], 0.3),
+             ("RIDE1 BELL", [127, 96, 64, 32, 1], 0.9)]
+    for zone, vels, gain in zones:
+        for i, v in enumerate(vels, 1):
+            hit = [gain * v / 127 * math.exp(-k / 2500) * (rnd.random() * 2 - 1) for k in range(8000)]
+            write_float_wav(piece / f"20 Ride_R1 - {zone}" / f"20 Ride_R1 - {zone} - {i:03d}v{v}.wav", hit)
+    py_out, _, _ = convert_both(tmp_path, piece)
+    f = mci.read_mci(str(py_out / "20 Ride.mci"))
+    arts = {f.get(f"INST0artic{a}artn"): a for a in range(f.get("INST0numart"))}
+    bell = next(a for name, a in arts.items() if "Bell" in name)
+    P = f"INST0artic{bell}"
+    minvel = [f.get(f"{P}veloLay{l}minvel") for l in range(f.get(f"{P}numlay"))]
+    assert minvel[0] == 0 and 65 in minvel          # the shank takes over at 65
+    assert all(a < b for a, b in zip(minvel, minvel[1:]))
+    # Every one of the 10 bell hits is in the bell; none went to the bow.
+    total = sum(f.get(f"{P}veloLay{l}nums") for l in range(f.get(f"{P}numlay")))
+    assert total == 10
