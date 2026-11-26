@@ -305,6 +305,10 @@ rimclicks and cymbals. That makes round(hits / round robins) layers, from 1 to 2
 zone has more than 6 hits per layer to fill, it keeps an even spread of velocities. Hi-hats
 keep 8 layers of up to 32 hits.
 
+A hi-hat's bell (`HATS BELL`, Superior Drummer 3's hatsBellTrig, recorded at the same five
+openings as the bow and edge) goes in the hat's third pedal zone, which Mimic OS 2 plays on
+the bell of a 3-zone hi-hat pad (`type hihat3`, "Hi-hat 3" on its trigger screen).
+
 Cymbals with a bell become 3-zone ride-type instruments, the rest 2-zone cymbals, and a
 choke sound is made from the hardest edge hit when none was recorded. A bell recorded both with the
 stick's tip (`BELL TIP`, Superior Drummer 3's BT, ticked by default on rides) and its shank (`BELL`, SD3's

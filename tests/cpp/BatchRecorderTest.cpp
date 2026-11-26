@@ -356,7 +356,8 @@ bool sd3KitReads()
                     && noteOf ("Ride 1", "RIDE1 BOW") == 51 && noteOf ("Ride 1", "RIDE1 BELL") == 53
                     && noteOf ("Ride 1", "RIDE1 EDGE") == 59 && noteOf ("Crash 2", "CRASH2 EDGE") == 57
                     && noteOf ("Splash 1", "SPLASH1 EDGE") == 55 && noteOf ("Hi-Hat", "HATS EDGE OPEN2") == 7
-                    && noteOf ("Hi-Hat", "HATS BOW CLOSED") == 8 && noteOf ("Hi-Hat", "HATS PEDAL CLOSED") == 21
+                    && noteOf ("Hi-Hat", "HATS BOW CLOSED") == 8 && noteOf ("Hi-Hat", "HATS BELL OPEN2") == 9
+                    && noteOf ("Hi-Hat", "HATS PEDAL CLOSED") == 21
                     && noteOf ("Hi-Hat", "HATS FOOT SPLASH") == 23 && noteOf ("Kick 2", "KICK2") == 35
                     && noteOf ("Octoban1", "PERC OCTOBAN1 MAIN") == 69 && noteOf ("Octoban1", "PERC OCTOBAN1 SECONDARY") == 4;
     // Names typed for drums come back by their SD3 ID, one piece each.
