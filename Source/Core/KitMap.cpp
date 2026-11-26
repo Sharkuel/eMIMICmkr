@@ -15,12 +15,17 @@ const std::initializer_list<std::pair<const char*, int>> hatSteps {
     { "CLOSED", 127 }, { "OPEN1", 96 }, { "OPEN2", 64 }, { "OPEN3", 32 }, { "OPEN4", 0 },
 };
 
-void addHat (KitMap& m, int bowNote, int edgeNote, int pedalNote)
+void addHat (KitMap& m, int bowNote, int edgeNote, int pedalNote, int bellNote = -1)
 {
     for (auto [step, cc] : hatSteps)
         m.zones.add ({ "Hi-Hat", juce::String ("HATS BOW ") + step, bowNote, cc });
     for (auto [step, cc] : hatSteps)
         m.zones.add ({ "Hi-Hat", juce::String ("HATS EDGE ") + step, edgeNote, cc });
+    // A bell (SD3's hatsBellTrig) goes in the hat's third pedal zone, which Mimic OS 2's
+    // 3-zone hi-hat pad (type hihat3) plays on bell hits.
+    if (bellNote >= 0)
+        for (auto [step, cc] : hatSteps)
+            m.zones.add ({ "Hi-Hat", juce::String ("HATS BELL ") + step, bellNote, cc });
     m.zones.add ({ "Hi-Hat", "HATS PEDAL CLOSED", pedalNote, 127 });
     // Most plugins play a foot splash from the pedal note when the hat is open; off until checked.
     m.zones.add ({ "Hi-Hat", "HATS FOOT SPLASH", pedalNote, 0, false });
@@ -553,11 +558,11 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
         if (juce::String (family) == "hats")
         {
             // SD3's trigger notes follow the pedal (CC4), as an e-kit's hi-hat does.
-            const int tip = noteOf ("TipTrig"), edge = noteOf ("Trig"), pedal = noteOf ("PL");
+            const int tip = noteOf ("TipTrig"), edge = noteOf ("Trig"), pedal = noteOf ("PL"), bell = noteOf ("BellTrig");
             if (tip >= 0 || edge >= 0)
             {
                 const int before = m.zones.size();
-                addHat (m, tip >= 0 ? tip : edge, edge >= 0 ? edge : tip, pedal >= 0 ? pedal : 44);
+                addHat (m, tip >= 0 ? tip : edge, edge >= 0 ? edge : tip, pedal >= 0 ? pedal : 44, bell);
                 for (int z = before; z < m.zones.size(); ++z)
                     m.zones.getReference (z).pluginName = slot.pos;
                 if (const int splash = noteOf ("PLO"); splash >= 0)
