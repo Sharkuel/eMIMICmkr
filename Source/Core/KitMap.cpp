@@ -578,8 +578,12 @@ KitMap KitMap::fromSd3 (const juce::String& text, juce::String& error)
                          { "RO", "RIMCLICK", true }, { "FO", "EDGE", true }, { "MC", "OFF CENTER", false },
                          { "MR", "RIMSHOT SHALLOW", false }, { "BZ", "BUZZ", false }, { "FL", "FLAM", false } } },
             { "tom", { { "R", "CENTER", true }, { "FX", "RIMSHOT", true }, { "RO", "RIMCLICK", true } } },
-            { "ride", { { "", "BOW", true }, { "BL", "BELL", true }, { "PU", "EDGE", true }, { "M", "CHOKE", false } } },
-            { "crash", { { "", "EDGE", true }, { "RT", "BOW", true }, { "BL", "BELL", false }, { "M", "CHOKE", false } } },
+            // BL is the bell hit with the stick's shank, BT with its tip: the converter builds one
+            // bell from both, tip when played soft and shank when hard.
+            { "ride", { { "", "BOW", true }, { "BL", "BELL", true }, { "BT", "BELL TIP", true }, { "PU", "EDGE", true },
+                        { "M", "CHOKE", false } } },
+            { "crash", { { "", "EDGE", true }, { "RT", "BOW", true }, { "BL", "BELL", false }, { "BT", "BELL TIP", false },
+                         { "M", "CHOKE", false } } },
         };
         const auto& table = codes.count (family) ? codes.at (family) : codes.at ("crash");   // splash, china
         const juce::String labelHead = upper + num;

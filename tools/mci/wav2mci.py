@@ -291,6 +291,8 @@ def classify(zone_label: str) -> tuple[str, str]:
         zone = "rimshotside"
     if family == "snare" and zone == "edge":
         zone = "side"                  # a hit near the edge of the head: the Mimic's Side zone
+    if family == "cymbal" and zone == "bell" and "TIP" in words:
+        zone = "belltip"               # struck with the stick's tip; see scan()
     if zone is None:
         zone = "bow" if family == "cymbal" else "center"
     return family, zone
@@ -313,6 +315,18 @@ def scan(src: Source) -> tuple[list[Piece], list[str]]:
             continue
         p = pieces.setdefault(m["piece"], Piece(m["piece"], family))
         p.zones.setdefault(zone, []).append(Hit(int(m["vel"]), name))
+    # A cymbal recorded on its bell with both the stick's tip and its shank (Superior Drummer 3's
+    # BT and BL) gets one Mimic bell from both: tip hits as velocities 1 to 64, shank hits as 65
+    # to 127, each keeping its own order. Played soft the bell sounds like the tip, hard like the shank.
+    for p in pieces.values():
+        if "belltip" not in p.zones:
+            continue
+        if "bell" not in p.zones:      # the tip alone is the bell
+            p.zones = {("bell" if k == "belltip" else k): v for k, v in p.zones.items()}
+            continue
+        tip = p.zones.pop("belltip")
+        p.zones["bell"] = ([Hit(1 + (h.velocity - 1) * 63 // 126, h.path, h.blend) for h in tip]
+                           + [Hit(65 + (h.velocity - 1) * 62 // 126, h.path, h.blend) for h in p.zones["bell"]])
     return list(pieces.values()), skipped
 
 

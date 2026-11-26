@@ -306,7 +306,10 @@ zone has more than 6 hits per layer to fill, it keeps an even spread of velociti
 keep 8 layers of up to 32 hits.
 
 Cymbals with a bell become 3-zone ride-type instruments, the rest 2-zone cymbals, and a
-choke sound is made from the hardest edge hit when none was recorded. Kicks, snares and
+choke sound is made from the hardest edge hit when none was recorded. A bell recorded both with the
+stick's tip (`BELL TIP`, Superior Drummer 3's BT, ticked by default on rides) and its shank (`BELL`, SD3's
+BL) becomes one bell: the tip hits play from velocity 1 to 64 and the shank hits from 65, so a soft
+bell hit sounds like the tip and a hard one like the shank. Kicks, snares and
 toms are recognised too, and SDSE hi-hat folders become a Mimic hi-hat (add `--hat-as-ride` for
 a 3-zone ride-type version as well). WAVs must be 44.1 kHz.
 
